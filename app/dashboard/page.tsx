@@ -66,7 +66,7 @@ export default function DashboardPage() {
         <div style={{ backgroundColor: "#FF7900", color: "white", padding: 20 }}>
           <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
            
-           <p style={{ fontSize: 18, fontWeight: "bold" }}>Indikator Kinerja Utama dan Perjanjian Kerja Fakultas Ilmu Komputer </p>
+           <p style={{ fontSize: 18, fontWeight: "bold" }} className="header">Indikator Kinerja Utama dan Perjanjian Kerja Fakultas Ilmu Komputer </p>
             <button
               onClick={handleLogout}
               style={{

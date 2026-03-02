@@ -28,3 +28,50 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--foreground);
   font-family: sans-serif;
 }
+h1, h2, h3 {
+  font-weight: bold;
+  color: #000000;
+}
+
+ p, span, a, label, button {
+  color: #000000;
+}
+
+.header{
+  color: #ffffff;
+}
+
+.flex-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  align-items: flex-start;
+}
+.flex-info-label {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+.flex-info-col {
+  display: flex;
+  min-width: 300px;
+  margin-bottom: 0.5rem;
+}
+.table__body {
+  width: 100%;
+  max-height: calc(89% - 1.6rem);
+
+  margin-top: 1rem !important;
+
+  margin: .8rem auto;
+  overflow: auto;
+  overflow: overlay;
+}
+.responsive-table-container {
+  display: flex;
+  flex-direction: column;
+}
+.table-header {
+  grid-template-columns: 1000px 50px 200px;
+  gap: 10px;
+  width: 100%;
+}
