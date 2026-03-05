@@ -58,6 +58,100 @@ export default function DashboardContent({ role = 'user' }: { role?: 'admin' | '
           Beranda
         </p>
 
+        {/* STAT CARDS */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+            marginBottom: 24,
+          }}
+        >
+          {/* Card 1 - Total Target */}
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              borderLeft: "4px solid #FF7900",
+            }}
+          >
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 8px 0" }}>
+              Total Target
+            </p>
+            <h3 style={{ fontSize: 24, fontWeight: 700, margin: "0", color: "#1f2937" }}>
+              {rows.length}
+            </h3>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "8px 0 0 0" }}>
+              Indikator Kinerja
+            </p>
+          </div>
+
+          {/* Card 2 - Sudah Dicapai */}
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              borderLeft: "4px solid #059669",
+            }}
+          >
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 8px 0" }}>
+              Sudah Dicapai
+            </p>
+            <h3 style={{ fontSize: 24, fontWeight: 700, margin: "0", color: "#1f2937" }}>
+              {rows.filter((r) => r.capaian === "100%").length}
+            </h3>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "8px 0 0 0" }}>
+              Target Tercapai
+            </p>
+          </div>
+
+          {/* Card 3 - Proses Pengerjaan */}
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              borderLeft: "4px solid #f59e0b",
+            }}
+          >
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 8px 0" }}>
+              Proses Pengerjaan
+            </p>
+            <h3 style={{ fontSize: 24, fontWeight: 700, margin: "0", color: "#1f2937" }}>
+              {rows.filter((r) => r.capaian !== "100%" && r.capaian !== "0%").length}
+            </h3>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "8px 0 0 0" }}>
+              Sedang Berjalan
+            </p>
+          </div>
+
+          {/* Card 4 - Belum Dimulai */}
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              borderLeft: "4px solid #ef4444",
+            }}
+          >
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 8px 0" }}>
+              Belum Dimulai
+            </p>
+            <h3 style={{ fontSize: 24, fontWeight: 700, margin: "0", color: "#1f2937" }}>
+              {rows.filter((r) => r.capaian === "0%").length}
+            </h3>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "8px 0 0 0" }}>
+              Menunggu Aksi
+            </p>
+          </div>
+        </div>
+
         {/* NOTIF CARD */}
         <div
           style={{
