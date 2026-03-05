@@ -7,8 +7,7 @@ const userMenu = [
   { name: 'Beranda', path: '/user/dashboard' },
   { name: 'Monitoring Unit Kerja', path: '/user/monitoring-unit-kerja' },
   { name: 'Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/iku-pk' },
-  { name: 'Validasi Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/validasi-iku-pk' },
-  { name: 'Pengajuan Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/pengajuan-iku' },
+
   { name: 'Target Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/target-iku-pk' },
 ];
 
