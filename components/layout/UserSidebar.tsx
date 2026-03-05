@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const userMenu = [
-  { name: 'Beranda', path: '/user/dashboard' },
-  { name: 'Monitoring Unit Kerja', path: '/user/monitoring-unit-kerja' },
-  { name: 'Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/iku-pk' },
-
-  { name: 'Target Indikator Kinerja Utama & Perjanjian Kerja', path: '/user/target-iku-pk' },
+  { name: 'Beranda', path: '/dashboard' },
+  { name: 'Monitoring Unit Kerja', path: '/monitoring-unit-kerja' },
+  { name: 'Indikator Kinerja Utama & Perjanjian Kerja', path: '/iku-pk' },
+  { name: 'Target Indikator Kinerja Utama & Perjanjian Kerja', path: '/target-iku-pk' },
 ];
 
 export default function UserSidebar() {
