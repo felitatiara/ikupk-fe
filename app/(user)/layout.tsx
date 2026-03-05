@@ -1,6 +1,6 @@
 'use client';
 
-import Sidebar from '@/components/layout/Sidebar';
+import UserSidebar from '@/components/layout/UserSidebar';
 import { ReactNode } from 'react';
 
 interface UserLayoutProps {
@@ -142,7 +142,7 @@ export default function UserLayout({ children }: UserLayoutProps) {
           minHeight: 'calc(100vh - 68px)',
         }}
       >
-        <Sidebar role="user" />
+        <UserSidebar />
         <main
           style={{
             flex: 1,
