@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import PageTransition from '@/components/layout/PageTransition';
-import { getTargets } from '@/lib/api';
+import { getTargets } from '@/services/targetService';
 
 interface TargetRow {
   date: string;
@@ -11,7 +11,7 @@ interface TargetRow {
   capaian: string;
 }
 
-export default function DashboardContent() {
+export default function DashboardContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
   const [user, setUser] = useState<any>(null);
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);

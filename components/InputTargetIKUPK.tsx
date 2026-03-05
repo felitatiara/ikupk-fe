@@ -1,6 +1,11 @@
 
 import React from 'react';
 
+interface InputTargetIKUPKProps {
+  apiBaseUrl?: string;
+  onClose?: () => void;
+}
+
 export default function InputTargetIKUPK({ apiBaseUrl = 'http://localhost:3000', onClose }: InputTargetIKUPKProps) {
   // Layout mirroring TargetIKUPKAdmin
   return (

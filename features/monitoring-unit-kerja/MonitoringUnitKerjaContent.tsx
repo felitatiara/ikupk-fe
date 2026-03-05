@@ -10,7 +10,7 @@ interface KinerjaRow {
   capaian: string;
 }
 
-export default function MonitoringUnitKerjaContent() {
+export default function MonitoringUnitKerjaContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
   const [user, setUser] = useState<any>(null);
   const [selectedUnit, setSelectedUnit] = useState("Fakultas Ilmu Komputer");
   const [kinerjaData, setKinerjaData] = useState<KinerjaRow[]>([

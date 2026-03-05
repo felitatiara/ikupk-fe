@@ -1,12 +1,12 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import DashboardContent from '@/features/dashboard/DashboardContent';
+import TargetIKUPKContent from '@/features/target-iku-pk/TargetIKUPKContent';
 import UserLayoutWrapper from '@/components/layout/UserLayoutWrapper';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function UserDashboardPage() {
+export default function UserTargetPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -26,7 +26,7 @@ export default function UserDashboardPage() {
 
   return (
     <UserLayoutWrapper>
-      <DashboardContent role="user" />
+      <TargetIKUPKContent role="user" />
     </UserLayoutWrapper>
   );
 }
