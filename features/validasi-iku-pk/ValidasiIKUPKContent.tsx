@@ -10,7 +10,11 @@ export interface ValidasiData {
   keterangan: string;
 }
 
-export default function ValidasiIKUPKContent() {
+interface ValidasiIKUPKContentProps {
+  role?: 'admin' | 'user';
+}
+
+export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKContentProps) {
   const [data, setData] = useState<ValidasiData[]>([
     {
       id: 1,

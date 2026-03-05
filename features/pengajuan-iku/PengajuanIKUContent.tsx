@@ -3,7 +3,11 @@
 import { useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
 
-export default function PengajuanIKUContent() {
+interface PengajuanIKUContentProps {
+  role?: 'admin' | 'user';
+}
+
+export default function PengajuanIKUContent({ role = 'user' }: PengajuanIKUContentProps) {
   const [formData, setFormData] = useState({
     nama: '',
     kode: '',

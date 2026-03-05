@@ -1,12 +1,11 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import TargetIKUPKContent from '@/features/target-iku-pk/TargetIKUPKContent';
-import UserLayoutWrapper from '@/components/layout/UserLayoutWrapper';
+import MonitoringUnitKerjaContent from '@/features/monitoring-unit-kerja/MonitoringUnitKerjaContent';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function UserTargetPage() {
+export default function Page() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -24,9 +23,5 @@ export default function UserTargetPage() {
     return null;
   }
 
-  return (
-    <UserLayoutWrapper>
-      <TargetIKUPKContent role="user" />
-    </UserLayoutWrapper>
-  );
+  return <MonitoringUnitKerjaContent role="user" />;
 }

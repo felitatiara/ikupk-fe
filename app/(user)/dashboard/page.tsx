@@ -1,12 +1,11 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import MonitoringUnitKerjaContent from '@/features/monitoring-unit-kerja/MonitoringUnitKerjaContent';
-import UserLayoutWrapper from '@/components/layout/UserLayoutWrapper';
+import DashboardContent from '@/features/dashboard/DashboardContent';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function UserMonitoringPage() {
+export default function Page() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -24,9 +23,5 @@ export default function UserMonitoringPage() {
     return null;
   }
 
-  return (
-    <UserLayoutWrapper>
-      <MonitoringUnitKerjaContent role="user" />
-    </UserLayoutWrapper>
-  );
+  return <DashboardContent role="user" />;
 }
