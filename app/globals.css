@@ -75,3 +75,9 @@ h1, h2, h3 {
   gap: 10px;
   width: 100%;
 }
+th{
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #374151;
+}

@@ -45,4 +45,3 @@ export default function Sidebar({ activeMenu, onMenuChange }: SidebarProps) {
     </aside>
   );
 }
-
