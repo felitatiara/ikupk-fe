@@ -136,46 +136,6 @@ export default function Sidebar({ role = 'user' }: SidebarProps) {
         })}
       </nav>
 
-      {/* Logout Button */}
-      <div
-        style={{
-          padding: "12px",
-          borderTop: "1px solid #e5e7eb",
-          marginTop: "auto",
-        }}
-      >
-        <button
-          onClick={() => {
-            sessionStorage.removeItem('user');
-            sessionStorage.removeItem('token');
-            window.location.href = '/auth/login';
-          }}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            fontSize: 13,
-            border: "1px solid #e5e7eb",
-            borderRadius: 6,
-            backgroundColor: "white",
-            color: "#6b7280",
-            cursor: "pointer",
-            fontWeight: 500,
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "#fee2e2";
-            e.currentTarget.style.color = "#dc2626";
-            e.currentTarget.style.borderColor = "#fecaca";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "white";
-            e.currentTarget.style.color = "#6b7280";
-            e.currentTarget.style.borderColor = "#e5e7eb";
-          }}
-        >
-          Logout
-        </button>
-      </div>
     </aside>
   );
 }
