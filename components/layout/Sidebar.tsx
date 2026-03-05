@@ -14,19 +14,18 @@ export default function Sidebar({ role = 'user' }: SidebarProps) {
     { key: "beranda", label: "Beranda", href: "/dashboard" },
     { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
     { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/iku-pk" },
-    { key: "validasi", label: "Validasi Indikator Kinerja", href: "/validasi-iku-pk" },
+    { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/validasi-iku-pk" },
+    { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/pengajuan-iku" },
     { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/target-iku-pk" },
-    { key: "pengajuan", label: "Pengajuan Indikator Kinerja", href: "/pengajuan-iku" },
   ];
 
   const getAdminMenus = () => [
     { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
     { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
     { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
-    { key: "validasi", label: "Validasi Indikator Kinerja", href: "/admin/validasi-iku-pk" },
+    { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
+    { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/pengajuan-iku" },
     { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
-    { key: "pengajuan", label: "Pengajuan Indikator Kinerja", href: "/admin/pengajuan-iku" },
-    { key: "penerbitan", label: "Penerbitan SK", href: "/admin/penerbitan-sk" },
   ];
 
   const menus = role === 'admin' ? getAdminMenus() : getUserMenus();
