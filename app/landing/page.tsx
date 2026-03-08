@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,7 +12,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.push(user?.role === 'admin' ? '/admin/dashboard' : '/dashboard');
+      router.push('/admin/dashboard');
     }
   }, [user, loading, router]);
 
@@ -29,10 +30,16 @@ export default function LandingPage() {
       <nav className="flex justify-between items-center px-8 py-4 bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #FF7900, #FF9A3C)' }}
+            className="w-10 h-10 rounded-lg bg-white border border-orange-100 p-1.5"
           >
-            IK
+            <Image
+              src="/logo-upnvj.webp"
+              alt="Logo UPN Veteran Jakarta"
+              width={28}
+              height={28}
+              className="w-full h-full object-contain"
+              priority
+            />
           </div>
           <span className="font-bold text-xl text-gray-800">IKU-PK</span>
         </div>
@@ -189,10 +196,15 @@ export default function LandingPage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white"
-                  style={{ background: 'linear-gradient(135deg, #FF7900, #FF9A3C)' }}
+                  className="w-8 h-8 rounded-lg bg-white border border-orange-100 p-1"
                 >
-                  IK
+                  <Image
+                    src="/logo-upnvj.webp"
+                    alt="Logo UPN Veteran Jakarta"
+                    width={24}
+                    height={24}
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 <span className="font-bold">IKU-PK</span>
               </div>

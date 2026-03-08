@@ -11,8 +11,7 @@ export default function Home() {
   useEffect(() => {
     if (!loading) {
       if (user) {
-        const redirectUrl = user?.role === 'admin' ? '/admin/dashboard' : '/dashboard';
-        router.push(redirectUrl);
+        router.push('/admin/dashboard');
       } else {
         router.push('/landing');
       }

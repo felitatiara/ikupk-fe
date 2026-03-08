@@ -4,20 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 interface SidebarProps {
-  role?: 'admin' | 'user';
+  role?: 'admin';
 }
 
-export default function Sidebar({ role = 'user' }: SidebarProps) {
+export default function Sidebar({ role = 'admin' }: SidebarProps) {
   const pathname = usePathname();
-
-  const getUserMenus = () => [
-    { key: "beranda", label: "Beranda", href: "/dashboard" },
-    { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
-    { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/iku-pk" },
-    { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/validasi-iku-pk" },
-    { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/pengajuan-iku" },
-    { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/target-iku-pk" },
-  ];
 
   const getAdminMenus = () => [
     { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
@@ -28,7 +19,7 @@ export default function Sidebar({ role = 'user' }: SidebarProps) {
     { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
   ];
 
-  const menus = role === 'admin' ? getAdminMenus() : getUserMenus();
+  const menus = getAdminMenus();
 
   const isCurrentPage = (href: string) => {
     return pathname === href || pathname?.startsWith(href + '/');

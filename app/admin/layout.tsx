@@ -1,15 +1,13 @@
 "use client";
 
 import Sidebar from "@/components/layout/Sidebar";
-import { useState } from "react";
+import Image from "next/image";
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [user, setUser] = useState<any>(null);
-
   return (
     <>
       {/* HEADER */}
@@ -38,38 +36,21 @@ export default function AdminLayout({
               style={{
                 width: 44,
                 height: 44,
-                backgroundColor: "white",
-                borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontWeight: "bold",
-                fontSize: 20,
-                color: "#FF7900",
                 position: "relative",
               }}
             >
-              UPN
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: -2,
-                  right: -2,
-                  width: 16,
-                  height: 16,
-                  backgroundColor: "#059669",
-                  borderRadius: "50%",
-                  border: "2px solid white",
-                  fontSize: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "white",
-                  fontWeight: "bold",
-                }}
-              >
-                ✓
-              </div>
+              <Image
+                src="/logo-upnvj.webp"
+                alt="Logo UPN Veteran Jakarta"
+                width={44}
+                height={44}
+                sizes="44px"
+                style={{ objectFit: "contain" }}
+                priority
+              />
             </div>
             <div>
               <p style={{ fontWeight: 700, fontSize: 14, margin: 0, lineHeight: 1.3 }}>
@@ -149,7 +130,7 @@ export default function AdminLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar role="admin" />
+        <Sidebar />
         <main
           style={{
             flex: 1,
