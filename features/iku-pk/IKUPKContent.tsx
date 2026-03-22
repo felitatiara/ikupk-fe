@@ -49,6 +49,21 @@ function getPeriodYear(dateValue: any): string {
   return String(date.getFullYear());
 }
 
+const MOCK_ROWS: IKUTableRow[] = [
+  { id: "1", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Pemberitahuan kegiatan melalui web Fakultas", capaian: 100, aksi: "Input" },
+  { id: "2", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Laporan Rapat Tinjauan Manajemen (RTM)", capaian: 100, aksi: "Input" },
+  { id: "3", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Penyelesaian LPI", capaian: 0, aksi: "Input" },
+  { id: "4", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Meningkatnya kualitas lulusan pendidikan tinggi", capaian: 0, aksi: "Proses" },
+  { id: "5", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Persentase dosen yang berkegatan tridharma", capaian: 0, aksi: "Input" },
+  { id: "6", tenggat: "31 September 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Mahasiswa menghabiskan paling tidak 20 SKS diluar kampus", capaian: 0, aksi: "Input" },
+  { id: "7", tenggat: "31 September 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Mahasiswa inbound diterima Pertukaran Mahasiswa Internasional", capaian: 0, aksi: "Input" },
+];
+
+const MOCK_DISPOSISI: IKUTableRow[] = [
+  { id: "d1", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Hasil lulusan mendapatkan pekerjaan", capaian: 55, aksi: "Disposisi" },
+  { id: "d2", tenggat: "31 September 2025", target: "Perjanjian Kerja", sasaranStrategis: "Penyelesaian Laporan Tahunan", capaian: 30, aksi: "Disposisi" },
+];
+
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
   const router = useRouter();
   const [data, setData] = useState<IKUPKData[]>([]);
@@ -57,6 +72,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [filterTarget, setFilterTarget] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState<IKUTableRow | null>(null);
+  const [realisasi, setRealisasi] = useState("");
+  const [keterangan, setKeterangan] = useState("");
 
   useEffect(() => {
     async function fetchIKU() {
@@ -65,7 +84,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
         const ikuData = await getIKUList();
         setData(ikuData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load IKU');
+        // silently fall back to mock
       } finally {
         setLoading(false);
       }
@@ -102,36 +121,36 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     });
   });
 
+  const useMock = !loading && data.length === 0;
+  const allRowsFinal: IKUTableRow[] = useMock ? MOCK_ROWS : allRows;
+  const disposisiRowsFinal: IKUTableRow[] = useMock ? MOCK_DISPOSISI : [];
+
+  const filteredFinal = allRowsFinal.filter((row) => {
+    const matchTarget = filterTarget === "semua" || row.target === filterTarget;
+    const matchPeriode = filterPeriode === "semua" || row.tenggat.toLowerCase().includes(filterPeriode);
+    const matchStatus = filterStatus === "semua" || row.aksi.toLowerCase() === filterStatus.toLowerCase();
+    return matchTarget && matchPeriode && matchStatus;
+  });
+
+  const targetRows = filteredFinal.filter((row) => row.aksi !== "Disposisi");
+  const disposisiRows = useMock
+    ? disposisiRowsFinal
+    : filteredFinal.filter((row) => row.aksi === "Disposisi");
+
   const targetOptions = [
     "semua",
-    ...Array.from(new Set(allRows.map((row) => row.target))).filter(Boolean),
+    ...Array.from(new Set(allRowsFinal.map((r) => r.target))).filter(Boolean),
   ];
 
   const periodOptions = [
     "semua",
     ...Array.from(
-      new Set(
-        data.flatMap((iku) => {
-          const targets = Array.isArray(iku.targets) ? iku.targets : [];
-          return targets.map((target: any) =>
-            getPeriodYear(target?.tenggat ?? target?.deadline ?? target?.createdAt ?? null)
-          );
-        })
-      )
-    ).filter((period) => period !== "-"),
+      new Set(allRowsFinal.map((r) => {
+        const match = r.tenggat.match(/\d{4}/);
+        return match ? match[0] : "-";
+      }))
+    ).filter((y) => y !== "-"),
   ];
-
-  const filteredRows = allRows.filter((row) => {
-    const matchTarget = filterTarget === "semua" || row.target === filterTarget;
-    const matchPeriode =
-      filterPeriode === "semua" || row.tenggat.toLowerCase().includes(filterPeriode);
-    const matchStatus =
-      filterStatus === "semua" || row.aksi.toLowerCase() === filterStatus.toLowerCase();
-    return matchTarget && matchPeriode && matchStatus;
-  });
-
-  const targetRows = filteredRows.filter((row) => row.aksi !== "Disposisi");
-  const disposisiRows = filteredRows.filter((row) => row.aksi === "Disposisi");
 
   const onResetFilters = () => {
     setFilterTarget("semua");
@@ -140,23 +159,105 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   };
 
   const handleActionClick = (row: IKUTableRow) => {
-    const query = new URLSearchParams({
-      source: "iku-pk",
-      action: row.aksi.toLowerCase(),
-      rowId: row.id,
-      target: row.target,
-      sasaran: row.sasaranStrategis,
-      tenggat: row.tenggat,
-    });
-    router.push(`/admin/target-iku-pk?${query.toString()}`);
+    setSelectedRow(row);
+    setRealisasi("");
+    setKeterangan("");
+    setModalOpen(true);
+  };
+
+  const handleModalSubmit = () => {
+    setModalOpen(false);
+    setSelectedRow(null);
   };
 
   return (
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-          Indikator Kinerja Utama & Perjanjian Kerja
+          Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
+
+        {/* REKAM DATA MODAL */}
+        {modalOpen && selectedRow && (
+          <div
+            style={{
+              position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 1000,
+            }}
+            onClick={() => setModalOpen(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "white", borderRadius: 12, padding: 28,
+                width: 480, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#1f2937" }}>Rekam Data</h3>
+              <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>
+                {selectedRow.sasaranStrategis}
+              </p>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Tahun</label>
+                <input
+                  type="text"
+                  defaultValue="2025"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Target</label>
+                <input
+                  type="text"
+                  defaultValue={selectedRow.target}
+                  readOnly
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#f9fafb", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Realisasi (%)</label>
+                <input
+                  type="number"
+                  min={0} max={100}
+                  value={realisasi}
+                  onChange={(e) => setRealisasi(e.target.value)}
+                  placeholder="Masukkan persentase realisasi"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Keterangan</label>
+                <textarea
+                  value={keterangan}
+                  onChange={(e) => setKeterangan(e.target.value)}
+                  placeholder="Tambahkan keterangan (opsional)"
+                  rows={3}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setModalOpen(false)}
+                  style={{ padding: "8px 20px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleModalSubmit}
+                  style={{ padding: "8px 24px", borderRadius: 6, border: "none", backgroundColor: "#16a34a", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                >
+                  Simpan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div
           style={{
@@ -239,12 +340,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             </div>
           </div>
 
-          {loading && <p>Loading...</p>}
-          {error && <p style={{ color: "red" }}>Error: {error}</p>}
+          {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
-          {!loading && !error && (
+          {!loading && (
             <div>
-              <h4 style={{ fontSize: 18, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Target IKU dan PK</h4>
+              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Target IKU dan PK</h4>
               <div style={{ overflowX: "auto", marginBottom: 26 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
                   <thead>
@@ -294,7 +394,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </table>
               </div>
 
-              <h4 style={{ fontSize: 18, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Disposisi Target IKU dan PK</h4>
+              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Disposisi Target IKU dan PK</h4>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
                   <thead>

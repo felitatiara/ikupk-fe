@@ -24,7 +24,11 @@ export default function LoginPage() {
       if (user) {
         sessionStorage.setItem('user', JSON.stringify(user));
         sessionStorage.setItem('token', access as string);
-        router.push('/admin/dashboard');
+        if (user.role === 'admin' || user.role === 'pku') {
+          router.push('/admin/dashboard');
+        } else {
+          router.push('/user/dashboard');
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login error');

@@ -4,22 +4,34 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 interface SidebarProps {
-  role?: 'admin';
+  role?: 'admin' | 'user';
 }
 
 export default function Sidebar({ role = 'admin' }: SidebarProps) {
   const pathname = usePathname();
 
-  const getAdminMenus = () => [
-    { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-    { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
-    { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
-    { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
-    { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/pengajuan-iku" },
-    { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
-  ];
+  const getMenus = () => {
+    if (role === 'user') {
+      return [
+        { key: "beranda", label: "Beranda", href: "/user/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/user/iku-pk" },
+        { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/user/targets" },
+      ];
+    }
+    
+    // Admin menus
+    return [
+      { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
+      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
+      { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
+      { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
+      { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/pengajuan-iku" },
+      { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
+    ];
+  };
 
-  const menus = getAdminMenus();
+  const menus = getMenus();
 
   const isCurrentPage = (href: string) => {
     return pathname === href || pathname?.startsWith(href + '/');
@@ -76,6 +88,18 @@ export default function Sidebar({ role = 'admin' }: SidebarProps) {
             }}
           >
             Dashboard Admin
+          </div>
+        )}
+        {role === 'user' && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "#FF7900",
+              marginTop: 6,
+              fontWeight: 600,
+            }}
+          >
+            Dashboard User
           </div>
         )}
       </div>

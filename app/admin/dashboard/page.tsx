@@ -1,5 +1,5 @@
-import DashboardContent from '@/features/dashboard/DashboardContent';
+import AdminDashboardContent from '@/features/dashboard/AdminDashboardContent';
 
 export default function AdminDashboardPage() {
-  return <DashboardContent role="admin" />;
+  return <AdminDashboardContent />;
 }
