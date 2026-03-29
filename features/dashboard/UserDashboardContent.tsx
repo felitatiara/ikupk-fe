@@ -2,65 +2,23 @@
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
-import { getTargets } from "@/services/targetService";
+import { getIkuPk } from '@/lib/api';
+import type { IkuPkRow } from '@/lib/api';
 
 interface TargetRow {
-  date: string;
-  title: string;
-  sasaran: string;
-  capaian: string;
+  id: number;
+  tenggat: string;
+  target: string;
+  sasaranStrategis: string;
+  capaian: number;
+  targetUniversitas: number;
+  aksi: "Input" | "Proses";
 }
 
 export default function UserDashboardContent() {
   const [user, setUser] = useState<any>(null);
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const mockData: TargetRow[] = [
-    {
-      date: '02 Januari 2025',
-      title: 'Perjanjian Kerja',
-      sasaran: 'Pemberitahuan kegiatan melalui web Fakultas',
-      capaian: '100%',
-    },
-    {
-      date: '02 Januari 2025',
-      title: 'Perjanjian Kerja',
-      sasaran: 'Laporan Rapat Tinjauan Manajemen (RTM)',
-      capaian: '100%',
-    },
-    {
-      date: '02 Januari 2025',
-      title: 'Perjanjian Kerja',
-      sasaran: 'Penyelesaian LPI',
-      capaian: '0%',
-    },
-    {
-      date: '31 Maret 2025',
-      title: 'Indikator Kinerja Utama',
-      sasaran: 'Meningkatnya kualitas lulusan pendidikan tinggi',
-      capaian: '0%',
-    },
-    {
-      date: '31 Maret 2025',
-      title: 'Indikator Kinerja Utama',
-      sasaran: 'Persentase dosen yang berkegatan tridharma',
-      capaian: '0%',
-    },
-    {
-      date: '31 September 2025',
-      title: 'Indikator Kinerja Utama',
-      sasaran: 'Mahasiswa menghubiskan paling tidak 20 SKS diluar kampus',
-      capaian: '0%',
-    },
-    {
-      date: '31 September 2025',
-      title: 'Indikator Kinerja Utama',
-      sasaran: 'Mahasiswa inbound diterima Pertukaran Mahasiswa Internasional',
-      capaian: '0%',
-    },
-  ];
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user");
@@ -75,14 +33,18 @@ export default function UserDashboardContent() {
     async function fetchTargets() {
       try {
         setLoading(true);
-        setError(null);
-        const data = await getTargets();
-        // Use mock data if API returns empty array
-        setRows(data && data.length > 0 ? data : mockData);
-      } catch (err) {
-        // Use mock data on error
-        setRows(mockData);
-        setError(null);
+        const data: IkuPkRow[] = await getIkuPk(user.unitId);
+        setRows(data.map((item) => ({
+          id: item.id,
+          tenggat: item.tahun,
+          target: item.target,
+          sasaranStrategis: item.sasaranStrategis,
+          capaian: item.capaian,
+          targetUniversitas: item.targetUniversitas,
+          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+        })));
+      } catch {
+        setRows([]);
       } finally {
         setLoading(false);
       }
@@ -166,130 +128,58 @@ export default function UserDashboardContent() {
             Target IKU dan PK
           </h3>
 
-          {loading && <p style={{ color: "#9ca3af", padding: "24px" }}>Loading targets...</p>}
-          {error && <p style={{ color: "red", padding: "24px" }}>Error: {error}</p>}
+          {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
-          {!loading && !error && rows.length === 0 && (
-            <p style={{ color: "#9ca3af", padding: "24px", textAlign: "center" }}>
-              Tidak ada data target
-            </p>
-          )}
-
-          {!loading && !error && rows.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: 14,
-                }}
-              >
-                <thead>
-                  <tr
-                    style={{
-                      backgroundColor: "#f9fafb",
-                      borderBottom: "2px solid #e5e7eb",
-                    }}
-                  >
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "#374151",
-                      }}
-                    >
-                      Tenggat
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "#374151",
-                      }}
-                    >
-                      Target
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "#374151",
-                      }}
-                    >
-                      Sasaran Strategis
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "center",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "#374151",
-                      }}
-                    >
-                      Capaian
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "center",
-                        padding: "12px 16px",
-                        fontWeight: 600,
-                        color: "#374151",
-                      }}
-                    >
-                      Aksi
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <tr
-                      key={index}
-                      style={{
-                        borderBottom: "1px solid #e5e7eb",
-                      }}
-                    >
-                      <td style={{ padding: "16px", color: "#0284c7", fontWeight: 600 }}>
-                        {row.date}
-                      </td>
-                      <td style={{ padding: "16px", color: "#374151" }}>
-                        {row.title}
-                      </td>
-                      <td style={{ padding: "16px", color: "#374151" }}>
-                        {row.sasaran}
-                      </td>
-                      <td
-                        style={{
-                          padding: "16px",
-                          textAlign: "center",
-                          color: "#374151",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {row.capaian}
-                      </td>
-                      <td style={{ padding: "16px", textAlign: "center" }}>
-                        <button
-                          style={{
-                            backgroundColor: row.capaian === "0%" ? "#fff7ed" : "#ecfdf5",
-                            color: row.capaian === "0%" ? "#d97706" : "#059669",
-                            padding: "6px 12px",
-                            borderRadius: 6,
-                            border: row.capaian === "0%" ? "1px solid #fed7aa" : "1px solid #d1fae5",
-                            cursor: "pointer",
-                            fontSize: 12,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {row.capaian === "0%" ? "Proses" : "Input"}
-                        </button>
-                      </td>
+          {!loading && (
+            <div>
+              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Target IKU dan PK</h4>
+              <div style={{ overflowX: "auto", marginBottom: 26 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f9fafb" }}>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Tenggat</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rows.length > 0 ? (
+                      rows.map((row) => (
+                        <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
+                          <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
+                          <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            <button
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 4,
+                                border: "1px solid #86efac",
+                                backgroundColor: "#ecfdf5",
+                                color: "#16a34a",
+                                fontWeight: 700,
+                                fontSize: 11,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {row.aksi}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
+                          Tidak ada data target
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

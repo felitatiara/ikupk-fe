@@ -27,14 +27,14 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [realisasi, setRealisasi] = useState("");
   const [keterangan, setKeterangan] = useState("");
 
-  // admin unit_id = 4
-  const unitId = 4;
-
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        const data: IkuPkRow[] = await getIkuPk(unitId);
+        const userStr = sessionStorage.getItem("user");
+        if (!userStr) return;
+        const user = JSON.parse(userStr);
+        const data: IkuPkRow[] = await getIkuPk(user.unitId);
         setRows(data.map((item) => ({
           id: item.id,
           tenggat: item.tahun,
