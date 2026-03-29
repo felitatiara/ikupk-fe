@@ -1,5 +1,32 @@
 const API_BASE_URL = 'http://localhost:4000';
 
+export interface Indikator {
+  id: number;
+  nama: string;
+  parentId: number | null;
+  level?: number;
+  jenis: string;
+  kode: string;
+}
+
+export interface Kriteria {
+  id: number;
+  nama: string;
+  indikatorId: number;
+}
+
+export async function getIndikator(): Promise<Indikator[]> {
+  const response = await fetch(`${API_BASE_URL}/indikator`);
+  if (!response.ok) throw new Error('Failed to fetch indikator');
+  return response.json();
+}
+
+export async function getKriteria(): Promise<Kriteria[]> {
+  const response = await fetch(`${API_BASE_URL}/kriteria`);
+  if (!response.ok) throw new Error('Failed to fetch kriteria');
+  return response.json();
+}
+
 export interface TargetRow {
   date: string;
   title: string;
@@ -17,6 +44,58 @@ export interface TargetDetail {
   tahun: string;
   targetAngka: number;
 }
+export interface BaselineData {
+  id: number;
+  indikatorId: number;
+  unitId: number;
+  tahun: string;
+  jenisData: string;
+  jumlah: number;
+  createdAt: string;
+}
+
+export async function getBaselineDataByIndikatorAndUnit(indikatorId: number, unitId: number): Promise<BaselineData[]> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data?indikatorId=${indikatorId}&unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch baseline data');
+  return response.json();
+}
+
+export interface Unit {
+  id: number;
+  nama: string;
+  jenis: string | null;
+  parentId: number | null;
+}
+
+export async function getUnits(): Promise<Unit[]> {
+  const response = await fetch(`${API_BASE_URL}/units`);
+  if (!response.ok) throw new Error('Failed to fetch units');
+  return response.json();
+}
+
+export interface TargetUniversitasData {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  targetAngka: number;
+}
+
+export async function getTargetUniversitas(indikatorId: number, tahun: string): Promise<TargetUniversitasData | null> {
+  const response = await fetch(`${API_BASE_URL}/target-universitas?indikatorId=${indikatorId}&tahun=${tahun}`);
+  if (!response.ok) throw new Error('Failed to fetch target universitas');
+  return response.json();
+}
+
+export async function saveTargetUniversitas(indikatorId: number, tahun: string, targetAngka: number): Promise<TargetUniversitasData> {
+  const response = await fetch(`${API_BASE_URL}/target-universitas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ indikatorId, tahun, targetAngka }),
+  });
+  if (!response.ok) throw new Error('Failed to save target universitas');
+  return response.json();
+}
+
 
 export async function login(email: string, password: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -46,5 +125,50 @@ export async function getTargetsByUnit(unitId: number): Promise<TargetDetail[]> 
 export async function getTargetsForAdminPKU(): Promise<any[]> {
   const response = await fetch(`${API_BASE_URL}/targets/admin/pku`);
   if (!response.ok) throw new Error('Failed to fetch targets for admin PKU');
+  return response.json();
+}
+
+export async function createTarget(data: { indikatorId: number; unitId: number; tahun: string; targetAngka: number; targetUniversitas?: number | null }): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/targets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create target');
+  return response.json();
+}
+
+export interface PengajuanRow {
+  id: number;
+  unitKerja: string;
+  waktuPengajuan: string;
+  target: string;
+  sasaranStrategis: string;
+  targetAngka: number;
+  targetUniversitas: number | null;
+  tahun: string;
+}
+
+export async function getPengajuan(): Promise<PengajuanRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/pengajuan`);
+  if (!response.ok) throw new Error('Failed to fetch pengajuan');
+  return response.json();
+}
+
+export interface IkuPkRow {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  target: string;
+  sasaranStrategis: string;
+  targetUniversitas: number;
+  capaian: number;
+  tenggat: string;
+  unitId: number | null;
+}
+
+export async function getIkuPk(unitId: number): Promise<IkuPkRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/iku-pk?unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch iku-pk');
   return response.json();
 }

@@ -2,73 +2,23 @@
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
-import { getIKUList } from "@/services/ikuService";
-import { useRouter } from "next/navigation";
-
-export interface IKUPKData {
-  id: number;
-  nama: string;
-  kode: string;
-  jenis: string;
-  targets: any[];
-}
+import { getIkuPk } from "../../lib/api";
+import type { IkuPkRow } from "../../lib/api";
 
 interface IKUTableRow {
-  id: string;
+  id: number;
   tenggat: string;
   target: string;
   sasaranStrategis: string;
   capaian: number;
-  aksi: "Input" | "Proses" | "Disposisi";
+  targetUniversitas: number;
+  aksi: "Input" | "Proses";
 }
 
-function parseCapaian(value: any): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number.parseFloat(value.replace("%", "").trim());
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
-function toLabelDate(dateValue: any): string {
-  if (!dateValue) return "-";
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-}
-
-function getPeriodYear(dateValue: any): string {
-  if (!dateValue) return "-";
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return "-";
-  return String(date.getFullYear());
-}
-
-const MOCK_ROWS: IKUTableRow[] = [
-  { id: "1", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Pemberitahuan kegiatan melalui web Fakultas", capaian: 100, aksi: "Input" },
-  { id: "2", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Laporan Rapat Tinjauan Manajemen (RTM)", capaian: 100, aksi: "Input" },
-  { id: "3", tenggat: "02 Januari 2025", target: "Perjanjian Kerja", sasaranStrategis: "Penyelesaian LPI", capaian: 0, aksi: "Input" },
-  { id: "4", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Meningkatnya kualitas lulusan pendidikan tinggi", capaian: 0, aksi: "Proses" },
-  { id: "5", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Persentase dosen yang berkegatan tridharma", capaian: 0, aksi: "Input" },
-  { id: "6", tenggat: "31 September 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Mahasiswa menghabiskan paling tidak 20 SKS diluar kampus", capaian: 0, aksi: "Input" },
-  { id: "7", tenggat: "31 September 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Mahasiswa inbound diterima Pertukaran Mahasiswa Internasional", capaian: 0, aksi: "Input" },
-];
-
-const MOCK_DISPOSISI: IKUTableRow[] = [
-  { id: "d1", tenggat: "31 Maret 2025", target: "Indikator Kinerja Utama", sasaranStrategis: "Hasil lulusan mendapatkan pekerjaan", capaian: 55, aksi: "Disposisi" },
-  { id: "d2", tenggat: "31 September 2025", target: "Perjanjian Kerja", sasaranStrategis: "Penyelesaian Laporan Tahunan", capaian: 30, aksi: "Disposisi" },
-];
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
-  const router = useRouter();
-  const [data, setData] = useState<IKUPKData[]>([]);
+  const [rows, setRows] = useState<IKUTableRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filterTarget, setFilterTarget] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
@@ -77,75 +27,48 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [realisasi, setRealisasi] = useState("");
   const [keterangan, setKeterangan] = useState("");
 
+  // admin unit_id = 4
+  const unitId = 4;
+
   useEffect(() => {
-    async function fetchIKU() {
+    async function fetchData() {
       try {
         setLoading(true);
-        const ikuData = await getIKUList();
-        setData(ikuData);
-      } catch (err) {
-        // silently fall back to mock
+        const data: IkuPkRow[] = await getIkuPk(unitId);
+        setRows(data.map((item) => ({
+          id: item.id,
+          tenggat: item.tahun,
+          target: item.target,
+          sasaranStrategis: item.sasaranStrategis,
+          capaian: item.capaian,
+          targetUniversitas: item.targetUniversitas,
+          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+        })));
+      } catch {
+        setRows([]);
       } finally {
         setLoading(false);
       }
     }
-
-    fetchIKU();
+    fetchData();
   }, []);
 
-  const allRows: IKUTableRow[] = data.flatMap((iku) => {
-    const targets = Array.isArray(iku.targets) ? iku.targets : [];
-    return targets.map((target: any, index: number) => {
-      const tenggatRaw =
-        target?.tenggat ?? target?.deadline ?? target?.createdAt ?? target?.updatedAt ?? null;
-      const capaian = parseCapaian(
-        target?.capaianPersen ?? target?.capaian ?? target?.progress ?? 0
-      );
-      const statusRaw = String(target?.status ?? "").toLowerCase();
-
-      let aksi: IKUTableRow["aksi"] = "Input";
-      if (statusRaw.includes("disposisi")) {
-        aksi = "Disposisi";
-      } else if (capaian > 0 && capaian < 100) {
-        aksi = "Proses";
-      }
-
-      return {
-        id: `${iku.id}-${target?.id ?? index}`,
-        tenggat: toLabelDate(tenggatRaw),
-        target: iku.jenis || target?.targetNama || "Indikator Kinerja Utama",
-        sasaranStrategis: target?.sasaranStrategis || iku.nama,
-        capaian,
-        aksi,
-      };
-    });
-  });
-
-  const useMock = !loading && data.length === 0;
-  const allRowsFinal: IKUTableRow[] = useMock ? MOCK_ROWS : allRows;
-  const disposisiRowsFinal: IKUTableRow[] = useMock ? MOCK_DISPOSISI : [];
-
-  const filteredFinal = allRowsFinal.filter((row) => {
+  const filteredRows = rows.filter((row) => {
     const matchTarget = filterTarget === "semua" || row.target === filterTarget;
-    const matchPeriode = filterPeriode === "semua" || row.tenggat.toLowerCase().includes(filterPeriode);
+    const matchPeriode = filterPeriode === "semua" || row.tenggat.includes(filterPeriode);
     const matchStatus = filterStatus === "semua" || row.aksi.toLowerCase() === filterStatus.toLowerCase();
     return matchTarget && matchPeriode && matchStatus;
   });
 
-  const targetRows = filteredFinal.filter((row) => row.aksi !== "Disposisi");
-  const disposisiRows = useMock
-    ? disposisiRowsFinal
-    : filteredFinal.filter((row) => row.aksi === "Disposisi");
-
   const targetOptions = [
     "semua",
-    ...Array.from(new Set(allRowsFinal.map((r) => r.target))).filter(Boolean),
+    ...Array.from(new Set(rows.map((r) => r.target))).filter(Boolean),
   ];
 
   const periodOptions = [
     "semua",
     ...Array.from(
-      new Set(allRowsFinal.map((r) => {
+      new Set(rows.map((r) => {
         const match = r.tenggat.match(/\d{4}/);
         return match ? match[0] : "-";
       }))
@@ -357,8 +280,8 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </tr>
                   </thead>
                   <tbody>
-                    {targetRows.length > 0 ? (
-                      targetRows.map((row) => (
+                    {filteredRows.length > 0 ? (
+                      filteredRows.map((row) => (
                         <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                           <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
                           <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
@@ -407,39 +330,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </tr>
                   </thead>
                   <tbody>
-                    {disposisiRows.length > 0 ? (
-                      disposisiRows.map((row) => (
-                        <tr key={`disp-${row.id}`} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
-                          <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
-                          <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
-                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            <button
-                              onClick={() => handleActionClick(row)}
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: 4,
-                                border: "1px solid #86efac",
-                                backgroundColor: "#ecfdf5",
-                                color: "#16a34a",
-                                fontWeight: 700,
-                                fontSize: 11,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Disposisi
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
-                          Tidak ada data disposisi
-                        </td>
-                      </tr>
-                    )}
+                    <tr>
+                      <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
+                        Tidak ada data disposisi
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
