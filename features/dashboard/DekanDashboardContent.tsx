@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import PageTransition from '@/components/layout/PageTransition';
-import { getIkuPk } from '@/lib/api';
-import type { IkuPkRow } from '@/lib/api';
+import PageTransition from "@/components/layout/PageTransition";
+import { getDekanValidasi } from '@/lib/api';
+import type { DekanValidasiRow } from '@/lib/api';
 
 interface TargetRow {
   id: number;
@@ -11,11 +11,11 @@ interface TargetRow {
   target: string;
   sasaranStrategis: string;
   capaian: number;
-  targetUniversitas: number;
+  status: string;
   aksi: "Input" | "Proses";
 }
 
-export default function AdminDashboardContent() {
+export default function DekanDashboardContent() {
   const [user, setUser] = useState<any>(null);
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,14 +33,14 @@ export default function AdminDashboardContent() {
     async function fetchTargets() {
       try {
         setLoading(true);
-        const data: IkuPkRow[] = await getIkuPk(user.unitId, user.id);
+        const data: DekanValidasiRow[] = await getDekanValidasi(user.unitId);
         setRows(data.map((item) => ({
           id: item.id,
           tenggat: item.tahun,
           target: item.target,
           sasaranStrategis: item.sasaranStrategis,
           capaian: item.capaian,
-          targetUniversitas: item.targetUniversitas,
+          status: item.status,
           aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
         })));
       } catch {

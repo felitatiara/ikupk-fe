@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PageTransition from "@/components/layout/PageTransition";
+import { getRealisasiForValidasi, updateRealisasiStatus, ValidasiRow } from "@/lib/api";
 
 export interface ValidasiData {
   id: number;
@@ -17,72 +18,30 @@ interface ValidasiIKUPKContentProps {
 }
 
 export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKContentProps) {
-  const [data, setData] = useState<ValidasiData[]>([
-    {
-      id: 1,
-      tenggat: '02 Januari 2025',
-      target: 'Perjanjian Kerja',
-      sasaranStrategis: 'Pemberitaan kegiatan melalui web Fakultas',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 2,
-      tenggat: '02 Januari 2025',
-      target: 'Perjanjian Kerja',
-      sasaranStrategis: 'Laporan Rapat Tinjauan Manajemen (RTM)',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 3,
-      tenggat: '02 Januari 2025',
-      target: 'Perjanjian Kerja',
-      sasaranStrategis: 'Penyelesaian LPJ',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 4,
-      tenggat: '31 Maret 2025',
-      target: 'Indikator Kinerja Utama',
-      sasaranStrategis: 'Hasil lulusan mendapatkan pekerjaan',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 5,
-      tenggat: '31 Maret 2025',
-      target: 'Indikator Kinerja Utama',
-      sasaranStrategis: 'Persentase dosen yang berkegiatan tridharma',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 6,
-      tenggat: '31 September 2025',
-      target: 'Indikator Kinerja Utama',
-      sasaranStrategis: 'Mahasiswa menghabiskan paling tidak 20 SKS diluar kampus',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 7,
-      tenggat: '31 September 2025',
-      target: 'Indikator Kinerja Utama',
-      sasaranStrategis: 'Mahasiswa inbound diterima dalam program kampus internasional',
-      capaian: 100,
-      status: 'pending',
-    },
-    {
-      id: 8,
-      tenggat: '31 Oktober 2025',
-      target: 'Indikator Kinerja Utama',
-      sasaranStrategis: 'Persentase kerjasama penelitian dengan mitra',
-      capaian: 100,
-      status: 'pending',
-    },
-  ]);
+  const [data, setData] = useState<ValidasiData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const rows: ValidasiRow[] = await getRealisasiForValidasi();
+        const mapped: ValidasiData[] = rows.map((r) => ({
+          id: r.id,
+          tenggat: r.tahun,
+          target: r.target,
+          sasaranStrategis: r.sasaranStrategis,
+          capaian: r.realisasiAngka,
+          status: r.status === 'validated' ? 'validated' : 'pending',
+        }));
+        setData(mapped);
+      } catch (err) {
+        console.error('Failed to fetch validasi data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
 
   const [filterTarget, setFilterTarget] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
@@ -100,12 +59,17 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
     ),
   ];
 
-  const handleValidate = (id: number) => {
-    setData((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: "validated" } : item
-      )
-    );
+  const handleValidate = async (id: number) => {
+    try {
+      await updateRealisasiStatus(id, 'validated');
+      setData((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, status: "validated" } : item
+        )
+      );
+    } catch (err) {
+      console.error('Failed to validate:', err);
+    }
   };
 
   const handleResetFilter = () => {

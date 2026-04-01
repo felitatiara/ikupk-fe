@@ -4,13 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 interface SidebarProps {
-  role?: 'admin' | 'user';
+  role?: 'admin' | 'user' | 'dekan';
 }
 
 export default function Sidebar({ role = 'admin' }: SidebarProps) {
   const pathname = usePathname();
 
   const getMenus = () => {
+    if (role === 'dekan') {
+      return [
+        { key: "beranda", label: "Beranda", href: "/dekan/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/dekan/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/iku-pk" },
+        { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/validasi-iku-pk" },
+        { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/targets" },
+      ];
+    }
+
     if (role === 'user') {
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
@@ -100,6 +110,18 @@ export default function Sidebar({ role = 'admin' }: SidebarProps) {
             }}
           >
             Dashboard User
+          </div>
+        )}
+        {role === 'dekan' && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "#FF7900",
+              marginTop: 6,
+              fontWeight: 600,
+            }}
+          >
+            Dashboard Dekan
           </div>
         )}
       </div>

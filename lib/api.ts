@@ -167,8 +167,80 @@ export interface IkuPkRow {
   unitId: number | null;
 }
 
-export async function getIkuPk(unitId: number): Promise<IkuPkRow[]> {
-  const response = await fetch(`${API_BASE_URL}/targets/iku-pk?unitId=${unitId}`);
+export async function getIkuPk(unitId: number, userId?: number): Promise<IkuPkRow[]> {
+  let url = `${API_BASE_URL}/targets/iku-pk?unitId=${unitId}`;
+  if (userId) url += `&userId=${userId}`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch iku-pk');
+  return response.json();
+}
+
+export interface ValidasiRow {
+  id: number;
+  targetId: number;
+  tahun: string;
+  target: string;
+  sasaranStrategis: string;
+  realisasiAngka: number;
+  status: string;
+  createdAt: string;
+}
+
+export async function getRealisasiForValidasi(): Promise<ValidasiRow[]> {
+  const response = await fetch(`${API_BASE_URL}/realisasi/validasi`);
+  if (!response.ok) throw new Error('Failed to fetch realisasi for validasi');
+  return response.json();
+}
+
+export async function updateRealisasiStatus(id: number, status: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/realisasi/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) throw new Error('Failed to update realisasi status');
+  return response.json();
+}
+
+export interface DekanValidasiRow {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  target: string;
+  sasaranStrategis: string;
+  targetUniversitas: number;
+  capaian: number;
+  status: string;
+  createdAt: string;
+}
+
+export async function getDekanValidasi(unitId: number): Promise<DekanValidasiRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/dekan-validasi?unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch dekan validasi');
+  return response.json();
+}
+
+export async function updateTargetStatus(id: number, status: string, assignedTo?: number): Promise<any> {
+  const body: any = { status };
+  if (assignedTo !== undefined) body.assignedTo = assignedTo;
+  const response = await fetch(`${API_BASE_URL}/targets/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error('Failed to update target status');
+  return response.json();
+}
+
+export interface UnitUser {
+  id: number;
+  nama: string;
+  email: string;
+  role: string;
+}
+
+export async function getUsersByUnit(unitId: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/by-unit?unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch users by unit');
   return response.json();
 }

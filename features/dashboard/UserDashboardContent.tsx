@@ -33,7 +33,7 @@ export default function UserDashboardContent() {
     async function fetchTargets() {
       try {
         setLoading(true);
-        const data: IkuPkRow[] = await getIkuPk(user.unitId);
+        const data: IkuPkRow[] = await getIkuPk(user.unitId, user.id);
         setRows(data.map((item) => ({
           id: item.id,
           tenggat: item.tahun,

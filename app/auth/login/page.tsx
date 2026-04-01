@@ -26,6 +26,8 @@ export default function LoginPage() {
         sessionStorage.setItem('token', access as string);
         if (user.role === 'admin' || user.role === 'pku') {
           router.push('/admin/dashboard');
+        } else if (user.role === 'dekan') {
+          router.push('/dekan/dashboard');
         } else {
           router.push('/user/dashboard');
         }

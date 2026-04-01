@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
-import { getIkuPk } from "../../lib/api";
-import type { IkuPkRow } from "../../lib/api";
+import { getIkuPk, getDekanValidasi, getUsersByUnit, updateTargetStatus } from "../../lib/api";
+import type { IkuPkRow, DekanValidasiRow, UnitUser } from "../../lib/api";
 
 interface IKUTableRow {
   id: number;
@@ -16,8 +16,9 @@ interface IKUTableRow {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
+export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' }) {
   const [rows, setRows] = useState<IKUTableRow[]>([]);
+  const [disposisiRows, setDisposisiRows] = useState<IKUTableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterTarget, setFilterTarget] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
@@ -27,6 +28,13 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [realisasi, setRealisasi] = useState("");
   const [keterangan, setKeterangan] = useState("");
 
+  // Disposisi modal state (dekan only)
+  const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
+  const [disposisiRow, setDisposisiRow] = useState<IKUTableRow | null>(null);
+  const [unitUsers, setUnitUsers] = useState<UnitUser[]>([]);
+  const [selectedKategori, setSelectedKategori] = useState("Dosen");
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -34,16 +42,42 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
         const userStr = sessionStorage.getItem("user");
         if (!userStr) return;
         const user = JSON.parse(userStr);
-        const data: IkuPkRow[] = await getIkuPk(user.unitId);
-        setRows(data.map((item) => ({
-          id: item.id,
-          tenggat: item.tahun,
-          target: item.target,
-          sasaranStrategis: item.sasaranStrategis,
-          capaian: item.capaian,
-          targetUniversitas: item.targetUniversitas,
-          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-        })));
+
+        if (role === 'dekan') {
+          const [pendingData, disposisiData] = await Promise.all([
+            getDekanValidasi(user.unitId),
+            getIkuPk(user.unitId),
+          ]);
+          setRows((pendingData as DekanValidasiRow[]).map((item) => ({
+            id: item.id,
+            tenggat: item.tahun,
+            target: item.target,
+            sasaranStrategis: item.sasaranStrategis,
+            capaian: item.capaian,
+            targetUniversitas: item.targetUniversitas,
+            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+          })));
+          setDisposisiRows((disposisiData as IkuPkRow[]).map((item) => ({
+            id: item.id,
+            tenggat: item.tahun,
+            target: item.target,
+            sasaranStrategis: item.sasaranStrategis,
+            capaian: item.capaian,
+            targetUniversitas: item.targetUniversitas,
+            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+          })));
+        } else {
+          const data: IkuPkRow[] = await getIkuPk(user.unitId, user.id);
+          setRows(data.map((item) => ({
+            id: item.id,
+            tenggat: item.tahun,
+            target: item.target,
+            sasaranStrategis: item.sasaranStrategis,
+            capaian: item.capaian,
+            targetUniversitas: item.targetUniversitas,
+            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+          })));
+        }
       } catch {
         setRows([]);
       } finally {
@@ -51,7 +85,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
       }
     }
     fetchData();
-  }, []);
+  }, [role]);
 
   const filteredRows = rows.filter((row) => {
     const matchTarget = filterTarget === "semua" || row.target === filterTarget;
@@ -86,6 +120,62 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setRealisasi("");
     setKeterangan("");
     setModalOpen(true);
+  };
+
+  const handleDisposisiClick = async (row: IKUTableRow) => {
+    setDisposisiRow(row);
+    setSelectedKategori("Dosen");
+    setSelectedUserId(null);
+    try {
+      const userStr = sessionStorage.getItem("user");
+      if (!userStr) return;
+      const user = JSON.parse(userStr);
+      const users = await getUsersByUnit(user.unitId);
+      // Exclude dekan from the list
+      setUnitUsers(users.filter((u) => u.role !== 'dekan'));
+    } catch {
+      setUnitUsers([]);
+    }
+    setDisposisiModalOpen(true);
+  };
+
+  const handleDisposisiSubmit = async () => {
+    if (!disposisiRow || !selectedUserId) return;
+    try {
+      await updateTargetStatus(disposisiRow.id, 'disposisi', selectedUserId);
+      // Refresh data
+      const userStr = sessionStorage.getItem("user");
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        const [pendingData, disposisiData] = await Promise.all([
+          getDekanValidasi(user.unitId),
+          getIkuPk(user.unitId),
+        ]);
+        setRows((pendingData as DekanValidasiRow[]).map((item) => ({
+          id: item.id,
+          tenggat: item.tahun,
+          target: item.target,
+          sasaranStrategis: item.sasaranStrategis,
+          capaian: item.capaian,
+          targetUniversitas: item.targetUniversitas,
+          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+        })));
+        setDisposisiRows((disposisiData as IkuPkRow[]).map((item) => ({
+          id: item.id,
+          tenggat: item.tahun,
+          target: item.target,
+          sasaranStrategis: item.sasaranStrategis,
+          capaian: item.capaian,
+          targetUniversitas: item.targetUniversitas,
+          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
+        })));
+      }
+    } catch {
+      // handle error
+    } finally {
+      setDisposisiModalOpen(false);
+      setDisposisiRow(null);
+    }
   };
 
   const handleModalSubmit = () => {
@@ -182,6 +272,81 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           </div>
         )}
 
+        {/* DISPOSISI MODAL (dekan only) */}
+        {disposisiModalOpen && disposisiRow && (
+          <div
+            style={{
+              position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 1000,
+            }}
+            onClick={() => setDisposisiModalOpen(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "white", borderRadius: 12, padding: 28,
+                width: 480, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Pilih Kategori</label>
+                <select
+                  value={selectedKategori}
+                  onChange={(e) => { setSelectedKategori(e.target.value); setSelectedUserId(null); }}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
+                >
+                  <option value="Dosen">Dosen</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Nama</label>
+                <select
+                  value={selectedUserId ?? ""}
+                  onChange={(e) => setSelectedUserId(Number(e.target.value))}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
+                >
+                  <option value="" disabled>Pilih nama...</option>
+                  {unitUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.nama}</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedUserId && (
+                <p style={{ fontSize: 13, color: "#374151", marginBottom: 24, lineHeight: 1.5 }}>
+                  Dengan ini anda akan memberikan target perjanjian kerja kepada{" "}
+                  <strong>{unitUsers.find((u) => u.id === selectedUserId)?.nama}</strong>
+                </p>
+              )}
+
+              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                <button
+                  onClick={() => setDisposisiModalOpen(false)}
+                  style={{ padding: "8px 24px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+                >
+                  Kembali
+                </button>
+                <button
+                  onClick={handleDisposisiSubmit}
+                  disabled={!selectedUserId}
+                  style={{
+                    padding: "8px 24px", borderRadius: 6, border: "none",
+                    backgroundColor: selectedUserId ? "#16a34a" : "#9ca3af",
+                    color: "white", fontSize: 13, fontWeight: 600,
+                    cursor: selectedUserId ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Disposisi
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div
           style={{
             backgroundColor: "white",
@@ -267,7 +432,9 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
           {!loading && (
             <div>
-              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Target IKU dan PK</h4>
+              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>
+                {role === 'dekan' ? 'Disposisi Target IKU dan PK' : 'Target IKU dan PK'}
+              </h4>
               <div style={{ overflowX: "auto", marginBottom: 26 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
                   <thead>
@@ -288,21 +455,39 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                           <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
                           <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
                           <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            <button
-                              onClick={() => handleActionClick(row)}
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: 4,
-                                border: "1px solid #86efac",
-                                backgroundColor: "#ecfdf5",
-                                color: "#16a34a",
-                                fontWeight: 700,
-                                fontSize: 11,
-                                cursor: "pointer",
-                              }}
-                            >
-                              {row.aksi}
-                            </button>
+                            {role === 'dekan' ? (
+                              <button
+                                onClick={() => handleDisposisiClick(row)}
+                                style={{
+                                  padding: "4px 10px",
+                                  borderRadius: 4,
+                                  border: "1px solid #86efac",
+                                  backgroundColor: "#ecfdf5",
+                                  color: "#16a34a",
+                                  fontWeight: 700,
+                                  fontSize: 11,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Disposisi
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleActionClick(row)}
+                                style={{
+                                  padding: "4px 10px",
+                                  borderRadius: 4,
+                                  border: "1px solid #86efac",
+                                  backgroundColor: "#ecfdf5",
+                                  color: "#16a34a",
+                                  fontWeight: 700,
+                                  fontSize: 11,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {row.aksi}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -317,27 +502,61 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </table>
               </div>
 
-              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Disposisi Target IKU dan PK</h4>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
-                  <thead>
-                    <tr style={{ backgroundColor: "#f9fafb" }}>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Tenggat</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
-                        Tidak ada data disposisi
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              {role === 'dekan' && (
+                <>
+                  <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, marginTop: 32, fontWeight: 700 }}>
+                    Target IKU dan PK
+                  </h4>
+                  <div style={{ overflowX: "auto", marginBottom: 26 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                      <thead>
+                        <tr style={{ backgroundColor: "#f9fafb" }}>
+                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Tenggat</th>
+                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
+                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
+                          <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
+                          <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {disposisiRows.length > 0 ? (
+                          disposisiRows.map((row) => (
+                            <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
+                              <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
+                              <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
+                              <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
+                              <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                                <button
+                                  onClick={() => handleActionClick(row)}
+                                  style={{
+                                    padding: "4px 10px",
+                                    borderRadius: 4,
+                                    border: "1px solid #86efac",
+                                    backgroundColor: "#ecfdf5",
+                                    color: "#16a34a",
+                                    fontWeight: 700,
+                                    fontSize: 11,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {row.aksi}
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
+                              Tidak ada data target
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
