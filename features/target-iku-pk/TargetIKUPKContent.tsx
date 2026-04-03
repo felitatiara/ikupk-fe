@@ -1,343 +1,242 @@
 ﻿"use client";
 
 import { useState, useEffect } from "react";
-import { getIndikator, getKriteria, getTargets, getUnits, Indikator, Kriteria, getBaselineDataByIndikatorAndUnit, getTargetUniversitas, saveTargetUniversitas, createTarget, getAdminTargetsGrouped } from "../../lib/api";
-import type { TargetRow, Unit, AdminTargetRow } from "../../lib/api";
+import { getIndikatorGrouped, upsertTargetUniversitas } from "../../lib/api";
+import type { IndikatorGrouped } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
+import SuccessModal from "@/components/ui/SuccessModal";
 
-export interface TargetDetail {
-  id: number;
-  tenggat: string;
-  targetNama: string;
-  sasaranStrategis: string;
-  capaian: string;
-  unitNama: string;
-  tahun: string;
-  targetAngka: number;
-}
+const JENIS_OPTIONS = [
+  { value: "IKU", label: "Indikator Kinerja Utama" },
+  { value: "PK", label: "Perjanjian Kerja" },
+];
 
-export interface SubIndikatorBlock {
-  id: number;
-  indikatorId: number | null;
-  subIndikator: string;
-  kriterias: string[];
-}
+const UNIT_ID_FAKULTAS = 1;
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const JENIS_LABEL: Record<string, string> = {
-  IKU: "Indikator Kinerja Utama",
-  PK: "Perjanjian Kerja",
-};
-
 export default function TargetIKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
-  const [unitId, setUnitId] = useState<number | "">("")
-  const [targetType, setTargetType] = useState("");
-  const [nomor, setNomor] = useState("IKU 1");
-  const [indikatorKegiatan] = useState("Hasil Lulusan");
-  const [persentase, setPersentase] = useState(0);
-  const [targetUniversitas, setTargetUniversitas] = useState<number | "">("")
-
-  const [blocks, setBlocks] = useState<SubIndikatorBlock[]>([]);
-  const [indikator, setIndikator] = useState<Indikator[]>([]);
-  const [kriteria, setKriteria] = useState<Kriteria[]>([]);
-  const [targets, setTargets] = useState<TargetRow[]>([]);
-  const [baselineJumlah, setBaselineJumlah] = useState<number | null>(null);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [jenis, setJenis] = useState("IKU");
+  const [tahun, setTahun] = useState(new Date().getFullYear().toString());
+  const [data, setData] = useState<IndikatorGrouped[]>([]);
+  // kualitas state: { [indikatorId]: percentageValue }
+  const [kualitas, setKualitas] = useState<Record<number, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    getIndikator().then(setIndikator);
-    getKriteria().then(setKriteria);
-    getTargets().then(setTargets);
-    getUnits().then(setUnits);
-  }, []);
-
-  useEffect(() => {
-    const selectedIndikator = indikator.find(i => i.level === 1 && i.jenis === targetType && i.kode === nomor);
-    if (selectedIndikator && unitId !== "") {
-      getBaselineDataByIndikatorAndUnit(selectedIndikator.id, unitId)
-        .then(data => setBaselineJumlah(data.length > 0 ? data[0].jumlah : null))
-        .catch(() => setBaselineJumlah(null));
-    } else {
-      setBaselineJumlah(null);
-    }
-  }, [indikator, nomor, targetType, unitId]);
-
-  // Fetch existing target universitas when nomor changes
-  useEffect(() => {
-    const selectedIndikator = indikator.find(i => i.level === 1 && i.jenis === targetType && i.kode === nomor);
-    if (selectedIndikator) {
-      const tahun = new Date().getFullYear().toString();
-      getTargetUniversitas(selectedIndikator.id, tahun)
-        .then(data => setTargetUniversitas(data ? Number(data.targetAngka) : ""))
-        .catch(() => setTargetUniversitas(""));
-    } else {
-      setTargetUniversitas("");
-    }
-  }, [indikator, nomor, targetType]);
-
-  useEffect(() => {
-    if (indikator.length > 0 && kriteria.length > 0 && targets.length > 0 && blocks.length === 0) {
-      setBlocks([{ id: 1, indikatorId: null, subIndikator: "", kriterias: [] }]);
-    }
-  }, [indikator, kriteria, targets, blocks.length]);
-
-  const updateKriteria = (blockId: number, index: number, value: string) => {
-    setBlocks((prev) =>
-      prev.map((block) => {
-        if (block.id !== blockId) return block;
-        const next = [...block.kriterias];
-        next[index] = value;
-        return { ...block, kriterias: next };
+    if (!jenis) return;
+    let cancelled = false;
+    getIndikatorGrouped(jenis, tahun)
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+        // Initialize kualitas from existing target_universitas
+        const init: Record<number, string> = {};
+        for (const g of d) {
+          if (g.targetUniversitas !== null && g.baselineJumlah && g.baselineJumlah > 0) {
+            const pct = (g.targetUniversitas / g.baselineJumlah) * 100;
+            init[g.id] = String(Math.round(pct * 100) / 100);
+          } else {
+            init[g.id] = "";
+          }
+        }
+        setKualitas(init);
       })
-    );
+      .catch(() => { if (!cancelled) setData([]); });
+    return () => { cancelled = true; };
+  }, [jenis, tahun]);
+
+  const getKuantitas = (group: IndikatorGrouped): number | null => {
+    const pct = parseFloat(kualitas[group.id] || "");
+    if (isNaN(pct) || group.baselineJumlah === null || group.baselineJumlah === undefined) return null;
+    return Math.round((pct / 100) * group.baselineJumlah);
   };
 
-  const addKriteria = (blockId: number) => {
-    setBlocks((prev) =>
-      prev.map((block) => {
-        if (block.id !== blockId) return block;
-        const newKriteria = kriteria && kriteria.length > 0 ? kriteria[0].nama : "Tanpa Kriteria";
-        return { ...block, kriterias: [...block.kriterias, newKriteria] };
-      })
-    );
-  };
-
-  const removeKriteria = (blockId: number, index: number) => {
-    setBlocks((prev) =>
-      prev.map((block) => {
-        if (block.id !== blockId) return block;
-        if (block.kriterias.length <= 1) return block;
-        return { ...block, kriterias: block.kriterias.filter((_, i) => i !== index) };
-      })
-    );
-  };
-
-  const addSubIndikator = () => {
-    const newId = blocks.length > 0 ? Math.max(...blocks.map(b => b.id)) + 1 : 1;
-    setBlocks((prev) => [...prev, { id: newId, indikatorId: null, subIndikator: "", kriterias: [""] }]);
-  };
-
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async () => {
-    const selectedIndikator = indikator.find(i => i.level === 1 && i.jenis === targetType && i.kode === nomor);
-    if (!selectedIndikator) {
-      alert("Pilih Nomor terlebih dahulu");
-      return;
-    }
-    if (targetUniversitas === "") {
-      alert("Masukkan Target Universitas");
-      return;
-    }
-    if (unitId === "") {
-      alert("Pilih Unit terlebih dahulu");
-      return;
-    }
-    const selectedBlocks = blocks.filter(b => b.indikatorId !== null);
-    if (selectedBlocks.length === 0) {
-      alert("Pilih minimal satu Sub Indikator Kinerja Kegiatan");
-      return;
-    }
-    setSubmitting(true);
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      const tahun = new Date().getFullYear().toString();
-      // Save target universitas
-      await saveTargetUniversitas(selectedIndikator.id, tahun, targetUniversitas);
-      // Save each sub indikator to target table
-      for (const block of selectedBlocks) {
-        await createTarget({
-          indikatorId: block.indikatorId!,
-          unitId: unitId as number,
-          tahun,
-          targetAngka: 0,
-          targetUniversitas: targetUniversitas as number,
-        });
+      for (const group of data) {
+        const kuantitas = getKuantitas(group);
+        if (kuantitas === null) continue;
+        await upsertTargetUniversitas(group.id, UNIT_ID_FAKULTAS, tahun, kuantitas);
       }
-      alert("Data berhasil disimpan");
-    } catch (err) {
-      console.error("Submit error:", err);
-      alert("Gagal menyimpan data: " + (err instanceof Error ? err.message : String(err)));
+      // Refresh data
+      const d = await getIndikatorGrouped(jenis, tahun);
+      setData(d);
+      setShowSuccess(true);
+    } catch {
+      alert("Gagal menyimpan data");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
+  };
+
+  // Build flat rows for the table
+  const buildRows = (group: IndikatorGrouped) => {
+    const rows: { kode: string; nama: string; level: number }[] = [];
+    for (const sub of group.subIndikators) {
+      rows.push({ kode: sub.kode, nama: sub.nama, level: 1 });
+      for (const child of sub.children) {
+        rows.push({ kode: child.kode, nama: child.nama, level: 2 });
+      }
+    }
+    return rows;
   };
 
   return (
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 12, fontWeight: 600, marginBottom: 14 }}>
-          Target Indikator Kinerja Utama &amp; Perjanjian Kerja &nbsp; &gt; &nbsp; Pengajuan Target
+          Target Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
         <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937" }}>
-            Pengajuan Target
+            Target Indikator Kinerja Utama &amp; Perjanjian Kerja
           </h3>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
-             <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Unit</label>
-              <select
-                value={unitId}
-                onChange={(e) => setUnitId(e.target.value === "" ? "" : Number(e.target.value))}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
-              >
-                <option value="">Pilih Unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nama}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
             <div>
               <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
               <select
-                value={targetType}
-                onChange={(e) => setTargetType(e.target.value)}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                value={jenis}
+                onChange={(e) => setJenis(e.target.value)}
+                style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
               >
-                <option value="">Pilih Target</option>
-                {[...new Set(indikator.map(i => i.jenis))].map((jenis) => (
-                  <option key={jenis} value={jenis}>
-                    {JENIS_LABEL[jenis] || jenis}
-                  </option>
+                {JENIS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
             <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Nomor</label>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
               <select
-                value={nomor}
-                onChange={(e) => setNomor(e.target.value)}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                value={tahun}
+                onChange={(e) => setTahun(e.target.value)}
+                style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
               >
-                <option value="">Pilih Nomor</option>
-                {indikator
-                  .filter(i => i.level === 1 && i.jenis === targetType)
-                  .map((i) => (
-                    <option key={i.id} value={i.kode}>{i.kode}</option>
-                  ))}
+                {["2024", "2025", "2026", "2027"].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Sasaran Strategis</label>
-              <input
-                value={(() => {
-                  const selected = indikator.find(i => i.level === 1 && i.jenis === targetType && i.kode === nomor);
-                  return selected ? selected.nama : "";
-                })()}
-                readOnly
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151", backgroundColor: "#f3f4f6" }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target Universitas</label>
-              <input
-                type="number"
-                value={targetUniversitas}
-                onChange={e => setTargetUniversitas(e.target.value === "" ? "" : Number(e.target.value))}
-                placeholder="Masukkan target universitas (%)"
-                min={0}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
-              />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Jumlah Target</label>
-              <input
-                value={baselineJumlah !== null && targetUniversitas !== "" ? targetUniversitas * baselineJumlah / 100 : ""}
-                readOnly
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151", backgroundColor: "#f3f4f6" }}
-              />
-            </div>
-          </div>
-
-          {blocks.map((block) => (
-            <div key={block.id} style={{ borderTop: "1px solid #e5e7eb", paddingTop: 12, marginTop: 10 }}>
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#374151", fontWeight: 700 }}>
-                  Sub Indikator Kinerja Kegiatan
-                </label>
-                <select
-                  value={block.subIndikator}
-                  onChange={(e) => {
-                    const selectedSub = indikator.find(i => i.level === 3 && i.nama === e.target.value);
-                    setBlocks((prev) =>
-                      prev.map((item) =>
-                        item.id === block.id ? { ...item, subIndikator: e.target.value, indikatorId: selectedSub ? selectedSub.id : null, kriterias: [""] } : item
-                      )
-                    );
-                  }}
-                  style={{ width: "100%", maxWidth: 560, border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#374151" }}
-                >
-                  <option value="">Pilih Sub Indikator</option>
-                  {indikator
-                    .filter(i => i.level === 3 && i.jenis === targetType)
-                    .map((i) => (
-                      <option key={i.id} value={i.nama}>{i.nama}</option>
-                    ))}
-                </select>
-              </div>
-
-              {block.indikatorId && (
-                <>
-                  <label style={{ display: "block", fontSize: 11, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Kriteria</label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {kriteria
-                      .filter(k => k.indikatorId === block.indikatorId)
-                      .map((k) => (
-                        <div key={k.id} style={{ padding: "8px 12px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12, color: "#374151", backgroundColor: "#f9fafb" }}>
-                          {k.nama}
-                        </div>
-                      ))}
-                    {kriteria.filter(k => k.indikatorId === block.indikatorId).length === 0 && (
-                      <div style={{ padding: "8px 12px", fontSize: 12, color: "#9ca3af", fontStyle: "italic" }}>
-                        Belum ada kriteria
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-
-          <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
             <button
-              type="button"
-              onClick={addSubIndikator}
-              style={{ border: "none", background: "transparent", fontSize: 22, cursor: "pointer", color: "#111827", lineHeight: 1 }}
-              title="Tambah Sub Indikator"
-            >
-              +
-            </button>
-          </div>
-
-          <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={submitting}
+              onClick={handleSave}
+              disabled={saving}
               style={{
-                backgroundColor: submitting ? "#9ca3af" : "#FF7900",
+                backgroundColor: saving ? "#9ca3af" : "#e97a1f",
                 color: "white",
                 border: "none",
-                borderRadius: 8,
-                padding: "10px 28px",
-                fontSize: 14,
+                borderRadius: 6,
+                padding: "8px 20px",
+                fontSize: 13,
                 fontWeight: 600,
-                cursor: submitting ? "not-allowed" : "pointer",
+                cursor: saving ? "not-allowed" : "pointer",
               }}
             >
-              {submitting ? "Menyimpan..." : "Submit"}
+              {saving ? "Menyimpan..." : "Simpan"}
             </button>
           </div>
+
+          {data.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
+                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
+                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
+                    <th colSpan={3} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas</th>
+                  </tr>
+                  <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kualitas</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Jangka</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((group, groupIdx) => {
+                    const allRows = buildRows(group);
+                    const totalRowSpan = allRows.length;
+                    const kuantitas = getKuantitas(group);
+
+                    return allRows.map((row, rowIdx) => (
+                      <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                        {rowIdx === 0 && (
+                          <>
+                            <td
+                              rowSpan={totalRowSpan}
+                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                            >
+                              {groupIdx + 1}
+                            </td>
+                            <td
+                              rowSpan={totalRowSpan}
+                              style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
+                            >
+                              {group.nama}
+                            </td>
+                          </>
+                        )}
+                        <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                          {row.kode} {row.nama}
+                        </td>
+                        {rowIdx === 0 ? (
+                          <>
+                            <td
+                              rowSpan={totalRowSpan}
+                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={kualitas[group.id] ?? ""}
+                                  onChange={(e) => setKualitas((prev) => ({ ...prev, [group.id]: e.target.value }))}
+                                  style={{
+                                    width: 60,
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 4,
+                                    padding: "4px 6px",
+                                    fontSize: 13,
+                                    textAlign: "center",
+                                    color: "#374151",
+                                  }}
+                                />
+                                <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
+                              </div>
+                            </td>
+                            <td
+                              rowSpan={totalRowSpan}
+                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                            >
+                              {kuantitas !== null ? kuantitas : "-"}
+                            </td>
+                            <td
+                              rowSpan={totalRowSpan}
+                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", color: "#374151" }}
+                            >
+                              Triwulan I
+                            </td>
+                          </>
+                        ) : null}
+                      </tr>
+                    ));
+                  })}
+                </tbody>
+              </table>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                Menampilkan {data.length} dari {data.length}
+              </p>
+            </div>
+          )}
+
+          {data.length === 0 && (
+            <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data indikator</p>
+          )}
         </div>
       </PageTransition>
+      <SuccessModal isOpen={showSuccess} onClose={() => setShowSuccess(false)} />
     </div>
   );
 }

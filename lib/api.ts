@@ -21,6 +21,38 @@ export async function getIndikator(): Promise<Indikator[]> {
   return response.json();
 }
 
+export interface IndikatorGroupedChild {
+  id: number;
+  kode: string;
+  nama: string;
+  level: number;
+}
+
+export interface IndikatorGroupedSub {
+  id: number;
+  kode: string;
+  nama: string;
+  level: number;
+  parentId: number | null;
+  children: IndikatorGroupedChild[];
+}
+
+export interface IndikatorGrouped {
+  id: number;
+  kode: string;
+  nama: string;
+  targetUniversitas: number | null;
+  targetUniversitasTahun: string;
+  baselineJumlah: number | null;
+  subIndikators: IndikatorGroupedSub[];
+}
+
+export async function getIndikatorGrouped(jenis: string, tahun: string): Promise<IndikatorGrouped[]> {
+  const response = await fetch(`${API_BASE_URL}/indikator/grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}`);
+  if (!response.ok) throw new Error('Failed to fetch grouped indikator');
+  return response.json();
+}
+
 export async function getKriteria(): Promise<Kriteria[]> {
   const response = await fetch(`${API_BASE_URL}/kriteria`);
   if (!response.ok) throw new Error('Failed to fetch kriteria');
@@ -96,6 +128,16 @@ export async function saveTargetUniversitas(indikatorId: number, tahun: string, 
   return response.json();
 }
 
+export async function upsertTargetUniversitas(indikatorId: number, unitId: number, tahun: string, targetUniversitas: number): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/targets/upsert-target-universitas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ indikatorId, unitId, tahun, targetUniversitas }),
+  });
+  if (!response.ok) throw new Error('Failed to upsert target universitas');
+  return response.json();
+}
+
 
 export async function login(email: string, password: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -128,7 +170,7 @@ export async function getTargetsForAdminPKU(): Promise<any[]> {
   return response.json();
 }
 
-export async function createTarget(data: { indikatorId: number; unitId: number; tahun: string; targetAngka: number; targetUniversitas?: number | null }): Promise<any> {
+export async function createTarget(data: { indikatorId: number; unitId: number; tahun: string; targetUniversitas?: number | null }): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/targets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
