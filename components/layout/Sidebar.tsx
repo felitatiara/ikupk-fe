@@ -2,13 +2,55 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { getUnits } from "@/lib/api";
 
 interface SidebarProps {
   role?: 'admin' | 'user' | 'dekan';
+  unitNama?: string;
+  unitId?: number;
+  authRole?: 'user' | 'admin' | 'pku';
 }
 
-export default function Sidebar({ role = 'admin' }: SidebarProps) {
+export default function Sidebar({ role = 'admin', unitNama, unitId, authRole }: SidebarProps) {
   const pathname = usePathname();
+  const [resolvedUnitNama, setResolvedUnitNama] = useState<string>(unitNama ?? '');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (unitNama && unitNama.trim()) {
+      setResolvedUnitNama(unitNama);
+      return;
+    }
+
+    if (!unitId) {
+      setResolvedUnitNama('');
+      return;
+    }
+
+    getUnits()
+      .then((units) => {
+        if (cancelled) return;
+        const found = units.find((u) => u.id === unitId);
+        setResolvedUnitNama(found?.nama ?? '');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResolvedUnitNama('');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [unitNama, unitId]);
+
+  const normalizedUnit = useMemo(
+    () => resolvedUnitNama.toLowerCase().replace(/\s+/g, ' ').trim(),
+    [resolvedUnitNama]
+  );
+
+  const canAccessMasterIndikator = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('biro pku');
 
   const getMenus = () => {
     if (role === 'dekan') {
@@ -33,6 +75,8 @@ export default function Sidebar({ role = 'admin' }: SidebarProps) {
     // Admin menus
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
+      { key: "master_user", label: "Master User", href: "/admin/master-user" },
+      ...(canAccessMasterIndikator ? [{ key: "master_indikator", label: "Master Indikator Kinerja Utama", href: "/admin/master-indikator" }] : []),
       { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
       { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
       { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
