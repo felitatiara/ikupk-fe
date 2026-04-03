@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,7 +11,25 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/auth/login');
+  };
 
   return (
     <>
@@ -92,32 +112,69 @@ export default function AdminLayout({
             >
               🔔
             </button>
-            <button
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: "50%",
-                border: "none",
-                backgroundColor: "rgba(255,255,255,0.15)",
-                cursor: "pointer",
-                fontSize: 20,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                transition: "background-color 0.2s",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255,255,255,0.25)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255,255,255,0.15)")
-              }
-            >
-              👤
-            </button>
+            <div ref={dropdownRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  border: "none",
+                  backgroundColor: profileOpen ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)",
+                  cursor: "pointer",
+                  fontSize: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "white",
+                  transition: "background-color 0.2s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.25)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.backgroundColor = profileOpen ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)")
+                }
+              >
+                👤
+              </button>
+              {profileOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 48,
+                    right: 0,
+                    backgroundColor: 'white',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                    minWidth: 160,
+                    overflow: 'hidden',
+                    zIndex: 200,
+                  }}
+                >
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: 'none',
+                      backgroundColor: 'white',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      color: '#DC2626',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#FEE2E2')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'white')}
+                  >
+                    🚪 Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
