@@ -51,6 +51,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, authRole }: 
   );
 
   const canAccessMasterIndikator = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('biro pku');
+  const canAccessMasterUser = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('fakultas');
 
   const getMenus = () => {
     if (role === 'dekan') {
@@ -75,7 +76,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, authRole }: 
     // Admin menus
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-      { key: "master_user", label: "Master User", href: "/admin/master-user" },
+      ...(canAccessMasterUser ? [{ key: "master_user", label: "Master User", href: "/admin/master-user" }] : []),
       ...(canAccessMasterIndikator ? [{ key: "master_indikator", label: "Master Indikator Kinerja Utama", href: "/admin/master-indikator" }] : []),
       { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
       { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
