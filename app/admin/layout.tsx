@@ -2,12 +2,15 @@
 
 import Sidebar from "@/components/layout/Sidebar";
 import Image from "next/image";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { user } = useAuth();
+
   return (
     <>
       {/* HEADER */}
@@ -130,7 +133,7 @@ export default function AdminLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar />
+          <Sidebar unitNama={user?.unitNama} unitId={user?.unitId} authRole={user?.role} />
         <main
           style={{
             flex: 1,

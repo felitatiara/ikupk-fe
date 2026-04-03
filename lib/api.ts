@@ -21,6 +21,31 @@ export async function getIndikator(): Promise<Indikator[]> {
   return response.json();
 }
 
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null }): Promise<Indikator> {
+  const response = await fetch(`${API_BASE_URL}/indikator`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create indikator');
+  return response.json();
+}
+
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null }>): Promise<Indikator> {
+  const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update indikator');
+  return response.json();
+}
+
+export async function deleteIndikator(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/indikator/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete indikator');
+}
+
 export async function getKriteria(): Promise<Kriteria[]> {
   const response = await fetch(`${API_BASE_URL}/kriteria`);
   if (!response.ok) throw new Error('Failed to fetch kriteria');
@@ -312,8 +337,26 @@ export interface UnitUser {
   role: string;
 }
 
+export interface CreateUserPayload {
+  nama: string;
+  email: string;
+  password: string;
+  role: string;
+  unitId?: number | null;
+}
+
 export async function getUsersByUnit(unitId: number): Promise<UnitUser[]> {
   const response = await fetch(`${API_BASE_URL}/users/by-unit?unitId=${unitId}`);
   if (!response.ok) throw new Error('Failed to fetch users by unit');
+  return response.json();
+}
+
+export async function createUserAccount(data: CreateUserPayload): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create user');
   return response.json();
 }
