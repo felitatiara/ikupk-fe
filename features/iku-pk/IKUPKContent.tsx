@@ -15,7 +15,6 @@ interface IKUTableRow {
   aksi: "Input" | "Proses";
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' }) {
   const [rows, setRows] = useState<IKUTableRow[]>([]);
   const [disposisiRows, setDisposisiRows] = useState<IKUTableRow[]>([]);
@@ -23,10 +22,47 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [filterTarget, setFilterTarget] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState<IKUTableRow | null>(null);
-  const [realisasi, setRealisasi] = useState("");
-  const [keterangan, setKeterangan] = useState("");
+  const [detailMode, setDetailMode] = useState(false);
+  const [detailRow, setDetailRow] = useState<IKUTableRow | null>(null);
+
+  // File repository modal state
+  const [fileRepoModalOpen, setFileRepoModalOpen] = useState(false);
+  const [fileRepoPeriode, setFileRepoPeriode] = useState("Januari 2025 - Mei 2025");
+
+  // Mock file repository data
+  const mockFileRepoData: Record<string, { namaFile: string; kategori: string; jumlah: number }> = {
+    "Januari 2025 - Mei 2025": { namaFile: "Hasil Lulusan Mendapatkan Pekerjaan", kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 15 },
+    "Juni 2025 - Desember 2025": { namaFile: "Laporan Kinerja Semester 2", kategori: "Tepat Waktu", jumlah: 8 },
+    "Januari 2026 - Mei 2026": { namaFile: "Tracer Study Alumni", kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 22 },
+  };
+  const fileRepoPeriodeOptions = Object.keys(mockFileRepoData);
+  const currentFileRepo = mockFileRepoData[fileRepoPeriode] || mockFileRepoData[fileRepoPeriodeOptions[0]];
+
+  // Mock detail sub-indikators
+  const mockDetailSubIndikators = [
+    {
+      kode: "1.1.1", nama: "Hasil Lulusan Mendapatkan Pekerjaan", targetFakultas: "80%", capaian: "13%",
+      kategoris: [
+        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 15 },
+        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
+        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
+        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
+      ],
+    },
+    {
+      kode: "1.1.2", nama: "Hasil Lulusan Melanjutkan Studi", targetFakultas: "3%", capaian: "0%",
+      kategoris: [{ kategori: "-", jumlah: 0 }],
+    },
+    {
+      kode: "1.1.3", nama: "Hasil Lulusan Menjadi Wiraswasta", targetFakultas: "2%", capaian: "0%",
+      kategoris: [
+        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
+        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
+        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
+        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
+      ],
+    },
+  ];
 
   // Disposisi modal state (dekan only)
   const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
@@ -116,10 +152,17 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   };
 
   const handleActionClick = (row: IKUTableRow) => {
-    setSelectedRow(row);
-    setRealisasi("");
-    setKeterangan("");
-    setModalOpen(true);
+    setDetailRow(row);
+    setDetailMode(true);
+  };
+
+  const handleDetailInputClick = () => {
+    setFileRepoPeriode(fileRepoPeriodeOptions[0]);
+    setFileRepoModalOpen(true);
+  };
+
+  const handleFileRepoPilih = () => {
+    setFileRepoModalOpen(false);
   };
 
   const handleDisposisiClick = async (row: IKUTableRow) => {
@@ -131,8 +174,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
       if (!userStr) return;
       const user = JSON.parse(userStr);
       const users = await getUsersByUnit(user.unitId);
-      // Exclude dekan from the list
-      setUnitUsers(users.filter((u) => u.role !== 'dekan'));
+      setUnitUsers(users);
     } catch {
       setUnitUsers([]);
     }
@@ -178,10 +220,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     }
   };
 
-  const handleModalSubmit = () => {
-    setModalOpen(false);
-    setSelectedRow(null);
-  };
 
   return (
     <div>
@@ -190,82 +228,82 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
 
-        {/* REKAM DATA MODAL */}
-        {modalOpen && selectedRow && (
+        {/* FILE REPO MODAL */}
+        {fileRepoModalOpen && (
           <div
             style={{
               position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)",
               display: "flex", alignItems: "center", justifyContent: "center",
               zIndex: 1000,
             }}
-            onClick={() => setModalOpen(false)}
+            onClick={() => setFileRepoModalOpen(false)}
           >
             <div
               style={{
                 backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 480, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                width: 400, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#1f2937" }}>Rekam Data</h3>
-              <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>
-                {selectedRow.sasaranStrategis}
-              </p>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>
+                Pilih File Repository
+              </h3>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Tahun</label>
-                <input
-                  type="text"
-                  defaultValue="2025"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
-                />
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Pilih Periode</label>
+                <select
+                  value={fileRepoPeriode}
+                  onChange={(e) => setFileRepoPeriode(e.target.value)}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
+                >
+                  {fileRepoPeriodeOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Target</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Nama File</label>
                 <input
                   type="text"
-                  defaultValue={selectedRow.target}
+                  value={currentFileRepo.namaFile}
                   readOnly
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#f9fafb", boxSizing: "border-box" }}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
                 />
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Realisasi (%)</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Kategori</label>
                 <input
-                  type="number"
-                  min={0} max={100}
-                  value={realisasi}
-                  onChange={(e) => setRealisasi(e.target.value)}
-                  placeholder="Masukkan persentase realisasi"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                  type="text"
+                  value={currentFileRepo.kategori}
+                  readOnly
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
                 />
               </div>
 
               <div style={{ marginBottom: 24 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Keterangan</label>
-                <textarea
-                  value={keterangan}
-                  onChange={(e) => setKeterangan(e.target.value)}
-                  placeholder="Tambahkan keterangan (opsional)"
-                  rows={3}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Jumlah File Ditemukan</label>
+                <input
+                  type="text"
+                  value={currentFileRepo.jumlah}
+                  readOnly
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
                 />
               </div>
 
-              <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <button
-                  onClick={() => setModalOpen(false)}
-                  style={{ padding: "8px 20px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+                  onClick={() => setFileRepoModalOpen(false)}
+                  style={{ padding: "10px 28px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
                 >
-                  Batal
+                  Kembali
                 </button>
                 <button
-                  onClick={handleModalSubmit}
-                  style={{ padding: "8px 24px", borderRadius: 6, border: "none", backgroundColor: "#16a34a", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                  onClick={handleFileRepoPilih}
+                  style={{ padding: "10px 28px", borderRadius: 6, border: "none", backgroundColor: "#16a34a", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                 >
-                  Simpan
+                  Pilih
                 </button>
               </div>
             </div>
@@ -359,6 +397,114 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             Indikator Kinerja Utama & Perjanjian Kerja
           </h3>
 
+          {detailMode && detailRow ? (
+            <>
+              <div style={{ marginBottom: 24, fontSize: 13, color: "#374151", lineHeight: 2.2 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr", gap: "0 4px" }}>
+                  <div style={{ fontWeight: 700 }}>Target</div>
+                  <div>:</div>
+                  <div>{detailRow.target}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr 180px 14px 1fr", gap: "0 4px" }}>
+                  <div style={{ fontWeight: 700 }}>Indikator Kinerja Kegiatan</div>
+                  <div>:</div>
+                  <div>{detailRow.target}</div>
+                  <div style={{ fontWeight: 700 }}>Sasaran Strategis</div>
+                  <div>:</div>
+                  <div>{detailRow.sasaranStrategis}</div>
+                </div>
+                <div style={{ height: 8 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr", gap: "0 4px" }}>
+                  <div style={{ fontWeight: 700 }}>Target Universitas</div>
+                  <div>:</div>
+                  <div>{detailRow.targetUniversitas}%</div>
+                </div>
+                {mockDetailSubIndikators.map((sub) => (
+                  <div key={sub.kode} style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr 180px 14px 1fr", gap: "0 4px" }}>
+                    <div style={{ fontWeight: 700 }}>Sub Indikator Kinerja Kegiatan</div>
+                    <div>:</div>
+                    <div>{sub.kode} {sub.nama}</div>
+                    <div style={{ fontWeight: 700 }}>Target Fakultas</div>
+                    <div>:</div>
+                    <div>{sub.targetFakultas}</div>
+                  </div>
+                ))}
+              </div>
+
+              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>
+                Target IKU dan PK
+              </h4>
+              <div style={{ overflowX: "auto", marginBottom: 26 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f9fafb" }}>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sub Indikator Kegiatan</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Kategori</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Jumlah</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mockDetailSubIndikators.map((sub) =>
+                      sub.kategoris.map((kat, idx) => (
+                        <tr key={`${sub.kode}-${idx}`} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          {idx === 0 && (
+                            <td rowSpan={sub.kategoris.length} style={{ padding: "10px 12px", color: "#374151", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}>
+                              {sub.kode} {sub.nama}
+                            </td>
+                          )}
+                          <td style={{ padding: "10px 12px", color: "#374151" }}>{kat.kategori}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "center", color: "#374151" }}>{kat.jumlah}</td>
+                          {idx === 0 && (
+                            <td rowSpan={sub.kategoris.length} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827", verticalAlign: "top" }}>
+                              {sub.capaian}
+                            </td>
+                          )}
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            <button
+                              onClick={handleDetailInputClick}
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 4,
+                                border: "1px solid #86efac",
+                                backgroundColor: "#ecfdf5",
+                                color: "#16a34a",
+                                fontWeight: 700,
+                                fontSize: 11,
+                                cursor: "pointer",
+                              }}
+                            >
+                              Input
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setDetailMode(false)}
+                  style={{
+                    padding: "10px 32px",
+                    borderRadius: 6,
+                    border: "none",
+                    backgroundColor: "#16a34a",
+                    color: "white",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Simpan
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
           <div style={{ background: "#ffffff", borderRadius: 8, padding: 0, marginBottom: 26 }}>
             <div
               style={{
@@ -558,6 +704,8 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </>
               )}
             </div>
+          )}
+            </>
           )}
         </div>
       </PageTransition>

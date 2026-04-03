@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import { useState, useEffect } from "react";
-import { getIndikator, getKriteria, getTargets, getUnits, Indikator, Kriteria, getBaselineDataByIndikatorAndUnit, getTargetUniversitas, saveTargetUniversitas, createTarget } from "../../lib/api";
-import type { TargetRow, Unit } from "../../lib/api";
+import { getIndikator, getKriteria, getTargets, getUnits, Indikator, Kriteria, getBaselineDataByIndikatorAndUnit, getTargetUniversitas, saveTargetUniversitas, createTarget, getAdminTargetsGrouped } from "../../lib/api";
+import type { TargetRow, Unit, AdminTargetRow } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
 
 export interface TargetDetail {

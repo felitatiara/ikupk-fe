@@ -220,6 +220,79 @@ export async function getDekanValidasi(unitId: number): Promise<DekanValidasiRow
   return response.json();
 }
 
+export interface PendingFakultasRow {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  target: string;
+  sasaranStrategis: string;
+  targetUniversitas: number;
+  targetFakultas: number;
+  targetAngka: number;
+  status: string;
+  createdAt: string;
+}
+
+export async function getPendingFakultas(unitId: number): Promise<PendingFakultasRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/pending-fakultas?unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch pending fakultas');
+  return response.json();
+}
+
+export interface AdminTargetRow {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  target: string;
+  sasaranStrategis: string;
+  targetUniversitas: number;
+  unitId: number;
+  unitNama: string;
+  status: string;
+  createdAt: string;
+}
+
+export async function getAdminTargetsGrouped(): Promise<AdminTargetRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/admin/targets-grouped`);
+  if (!response.ok) throw new Error('Failed to fetch admin targets');
+  return response.json();
+}
+
+export async function inputTargetFakultas(id: number, targetAngka: number): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/targets/${id}/target-fakultas`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetAngka }),
+  });
+  if (!response.ok) throw new Error('Failed to input target fakultas');
+  return response.json();
+}
+
+export async function submitTargetFakultas(items: { targetId: number; targetAngka: number }[]): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/targets/submit-fakultas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!response.ok) throw new Error('Failed to submit target fakultas');
+  return response.json();
+}
+
+export interface TargetItem {
+  targetId: number;
+  indikatorId: number;
+  indikatorNama: string;
+  indikatorKode: string;
+  targetAngka: number;
+  status: string;
+}
+
+export async function getTargetItems(unitId: number, rootIndikatorId: number, tahun: string): Promise<TargetItem[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/target-items?unitId=${unitId}&rootIndikatorId=${rootIndikatorId}&tahun=${tahun}`);
+  if (!response.ok) throw new Error('Failed to fetch target items');
+  return response.json();
+}
+
 export async function updateTargetStatus(id: number, status: string, assignedTo?: number): Promise<any> {
   const body: any = { status };
   if (assignedTo !== undefined) body.assignedTo = assignedTo;
