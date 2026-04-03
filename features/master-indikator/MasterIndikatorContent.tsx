@@ -56,6 +56,7 @@ export default function MasterIndikatorContent() {
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [filterJenis, setFilterJenis] = useState<"IKU" | "PK">("IKU");
 
   // Form state — mode baru
   const [formMode, setFormMode] = useState<FormMode>("baru");
@@ -82,16 +83,17 @@ export default function MasterIndikatorContent() {
     refreshList();
   }, [refreshList]);
 
-  // Build hierarchy from flat list
+  // Build hierarchy from flat list, filtered by jenis
   const buildHierarchy = (): Level0WithChildren[] => {
-    const level0 = indikatorList.filter((i) => i.level === 0);
+    const filtered = indikatorList.filter((i) => i.jenis === filterJenis);
+    const level0 = filtered.filter((i) => i.level === 0);
     return level0.map((l0) => {
-      const level1 = indikatorList.filter((i) => i.level === 1 && i.parentId === l0.id);
+      const level1 = filtered.filter((i) => i.level === 1 && i.parentId === l0.id);
       return {
         record: l0,
         children: level1.map((l1) => ({
           record: l1,
-          children: indikatorList.filter((i) => i.level === 2 && i.parentId === l1.id),
+          children: filtered.filter((i) => i.level === 2 && i.parentId === l1.id),
         })),
       };
     });
@@ -294,14 +296,14 @@ export default function MasterIndikatorContent() {
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Master Indikator Kinerja Utama
+          Master Indikator {filterJenis === "IKU" ? "Kinerja Utama" : "Perjanjian Kerja"}
         </p>
 
         {/* LIST SECTION */}
         <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", margin: 0 }}>
-              Daftar Master Indikator Kinerja Utama
+              Daftar Master Indikator {filterJenis === "IKU" ? "Kinerja Utama" : "Perjanjian Kerja"}
             </h3>
             <button
               onClick={() => { setShowForm((v) => !v); resetForm(); }}
@@ -309,6 +311,19 @@ export default function MasterIndikatorContent() {
             >
               {showForm ? "Tutup" : "Tambah"}
             </button>
+          </div>
+
+          {/* Filter Jenis */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginRight: 8 }}>Jenis Indikator:</label>
+            <select
+              value={filterJenis}
+              onChange={(e) => setFilterJenis(e.target.value as "IKU" | "PK")}
+              style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 12px", fontSize: 13, color: "#374151" }}
+            >
+              <option value="IKU">Indikator Kinerja Utama (IKU)</option>
+              <option value="PK">Perjanjian Kerja (PK)</option>
+            </select>
           </div>
 
           {loading ? (
@@ -321,7 +336,7 @@ export default function MasterIndikatorContent() {
                 <tr style={{ backgroundColor: "#ff7a00" }}>
                   <th style={{ padding: "12px 12px", textAlign: "center", fontWeight: 700, color: "white", border: "1px solid #f3f4f6", width: 80 }}>Nomor</th>
                   <th style={{ padding: "12px 12px", textAlign: "center", fontWeight: 700, color: "white", border: "1px solid #f3f4f6" }}>Sasaran Strategis</th>
-                  <th style={{ padding: "12px 12px", textAlign: "center", fontWeight: 700, color: "white", border: "1px solid #f3f4f6" }}>Sub Indikator Kinerja Utama</th>
+                  <th style={{ padding: "12px 12px", textAlign: "center", fontWeight: 700, color: "white", border: "1px solid #f3f4f6" }}>{filterJenis === "IKU" ? "Sub Indikator Kinerja Utama" : "Sub Indikator Perjanjian Kerja"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -360,7 +375,7 @@ export default function MasterIndikatorContent() {
         {showForm && (
           <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 20 }}>
-              Master Indikator Kinerja Utama
+              Master Indikator {filterJenis === "IKU" ? "Kinerja Utama" : "Perjanjian Kerja"}
             </h3>
 
             {/* Mode toggle */}

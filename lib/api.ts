@@ -79,32 +79,7 @@ export async function deleteIndikator(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete indikator');
 }
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null }): Promise<Indikator> {
-  const response = await fetch(`${API_BASE_URL}/indikator`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error('Failed to create indikator');
-  return response.json();
-}
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null }>): Promise<Indikator> {
-  const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error('Failed to update indikator');
-  return response.json();
-}
-
-export async function deleteIndikator(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/indikator/${id}`, { method: 'DELETE' });
-  if (!response.ok) throw new Error('Failed to delete indikator');
-}
-
->>>>>>> a99b636bd7d1dd561440ae871b8b8652d1d17e2b
 export async function getKriteria(): Promise<Kriteria[]> {
   const response = await fetch(`${API_BASE_URL}/kriteria`);
   if (!response.ok) throw new Error('Failed to fetch kriteria');
