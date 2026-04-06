@@ -382,6 +382,7 @@ export interface UnitUser {
 }
 
 export interface CreateUserPayload {
+  nip?: string;
   nama: string;
   email: string;
   password: string;
