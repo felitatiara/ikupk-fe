@@ -27,8 +27,8 @@ export default function AdminMasterUserPage() {
         return;
       }
 
-      const fromSession = user.unitNama?.toLowerCase().replace(/\s+/g, ' ').trim() ?? '';
-      if (fromSession.includes('fakultas')) {
+      // Check unitJenis from session first
+      if (user.unitJenis?.toLowerCase() === 'fakultas') {
         if (!cancelled) {
           setCanAccess(true);
           setCheckingAccess(false);
@@ -40,9 +40,8 @@ export default function AdminMasterUserPage() {
         const units = await getUnits();
         if (cancelled) return;
         const currentUnit = units.find((u) => u.id === user.unitId);
-        const normalizedUnit = (currentUnit?.nama ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-        const isFakultas = normalizedUnit.includes('fakultas');
-        setCanAccess(isFakultas);
+        const isFakultas = currentUnit?.jenis?.toLowerCase() === 'fakultas';
+        setCanAccess(!!isFakultas);
         setCheckingAccess(false);
         if (!isFakultas) {
           router.replace('/admin/dashboard');

@@ -6,6 +6,7 @@ export interface User {
   role: 'user' | 'admin' | 'pku';
   unitId: number;
   unitNama?: string;
+  unitJenis?: string;
 }
 
 export interface LoginRequest {

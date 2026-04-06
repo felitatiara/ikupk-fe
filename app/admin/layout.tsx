@@ -190,7 +190,7 @@ export default function AdminLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-          <Sidebar unitNama={user?.unitNama} unitId={user?.unitId} authRole={user?.role} />
+          <Sidebar unitNama={user?.unitNama} unitId={user?.unitId} unitJenis={user?.unitJenis} authRole={user?.role} />
         <main
           style={{
             flex: 1,

@@ -9,10 +9,11 @@ interface SidebarProps {
   role?: 'admin' | 'user' | 'dekan';
   unitNama?: string;
   unitId?: number;
+  unitJenis?: string;
   authRole?: 'user' | 'admin' | 'pku';
 }
 
-export default function Sidebar({ role = 'admin', unitNama, unitId, authRole }: SidebarProps) {
+export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, authRole }: SidebarProps) {
   const pathname = usePathname();
   const [resolvedUnitNama, setResolvedUnitNama] = useState<string>(unitNama ?? '');
 
@@ -51,7 +52,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, authRole }: 
   );
 
   const canAccessMasterIndikator = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('biro pku');
-  const canAccessMasterUser = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('fakultas');
+  const canAccessMasterUser = role === 'admin' && authRole === 'admin' && unitJenis?.toLowerCase() === 'fakultas';
 
   const getMenus = () => {
     if (role === 'dekan') {
