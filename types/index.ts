@@ -1,6 +1,7 @@
 // User Types
 export interface User {
   id: number;
+  nip?: string;
   email: string;
   nama: string;
   role: 'user' | 'admin' | 'pku';

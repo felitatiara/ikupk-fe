@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
-import { login } from '@/services/authService';
+import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { login, user: authUser } = useAuth();
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -18,12 +19,10 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await login(email, password);
-      const access = res.accessToken ?? res.token ?? res;
-      const user = res.user ?? null;
+      await login(email, password);
+      const userStr = sessionStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
       if (user) {
-        sessionStorage.setItem('user', JSON.stringify(user));
-        sessionStorage.setItem('token', access as string);
         if (user.role === 'admin' || user.role === 'pku') {
           router.push('/admin/dashboard');
         } else if (user.role === 'dekan') {

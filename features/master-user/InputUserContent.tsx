@@ -60,6 +60,7 @@ export default function InputUserContent() {
     setSaving(true);
     try {
       await createUserAccount({
+        nip: nip.trim() || undefined,
         nama: nama.trim(),
         email: email.trim(),
         password,
