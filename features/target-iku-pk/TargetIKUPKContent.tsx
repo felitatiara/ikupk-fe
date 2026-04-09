@@ -1,67 +1,122 @@
 ﻿"use client";
 
 import { useState, useEffect } from "react";
-import { getIndikatorGrouped, upsertTargetUniversitas } from "../../lib/api";
-import type { IndikatorGrouped } from "../../lib/api";
+import { getIndikatorGrouped, upsertTargetFakultas, upsertTargetUniversitas } from "../../lib/api";
+import type { IndikatorGrouped, IndikatorGroupedSub } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
 import SuccessModal from "@/components/ui/SuccessModal";
+import { useAuth } from "@/hooks/useAuth";
 
 const JENIS_OPTIONS = [
   { value: "IKU", label: "Indikator Kinerja Utama" },
   { value: "PK", label: "Perjanjian Kerja" },
 ];
 
-const UNIT_ID_FAKULTAS = 1;
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function TargetIKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' }) {
+export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' | 'dekan' }) {
+  const { user } = useAuth();
   const [jenis, setJenis] = useState("IKU");
   const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [data, setData] = useState<IndikatorGrouped[]>([]);
-  // kualitas state: { [indikatorId]: percentageValue }
-  const [kualitas, setKualitas] = useState<Record<number, string>>({});
+  // kualitasFakultas state: { [indikatorId]: percentageValue } — for level 2 input
+  const [kualitasFakultas, setKualitasFakultas] = useState<Record<number, string>>({});
+  // kualitasUniv state: { [subIndikatorId]: percentageValue } — for Biro PKU input per level 1
+  const [kualitasUniv, setKualitasUniv] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  const unitId = user?.unitId;
+  const isFakultas = user?.unitJenis?.toLowerCase() === 'fakultas';
+  const isBiroPKU = user?.unitJenis?.toLowerCase() === 'biro';
 
   useEffect(() => {
     if (!jenis) return;
     let cancelled = false;
-    getIndikatorGrouped(jenis, tahun)
+    getIndikatorGrouped(jenis, tahun, unitId)
       .then((d) => {
         if (cancelled) return;
         setData(d);
-        // Initialize kualitas from existing target_universitas
+        // Initialize kualitasFakultas from existing targetFakultas on level 2 children
         const init: Record<number, string> = {};
         for (const g of d) {
-          if (g.targetUniversitas !== null && g.baselineJumlah && g.baselineJumlah > 0) {
-            const pct = (g.targetUniversitas / g.baselineJumlah) * 100;
-            init[g.id] = String(Math.round(pct * 100) / 100);
-          } else {
-            init[g.id] = "";
+          for (const sub of g.subIndikators) {
+            for (const child of sub.children) {
+              if (child.targetFakultas !== null && child.baselineJumlah && Number(child.baselineJumlah) > 0) {
+                const pct = (Number(child.targetFakultas) / Number(child.baselineJumlah)) * 100;
+                init[child.id] = String(Math.round(pct * 100) / 100);
+              } else {
+                init[child.id] = "";
+              }
+            }
           }
         }
-        setKualitas(init);
+        setKualitasFakultas(init);
+        // Initialize kualitasUniv from existing targetUniversitas per sub-indikator
+        const initUniv: Record<number, string> = {};
+        for (const g of d) {
+          for (const sub of g.subIndikators) {
+            if (sub.targetUniversitas !== null && sub.baselineJumlah && Number(sub.baselineJumlah) > 0) {
+              const pct = (Number(sub.targetUniversitas) / Number(sub.baselineJumlah)) * 100;
+              initUniv[sub.id] = String(Math.round(pct * 100) / 100);
+            } else {
+              initUniv[sub.id] = "";
+            }
+          }
+        }
+        setKualitasUniv(initUniv);
       })
       .catch(() => { if (!cancelled) setData([]); });
     return () => { cancelled = true; };
-  }, [jenis, tahun]);
+  }, [jenis, tahun, unitId]);
 
-  const getKuantitas = (group: IndikatorGrouped): number | null => {
-    const pct = parseFloat(kualitas[group.id] || "");
-    if (isNaN(pct) || group.baselineJumlah === null || group.baselineJumlah === undefined) return null;
-    return Math.round((pct / 100) * group.baselineJumlah);
+  const getRowKuantitas = (id: number, baselineJumlah: number | null | undefined): number | null => {
+    const pct = parseFloat(kualitasFakultas[id] || "");
+    if (isNaN(pct) || baselineJumlah === null || baselineJumlah === undefined) return null;
+    return Math.round((pct / 100) * Number(baselineJumlah));
+  };
+
+  const getUnivPct = (sub: IndikatorGroupedSub): string => {
+    if (sub.targetUniversitas !== null && sub.baselineJumlah && Number(sub.baselineJumlah) > 0) {
+      const pct = (Number(sub.targetUniversitas) / Number(sub.baselineJumlah)) * 100;
+      return `${Math.round(pct * 100) / 100}`;
+    }
+    return "-";
+  };
+
+  const getUnivKuantitas = (id: number, baselineJumlah: number | null | undefined): number | null => {
+    const pct = parseFloat(kualitasUniv[id] || "");
+    if (isNaN(pct) || baselineJumlah === null || baselineJumlah === undefined) return null;
+    return Math.round((pct / 100) * Number(baselineJumlah));
   };
 
   const handleSave = async () => {
+    if (!unitId) return;
     setSaving(true);
     try {
-      for (const group of data) {
-        const kuantitas = getKuantitas(group);
-        if (kuantitas === null) continue;
-        await upsertTargetUniversitas(group.id, UNIT_ID_FAKULTAS, tahun, kuantitas);
+      if (isBiroPKU) {
+        // Biro PKU saves Target Universitas per sub-indikator (level 1)
+        for (const group of data) {
+          for (const sub of group.subIndikators) {
+            const kuantitas = getUnivKuantitas(sub.id, sub.baselineJumlah);
+            if (kuantitas === null) continue;
+            await upsertTargetUniversitas(sub.id, unitId, tahun, kuantitas);
+          }
+        }
+      }
+      if (isFakultas) {
+        // Fakultas saves Target Fakultas per level 2 indikator only
+        for (const group of data) {
+          for (const sub of group.subIndikators) {
+            for (const child of sub.children) {
+              const childKuantitas = getRowKuantitas(child.id, child.baselineJumlah);
+              if (childKuantitas !== null) {
+                await upsertTargetFakultas(child.id, unitId, tahun, childKuantitas);
+              }
+            }
+          }
+        }
       }
       // Refresh data
-      const d = await getIndikatorGrouped(jenis, tahun);
+      const d = await getIndikatorGrouped(jenis, tahun, unitId);
       setData(d);
       setShowSuccess(true);
     } catch {
@@ -72,12 +127,25 @@ export default function TargetIKUPKContent({ role = 'user' }: { role?: 'admin' |
   };
 
   // Build flat rows for the table
-  const buildRows = (group: IndikatorGrouped) => {
-    const rows: { kode: string; nama: string; level: number }[] = [];
+  interface FlatRow {
+    id: number;
+    kode: string;
+    nama: string;
+    level: number;
+    baselineJumlah: number | null;
+    subId: number;
+    isSubFirst: boolean;
+    subChildCount: number;
+    sub: IndikatorGroupedSub;
+  }
+
+  const buildRows = (group: IndikatorGrouped): FlatRow[] => {
+    const rows: FlatRow[] = [];
     for (const sub of group.subIndikators) {
-      rows.push({ kode: sub.kode, nama: sub.nama, level: 1 });
+      const childCount = 1 + sub.children.length;
+      rows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, baselineJumlah: sub.baselineJumlah, subId: sub.id, isSubFirst: true, subChildCount: childCount, sub });
       for (const child of sub.children) {
-        rows.push({ kode: child.kode, nama: child.nama, level: 2 });
+        rows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, baselineJumlah: child.baselineJumlah, subId: sub.id, isSubFirst: false, subChildCount: childCount, sub });
       }
     }
     return rows;
@@ -119,22 +187,24 @@ export default function TargetIKUPKContent({ role = 'user' }: { role?: 'admin' |
                 ))}
               </select>
             </div>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                backgroundColor: saving ? "#9ca3af" : "#e97a1f",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                padding: "8px 20px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: saving ? "not-allowed" : "pointer",
-              }}
-            >
-              {saving ? "Menyimpan..." : "Simpan"}
-            </button>
+            {(isFakultas || isBiroPKU) && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                style={{
+                  backgroundColor: saving ? "#9ca3af" : "#e97a1f",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "8px 20px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: saving ? "not-allowed" : "pointer",
+                }}
+              >
+                {saving ? "Menyimpan..." : "Simpan"}
+              </button>
+            )}
           </div>
 
           {data.length > 0 && (
@@ -145,83 +215,150 @@ export default function TargetIKUPKContent({ role = 'user' }: { role?: 'admin' |
                     <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
                     <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
                     <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
-                    <th colSpan={3} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas</th>
+                    <th colSpan={isBiroPKU ? 3 : 2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas {tahun}</th>
+                    {isFakultas && (
+                      <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
+                    )}
                   </tr>
                   <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kualitas</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
-                    <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Jangka</th>
+                    {isBiroPKU ? (
+                      <>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Waktu</th>
+
+                      </>
+                    ) : (
+                      <>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kuantitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: isFakultas ? "1px solid #e5e7eb" : undefined, textAlign: "center", minWidth: 100 }}>Waktu</th>
+                      </>
+                    )}
+                    {isFakultas && (
+                      <>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kualitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center", minWidth: 120 }}>Kuantitas</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {data.map((group, groupIdx) => {
                     const allRows = buildRows(group);
                     const totalRowSpan = allRows.length;
-                    const kuantitas = getKuantitas(group);
 
-                    return allRows.map((row, rowIdx) => (
-                      <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                        {rowIdx === 0 && (
-                          <>
-                            <td
-                              rowSpan={totalRowSpan}
-                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
-                            >
-                              {groupIdx + 1}
-                            </td>
-                            <td
-                              rowSpan={totalRowSpan}
-                              style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
-                            >
-                              {group.nama}
-                            </td>
-                          </>
-                        )}
-                        <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
-                          {row.kode} {row.nama}
-                        </td>
-                        {rowIdx === 0 ? (
-                          <>
-                            <td
-                              rowSpan={totalRowSpan}
-                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}
-                            >
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  value={kualitas[group.id] ?? ""}
-                                  onChange={(e) => setKualitas((prev) => ({ ...prev, [group.id]: e.target.value }))}
-                                  style={{
-                                    width: 60,
-                                    border: "1px solid #e5e7eb",
-                                    borderRadius: 4,
-                                    padding: "4px 6px",
-                                    fontSize: 13,
-                                    textAlign: "center",
-                                    color: "#374151",
-                                  }}
-                                />
-                                <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
-                              </div>
-                            </td>
-                            <td
-                              rowSpan={totalRowSpan}
-                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
-                            >
-                              {kuantitas !== null ? kuantitas : "-"}
-                            </td>
-                            <td
-                              rowSpan={totalRowSpan}
-                              style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", color: "#374151" }}
-                            >
-                              Triwulan I
-                            </td>
-                          </>
-                        ) : null}
-                      </tr>
-                    ));
+                    return allRows.map((row, rowIdx) => {
+                      const rowKuantitas = row.level === 2 ? getRowKuantitas(row.id, row.baselineJumlah) : null;
+
+                      return (
+                        <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                          {rowIdx === 0 && (
+                            <>
+                              <td
+                                rowSpan={totalRowSpan}
+                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                              >
+                                {groupIdx + 1}
+                              </td>
+                              <td
+                                rowSpan={totalRowSpan}
+                                style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
+                              >
+                                {group.nama}
+                              </td>
+                            </>
+                          )}
+                          <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                            {row.kode} {row.nama}
+                          </td>
+                          {/* Target Universitas - per level 1 sub-indikator */}
+                          {row.isSubFirst ? (
+                            <>
+                              <td
+                                rowSpan={row.subChildCount}
+                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                              >
+                                {isBiroPKU ? (
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      value={kualitasUniv[row.sub.id] ?? ""}
+                                      onChange={(e) => setKualitasUniv((prev) => ({ ...prev, [row.sub.id]: e.target.value }))}
+                                      style={{
+                                        width: 60,
+                                        border: "1px solid #e5e7eb",
+                                        borderRadius: 4,
+                                        padding: "4px 6px",
+                                        fontSize: 13,
+                                        textAlign: "center",
+                                        color: "#374151",
+                                      }}
+                                    />
+                                    <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
+                                  </div>
+                                ) : (
+                                  row.sub.targetUniversitas !== null ? Number(row.sub.targetUniversitas) : "-"
+                                )}
+                              </td>
+                              {isBiroPKU && (
+                                <td
+                                  rowSpan={row.subChildCount}
+                                  style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                                >
+                                  {getUnivKuantitas(row.sub.id, row.sub.baselineJumlah) !== null ? getUnivKuantitas(row.sub.id, row.sub.baselineJumlah) : "-"}
+                                </td>
+                              )}
+                              <td
+                                rowSpan={row.subChildCount}
+                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
+                              >
+                                Triwulan I
+                              </td>
+                            </>
+                          ) : null}
+                          {/* Target Fakultas */}
+                          {isFakultas && row.level === 2 ? (
+                            <>
+                              <td
+                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={kualitasFakultas[row.id] ?? ""}
+                                    onChange={(e) => setKualitasFakultas((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                                    style={{
+                                      width: 60,
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: 4,
+                                      padding: "4px 6px",
+                                      fontSize: 13,
+                                      textAlign: "center",
+                                      color: "#374151",
+                                    }}
+                                  />
+                                  <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
+                                </div>
+                              </td>
+                              <td
+                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", color: "#374151", fontWeight: 600 }}
+                              >
+                                {rowKuantitas !== null ? rowKuantitas : "-"}
+                              </td>
+                            </>
+                          ) : isFakultas && row.isSubFirst ? (
+                            <>
+                              <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                              <td style={{ padding: "10px 12px" }} />
+                            </>
+                          ) : null}
+                        </tr>
+                      );
+                    });
                   })}
                 </tbody>
               </table>

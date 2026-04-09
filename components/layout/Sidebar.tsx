@@ -60,7 +60,6 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
         { key: "beranda", label: "Beranda", href: "/dekan/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/dekan/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/iku-pk" },
-        { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/validasi-iku-pk" },
         { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/targets" },
       ];
     }
@@ -70,7 +69,6 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/user/iku-pk" },
-        { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/user/targets" },
       ];
     }
     
@@ -144,6 +142,11 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
             }}
           >
             Dashboard Admin
+            {resolvedUnitNama && (
+              <span style={{ display: 'block', fontSize: 10, color: '#6b7280', fontWeight: 500, marginTop: 2 }}>
+                {resolvedUnitNama}
+              </span>
+            )}
           </div>
         )}
         {role === 'user' && (
@@ -156,6 +159,11 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
             }}
           >
             Dashboard User
+            {resolvedUnitNama && (
+              <span style={{ display: 'block', fontSize: 10, color: '#6b7280', fontWeight: 500, marginTop: 2 }}>
+                {resolvedUnitNama}
+              </span>
+            )}
           </div>
         )}
         {role === 'dekan' && (
@@ -168,6 +176,11 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
             }}
           >
             Dashboard Dekan
+            {resolvedUnitNama && (
+              <span style={{ display: 'block', fontSize: 10, color: '#6b7280', fontWeight: 500, marginTop: 2 }}>
+                {resolvedUnitNama}
+              </span>
+            )}
           </div>
         )}
       </div>

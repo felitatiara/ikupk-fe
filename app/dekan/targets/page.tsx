@@ -1,7 +1,7 @@
 "use client";
 
-import UserTargetContent from "@/features/targets/UserTargetContent";
+import TargetIKUPKContent from "@/features/target-iku-pk/TargetIKUPKContent";
 
 export default function TargetsDekan() {
-  return <UserTargetContent />;
+  return <TargetIKUPKContent role="dekan" />;
 }

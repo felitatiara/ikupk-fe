@@ -1,222 +1,182 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getIkuPk, getDekanValidasi, getUsersByUnit, updateTargetStatus } from "../../lib/api";
-import type { IkuPkRow, DekanValidasiRow, UnitUser } from "../../lib/api";
-
-interface IKUTableRow {
-  id: number;
-  tenggat: string;
-  target: string;
-  sasaranStrategis: string;
-  capaian: number;
-  targetUniversitas: number;
-  aksi: "Input" | "Proses";
-}
+import { getUsersByUnit, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, submitFileRealisasi } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' }) {
-  const [rows, setRows] = useState<IKUTableRow[]>([]);
-  const [disposisiRows, setDisposisiRows] = useState<IKUTableRow[]>([]);
+  const { user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [filterTarget, setFilterTarget] = useState("semua");
-  const [filterPeriode, setFilterPeriode] = useState("semua");
-  const [filterStatus, setFilterStatus] = useState("semua");
-  const [detailMode, setDetailMode] = useState(false);
-  const [detailRow, setDetailRow] = useState<IKUTableRow | null>(null);
+
+  // Disposisi modal state
+  const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
+  const [disposisiRow, setDisposisiRow] = useState<Record<string, unknown> | null>(null);
+  const [unitUsers, setUnitUsers] = useState<UnitUser[]>([]);
+  // Multi-user disposisi: array of { userId, jumlah }
+  const [disposisiAllocations, setDisposisiAllocations] = useState<{ userId: number; jumlah: string }[]>([]);
+  const [disposisiTargetFakultas, setDisposisiTargetFakultas] = useState<number>(0);
+  const [disposedBy, setDisposedBy] = useState<number | null>(null);
 
   // File repository modal state
   const [fileRepoModalOpen, setFileRepoModalOpen] = useState(false);
-  const [fileRepoPeriode, setFileRepoPeriode] = useState("Januari 2025 - Mei 2025");
+  const [fileRepoNama, setFileRepoNama] = useState("");
+  const [fileRepoIndikatorId, setFileRepoIndikatorId] = useState<number | null>(null);
+  const [fileRepoPeriode, setFileRepoPeriode] = useState("");
+  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string }[]>([]);
+  const [fileRepoLoading, setFileRepoLoading] = useState(false);
+  const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
+  const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
 
-  // Mock file repository data
-  const mockFileRepoData: Record<string, { namaFile: string; kategori: string; jumlah: number }> = {
-    "Januari 2025 - Mei 2025": { namaFile: "Hasil Lulusan Mendapatkan Pekerjaan", kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 15 },
-    "Juni 2025 - Desember 2025": { namaFile: "Laporan Kinerja Semester 2", kategori: "Tepat Waktu", jumlah: 8 },
-    "Januari 2026 - Mei 2026": { namaFile: "Tracer Study Alumni", kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 22 },
-  };
-  const fileRepoPeriodeOptions = Object.keys(mockFileRepoData);
-  const currentFileRepo = mockFileRepoData[fileRepoPeriode] || mockFileRepoData[fileRepoPeriodeOptions[0]];
+  // Grouped data for admin/dekan view
+  const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
+  const [tahun, setTahun] = useState(new Date().getFullYear().toString());
+  const [jenis, setJenis] = useState("IKU");
+  const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
 
-  // Mock detail sub-indikators
-  const mockDetailSubIndikators = [
-    {
-      kode: "1.1.1", nama: "Hasil Lulusan Mendapatkan Pekerjaan", targetFakultas: "80%", capaian: "13%",
-      kategoris: [
-        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 15 },
-        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
-        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
-        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
-      ],
-    },
-    {
-      kode: "1.1.2", nama: "Hasil Lulusan Melanjutkan Studi", targetFakultas: "3%", capaian: "0%",
-      kategoris: [{ kategori: "-", jumlah: 0 }],
-    },
-    {
-      kode: "1.1.3", nama: "Hasil Lulusan Menjadi Wiraswasta", targetFakultas: "2%", capaian: "0%",
-      kategoris: [
-        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
-        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
-        { kategori: "< 6 Bulan dan >1,2 UMP", jumlah: 0 },
-        { kategori: "7 s.d 12 Bulan dan >1,2 UMP", jumlah: 0 },
-      ],
-    },
-  ];
+  const unitId = authUser?.unitId;
 
-  // Disposisi modal state (dekan only)
-  const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
-  const [disposisiRow, setDisposisiRow] = useState<IKUTableRow | null>(null);
-  const [unitUsers, setUnitUsers] = useState<UnitUser[]>([]);
-  const [selectedKategori, setSelectedKategori] = useState("Dosen");
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-
+  // Fetch grouped data for admin/dekan/user
   useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
-        const userStr = sessionStorage.getItem("user");
-        if (!userStr) return;
-        const user = JSON.parse(userStr);
+    if (!unitId) return;
+    let cancelled = false;
+    setLoading(true);
+    const fetchPromise = role === 'user' && authUser?.id
+      ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
+      : (role === 'admin' || role === 'dekan')
+        ? getIndikatorGrouped(jenis, tahun, unitId)
+        : Promise.resolve([]);
+    fetchPromise
+      .then((d) => { if (!cancelled) { setGroupedData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [role, jenis, tahun, unitId, authUser?.id]);
 
-        if (role === 'dekan') {
-          const [pendingData, disposisiData] = await Promise.all([
-            getDekanValidasi(user.unitId),
-            getIkuPk(user.unitId),
-          ]);
-          setRows((pendingData as DekanValidasiRow[]).map((item) => ({
-            id: item.id,
-            tenggat: item.tahun,
-            target: item.target,
-            sasaranStrategis: item.sasaranStrategis,
-            capaian: item.capaian,
-            targetUniversitas: item.targetUniversitas,
-            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-          })));
-          setDisposisiRows((disposisiData as IkuPkRow[]).map((item) => ({
-            id: item.id,
-            tenggat: item.tahun,
-            target: item.target,
-            sasaranStrategis: item.sasaranStrategis,
-            capaian: item.capaian,
-            targetUniversitas: item.targetUniversitas,
-            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-          })));
-        } else {
-          const data: IkuPkRow[] = await getIkuPk(user.unitId, user.id);
-          setRows(data.map((item) => ({
-            id: item.id,
-            tenggat: item.tahun,
-            target: item.target,
-            sasaranStrategis: item.sasaranStrategis,
-            capaian: item.capaian,
-            targetUniversitas: item.targetUniversitas,
-            aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-          })));
-        }
-      } catch {
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, [role]);
-
-  const filteredRows = rows.filter((row) => {
-    const matchTarget = filterTarget === "semua" || row.target === filterTarget;
-    const matchPeriode = filterPeriode === "semua" || row.tenggat.includes(filterPeriode);
-    const matchStatus = filterStatus === "semua" || row.aksi.toLowerCase() === filterStatus.toLowerCase();
-    return matchTarget && matchPeriode && matchStatus;
-  });
-
-  const targetOptions = [
-    "semua",
-    ...Array.from(new Set(rows.map((r) => r.target))).filter(Boolean),
-  ];
-
-  const periodOptions = [
-    "semua",
-    ...Array.from(
-      new Set(rows.map((r) => {
-        const match = r.tenggat.match(/\d{4}/);
-        return match ? match[0] : "-";
-      }))
-    ).filter((y) => y !== "-"),
-  ];
-
-  const onResetFilters = () => {
-    setFilterTarget("semua");
-    setFilterPeriode("semua");
-    setFilterStatus("semua");
-  };
-
-  const handleActionClick = (row: IKUTableRow) => {
-    setDetailRow(row);
-    setDetailMode(true);
-  };
-
-  const handleDetailInputClick = () => {
-    setFileRepoPeriode(fileRepoPeriodeOptions[0]);
-    setFileRepoModalOpen(true);
-  };
-
-  const handleFileRepoPilih = () => {
-    setFileRepoModalOpen(false);
-  };
-
-  const handleDisposisiClick = async (row: IKUTableRow) => {
-    setDisposisiRow(row);
-    setSelectedKategori("Dosen");
-    setSelectedUserId(null);
+  const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null) => {
+    setDisposisiSubId(subId);
+    setDisposisiRow(null);
+    setDisposisiTargetFakultas(targetAmount);
+    setDisposisiAllocations([]);
+    setDisposedBy(disposedByUserId ?? null);
+    if (!unitId) return;
     try {
-      const userStr = sessionStorage.getItem("user");
-      if (!userStr) return;
-      const user = JSON.parse(userStr);
-      const users = await getUsersByUnit(user.unitId);
+      const users = await getUsersByUnit(unitId);
       setUnitUsers(users);
     } catch {
       setUnitUsers([]);
     }
+    try {
+      const existing = await getDisposisi(subId, unitId, tahun, disposedByUserId ?? null);
+      if (existing.length > 0) {
+        setDisposisiAllocations(
+          existing.map((d) => ({ userId: d.assignedTo, jumlah: String(Number(d.jumlah)) }))
+        );
+      }
+    } catch {
+      // disposisi table may not exist yet
+    }
     setDisposisiModalOpen(true);
   };
 
+  const addAllocation = () => {
+    setDisposisiAllocations((prev) => [...prev, { userId: 0, jumlah: "" }]);
+  };
+
+  const removeAllocation = (index: number) => {
+    setDisposisiAllocations((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const totalAllocated = disposisiAllocations.reduce((sum, a) => sum + (parseFloat(a.jumlah) || 0), 0);
+  const sisaTarget = disposisiTargetFakultas - totalAllocated;
+
   const handleDisposisiSubmit = async () => {
-    if (!disposisiRow || !selectedUserId) return;
+    const validItems = disposisiAllocations
+      .filter((a) => a.userId > 0 && parseFloat(a.jumlah) > 0)
+      .map((a) => ({ assignedTo: a.userId, jumlah: parseFloat(a.jumlah) }));
+    if (validItems.length === 0) return;
     try {
-      await updateTargetStatus(disposisiRow.id, 'disposisi', selectedUserId);
-      // Refresh data
-      const userStr = sessionStorage.getItem("user");
-      if (userStr) {
-        const user = JSON.parse(userStr);
-        const [pendingData, disposisiData] = await Promise.all([
-          getDekanValidasi(user.unitId),
-          getIkuPk(user.unitId),
-        ]);
-        setRows((pendingData as DekanValidasiRow[]).map((item) => ({
-          id: item.id,
-          tenggat: item.tahun,
-          target: item.target,
-          sasaranStrategis: item.sasaranStrategis,
-          capaian: item.capaian,
-          targetUniversitas: item.targetUniversitas,
-          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-        })));
-        setDisposisiRows((disposisiData as IkuPkRow[]).map((item) => ({
-          id: item.id,
-          tenggat: item.tahun,
-          target: item.target,
-          sasaranStrategis: item.sasaranStrategis,
-          capaian: item.capaian,
-          targetUniversitas: item.targetUniversitas,
-          aksi: item.capaian > 0 ? "Proses" as const : "Input" as const,
-        })));
+      if (disposisiSubId && unitId) {
+        await upsertDisposisi(disposisiSubId, unitId, tahun, validItems, disposedBy);
+        // Refresh data
+        if (role === 'user' && authUser?.id) {
+          const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
+          setGroupedData(d);
+        } else {
+          const d = await getIndikatorGrouped(jenis, tahun, unitId);
+          setGroupedData(d);
+        }
       }
     } catch {
-      // handle error
+      alert("Gagal menyimpan disposisi");
     } finally {
       setDisposisiModalOpen(false);
       setDisposisiRow(null);
+      setDisposisiSubId(null);
+      setDisposedBy(null);
+    }
+  };
+
+  // File repository modal helpers
+  const periodeOptions = [
+    `Januari ${tahun} - Mei ${tahun}`,
+    `Juni ${tahun} - Agustus ${tahun}`,
+    `September ${tahun} - Desember ${tahun}`,
+  ];
+
+  const handleInputFileClick = (indikatorId: number, nama: string, target: number) => {
+    setFileRepoIndikatorId(indikatorId);
+    setFileRepoNama(nama);
+    setFileRepoPeriode(periodeOptions[0]);
+    setFileRepoFiles([]);
+    setFileRepoLoading(false);
+    setFileRepoSubmitting(false);
+    setFileRepoTarget(target);
+    setFileRepoModalOpen(true);
+  };
+
+  // Mock: simulate fetching files from external repository app
+  // In production, replace with real API call matching user + target name
+  useEffect(() => {
+    if (!fileRepoModalOpen || !fileRepoPeriode || !fileRepoIndikatorId) return;
+    setFileRepoLoading(true);
+    const timer = setTimeout(() => {
+      // Generate mock files based on indikator name and periode
+      const count = Math.floor(Math.random() * 8) + 2;
+      const mockFiles = Array.from({ length: count }, (_, i) => {
+        const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, "0");
+        const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, "0");
+        return {
+          no: i + 1,
+          namaFile: `${fileRepoNama} - Dokumen ${i + 1}.pdf`,
+          tanggal: `${day}/${month}/${tahun}`,
+          sumber: "Repository FIK",
+        };
+      });
+      setFileRepoFiles(mockFiles);
+      setFileRepoLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [fileRepoModalOpen, fileRepoPeriode, fileRepoIndikatorId, fileRepoNama, tahun]);
+
+  const handleFileRepoSubmit = async () => {
+    if (!fileRepoIndikatorId || !unitId || !authUser?.id) return;
+    setFileRepoSubmitting(true);
+    try {
+      await submitFileRealisasi({
+        indikatorId: fileRepoIndikatorId,
+        unitId,
+        tahun,
+        periode: fileRepoPeriode,
+        fileCount: fileRepoFiles.length,
+        userId: authUser.id,
+      });
+      setFileRepoModalOpen(false);
+    } catch {
+      alert("Gagal menyimpan realisasi");
+    } finally {
+      setFileRepoSubmitting(false);
     }
   };
 
@@ -228,138 +188,85 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
 
-        {/* FILE REPO MODAL */}
-        {fileRepoModalOpen && (
+        {/* DISPOSISI MODAL */}
+        {disposisiModalOpen && (disposisiRow || disposisiSubId) && createPortal(
           <div
             style={{
-              position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)",
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              zIndex: 1000,
-            }}
-            onClick={() => setFileRepoModalOpen(false)}
-          >
-            <div
-              style={{
-                backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 400, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>
-                Pilih File Repository
-              </h3>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Pilih Periode</label>
-                <select
-                  value={fileRepoPeriode}
-                  onChange={(e) => setFileRepoPeriode(e.target.value)}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
-                >
-                  {fileRepoPeriodeOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Nama File</label>
-                <input
-                  type="text"
-                  value={currentFileRepo.namaFile}
-                  readOnly
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Kategori</label>
-                <input
-                  type="text"
-                  value={currentFileRepo.kategori}
-                  readOnly
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Jumlah File Ditemukan</label>
-                <input
-                  type="text"
-                  value={currentFileRepo.jumlah}
-                  readOnly
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, backgroundColor: "#fff", boxSizing: "border-box", color: "#374151" }}
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <button
-                  onClick={() => setFileRepoModalOpen(false)}
-                  style={{ padding: "10px 28px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
-                >
-                  Kembali
-                </button>
-                <button
-                  onClick={handleFileRepoPilih}
-                  style={{ padding: "10px 28px", borderRadius: 6, border: "none", backgroundColor: "#16a34a", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-                >
-                  Pilih
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* DISPOSISI MODAL (dekan only) */}
-        {disposisiModalOpen && disposisiRow && (
-          <div
-            style={{
-              position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              zIndex: 1000,
+              zIndex: 9999,
             }}
             onClick={() => setDisposisiModalOpen(false)}
           >
             <div
               style={{
                 backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 480, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                width: 540, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
               }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Pilih Kategori</label>
-                <select
-                  value={selectedKategori}
-                  onChange={(e) => { setSelectedKategori(e.target.value); setSelectedUserId(null); }}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
-                >
-                  <option value="Dosen">Dosen</option>
-                </select>
+              <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Target Fakultas: </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{disposisiTargetFakultas}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Sisa: </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: sisaTarget < 0 ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
+                </div>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#374151" }}>Nama</label>
-                <select
-                  value={selectedUserId ?? ""}
-                  onChange={(e) => setSelectedUserId(Number(e.target.value))}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box", color: "#374151" }}
-                >
-                  <option value="" disabled>Pilih nama...</option>
-                  {unitUsers.map((u) => (
-                    <option key={u.id} value={u.id}>{u.nama}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Allocation rows */}
+              {disposisiAllocations.map((alloc, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", width: "100%" }}>
+                  <select
+                    value={alloc.userId}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setDisposisiAllocations((prev) => prev.map((a, i) => i === idx ? { ...a, userId: val } : a));
+                    }}
+                    style={{ flex: 2, minWidth: 0, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, color: "#374151", boxSizing: "border-box" }}
+                  >
+                    <option value={0} disabled>Pilih nama...</option>
+                    {unitUsers.map((u) => (
+                      <option key={u.id} value={u.id}>{u.nama}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Jumlah"
+                    value={alloc.jumlah}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDisposisiAllocations((prev) => prev.map((a, i) => i === idx ? { ...a, jumlah: val } : a));
+                    }}
+                    style={{ width: 80, flexShrink: 0, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, textAlign: "center", color: "#374151", boxSizing: "border-box" }}
+                  />
+                  <button
+                    onClick={() => removeAllocation(idx)}
+                    style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 6, border: "1px solid #fca5a5", backgroundColor: "#fef2f2", color: "#dc2626", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
 
-              {selectedUserId && (
-                <p style={{ fontSize: 13, color: "#374151", marginBottom: 24, lineHeight: 1.5 }}>
-                  Dengan ini anda akan memberikan target perjanjian kerja kepada{" "}
-                  <strong>{unitUsers.find((u) => u.id === selectedUserId)?.nama}</strong>
-                </p>
-              )}
+              <button
+                onClick={addAllocation}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 6,
+                  border: "1px dashed #d1d5db", backgroundColor: "#f9fafb",
+                  color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  marginBottom: 20,
+                }}
+              >
+                + Tambah
+              </button>
 
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <button
@@ -370,19 +277,168 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </button>
                 <button
                   onClick={handleDisposisiSubmit}
-                  disabled={!selectedUserId}
+                  disabled={disposisiAllocations.length === 0 || sisaTarget < 0}
                   style={{
                     padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: selectedUserId ? "#16a34a" : "#9ca3af",
+                    backgroundColor: disposisiAllocations.length > 0 && sisaTarget >= 0 ? "#16a34a" : "#9ca3af",
                     color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: selectedUserId ? "pointer" : "not-allowed",
+                    cursor: disposisiAllocations.length > 0 && sisaTarget >= 0 ? "pointer" : "not-allowed",
                   }}
                 >
-                  Disposisi
+                  Simpan Disposisi
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
+        )}
+
+        {/* FILE REPOSITORY MODAL */}
+        {fileRepoModalOpen && createPortal(
+          <div
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 9999,
+            }}
+            onClick={() => setFileRepoModalOpen(false)}
+          >
+            
+            <div
+              style={{
+                backgroundColor: "white", borderRadius: 12, padding: 28,
+                width: 640, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, color: "#1f2937", textAlign: "center" }}>
+                Pilih File Repository
+              </h3>
+
+               {/* Warning if files < target */}
+              {!fileRepoLoading && fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
+                <div style={{
+                  marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef3c7",
+                  borderRadius: 8, border: "1px solid #fcd34d", fontSize: 13, color: "#92400e",
+                  textAlign: "center", lineHeight: 1.5,
+                }}>
+                  Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
+                  Mohon untuk memenuhi target melalui{" "}
+                  <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#b45309", fontWeight: 700, textDecoration: "underline" }}>
+                    Repository.fik.upnvj.ac.id
+                  </a>
+                </div>
+              )}
+
+              {/* Pilih Periode */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Pilih Periode</label>
+                <select
+                  value={fileRepoPeriode}
+                  onChange={(e) => setFileRepoPeriode(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 6,
+                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                    boxSizing: "border-box", backgroundColor: "white",
+                  }}
+                >
+                  {periodeOptions.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Nama Target */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Nama Target</label>
+                <div
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 6,
+                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                    backgroundColor: "#f9fafb", boxSizing: "border-box",
+                  }}
+                >
+                  {fileRepoNama}
+                </div>
+              </div>
+
+              {/* Jumlah File Ditemukan */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jumlah File Ditemukan</label>
+                <div
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 6,
+                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                    backgroundColor: "#f9fafb", boxSizing: "border-box",
+                  }}
+                >
+                  {fileRepoLoading ? "Mencari..." : fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "-"}
+                </div>
+              </div>
+
+              {/* File Table */}
+              {fileRepoLoading ? (
+                <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat data file...</div>
+              ) : fileRepoFiles.length > 0 ? (
+                <div style={{ marginBottom: 20, maxHeight: 260, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#f9fafb" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 36 }}>No</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>Nama File</th>
+                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 90 }}>Tanggal</th>
+                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 100 }}>Sumber</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fileRepoFiles.map((f) => (
+                        <tr key={f.no} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.no}</td>
+                          <td style={{ padding: "7px 10px", color: "#1f2937" }}>{f.namaFile}</td>
+                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
+                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.sumber}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13, marginBottom: 20 }}>Tidak ada file ditemukan</div>
+              )}
+
+             
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                <button
+                  onClick={() => setFileRepoModalOpen(false)}
+                  style={{
+                    padding: "8px 24px", borderRadius: 6,
+                    border: "1px solid #d1d5db", backgroundColor: "white",
+                    fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151",
+                  }}
+                >
+                  Kembali
+                </button>
+                <button
+                  onClick={handleFileRepoSubmit}
+                  disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
+                  style={{
+                    padding: "8px 24px", borderRadius: 6, border: "none",
+                    backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
+                    color: "white", fontSize: 13, fontWeight: 600,
+                    cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {fileRepoSubmitting ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
         )}
 
         <div
@@ -397,314 +453,337 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             Indikator Kinerja Utama & Perjanjian Kerja
           </h3>
 
-          {detailMode && detailRow ? (
+          {(role === 'admin' || role === 'dekan') ? (
             <>
-              <div style={{ marginBottom: 24, fontSize: 13, color: "#374151", lineHeight: 2.2 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr", gap: "0 4px" }}>
-                  <div style={{ fontWeight: 700 }}>Target</div>
-                  <div>:</div>
-                  <div>{detailRow.target}</div>
+              <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
+                  <select
+                    value={jenis}
+                    onChange={(e) => setJenis(e.target.value)}
+                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                  >
+                    <option value="IKU">Indikator Kinerja Utama</option>
+                    <option value="PK">Perjanjian Kerja</option>
+                  </select>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr 180px 14px 1fr", gap: "0 4px" }}>
-                  <div style={{ fontWeight: 700 }}>Indikator Kinerja Kegiatan</div>
-                  <div>:</div>
-                  <div>{detailRow.target}</div>
-                  <div style={{ fontWeight: 700 }}>Sasaran Strategis</div>
-                  <div>:</div>
-                  <div>{detailRow.sasaranStrategis}</div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
+                  <select
+                    value={tahun}
+                    onChange={(e) => setTahun(e.target.value)}
+                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                  >
+                    {["2024", "2025", "2026", "2027"].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
-                <div style={{ height: 8 }} />
-                <div style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr", gap: "0 4px" }}>
-                  <div style={{ fontWeight: 700 }}>Target Universitas</div>
-                  <div>:</div>
-                  <div>{detailRow.targetUniversitas}%</div>
-                </div>
-                {mockDetailSubIndikators.map((sub) => (
-                  <div key={sub.kode} style={{ display: "grid", gridTemplateColumns: "220px 14px 1fr 180px 14px 1fr", gap: "0 4px" }}>
-                    <div style={{ fontWeight: 700 }}>Sub Indikator Kinerja Kegiatan</div>
-                    <div>:</div>
-                    <div>{sub.kode} {sub.nama}</div>
-                    <div style={{ fontWeight: 700 }}>Target Fakultas</div>
-                    <div>:</div>
-                    <div>{sub.targetFakultas}</div>
-                  </div>
-                ))}
               </div>
 
-              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>
-                Target IKU dan PK
-              </h4>
-              <div style={{ overflowX: "auto", marginBottom: 26 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
-                  <thead>
-                    <tr style={{ backgroundColor: "#f9fafb" }}>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sub Indikator Kegiatan</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Kategori</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Jumlah</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockDetailSubIndikators.map((sub) =>
-                      sub.kategoris.map((kat, idx) => (
-                        <tr key={`${sub.kode}-${idx}`} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          {idx === 0 && (
-                            <td rowSpan={sub.kategoris.length} style={{ padding: "10px 12px", color: "#374151", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}>
-                              {sub.kode} {sub.nama}
-                            </td>
-                          )}
-                          <td style={{ padding: "10px 12px", color: "#374151" }}>{kat.kategori}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "center", color: "#374151" }}>{kat.jumlah}</td>
-                          {idx === 0 && (
-                            <td rowSpan={sub.kategoris.length} style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827", verticalAlign: "top" }}>
-                              {sub.capaian}
-                            </td>
-                          )}
-                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            <button
-                              onClick={handleDetailInputClick}
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: 4,
-                                border: "1px solid #86efac",
-                                backgroundColor: "#ecfdf5",
-                                color: "#16a34a",
-                                fontWeight: 700,
-                                fontSize: 11,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Input
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => setDetailMode(false)}
-                  style={{
-                    padding: "10px 32px",
-                    borderRadius: 6,
-                    border: "none",
-                    backgroundColor: "#16a34a",
-                    color: "white",
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  Simpan
-                </button>
-              </div>
+              {!loading && groupedData.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
+                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas</th>
+                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Disposisi</th>
+                      </tr>
+                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Waktu</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedData.map((group, groupIdx) => {
+                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null }[] = [];
+                        for (const sub of group.subIndikators) {
+                          const childCount = 1 + sub.children.length;
+                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, targetFakultas: sub.targetFakultas });
+                          for (const child of sub.children) {
+                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, targetFakultas: child.targetFakultas });
+                          }
+                        }
+                        const totalRowSpan = flatRows.length;
+
+                        return flatRows.map((row, rowIdx) => {
+                          // Target Universitas kualitas%
+                          const univPct = (() => {
+                            if (row.sub.targetUniversitas !== null && row.sub.baselineJumlah && Number(row.sub.baselineJumlah) > 0) {
+                              const pct = (Number(row.sub.targetUniversitas) / Number(row.sub.baselineJumlah)) * 100;
+                              return `${Math.round(pct * 100) / 100}%`;
+                            }
+                            return "-";
+                          })();
+
+                          // Target Fakultas per level 2 row
+                          const childFakKualitas = (() => {
+                            if (row.level === 2 && row.targetFakultas !== null && row.baselineJumlah && Number(row.baselineJumlah) > 0) {
+                              const pct = (Number(row.targetFakultas) / Number(row.baselineJumlah)) * 100;
+                              return `${Math.round(pct * 100) / 100}%`;
+                            }
+                            return "-";
+                          })();
+                          const childFakKuantitas = row.level === 2 && row.targetFakultas !== null ? Number(row.targetFakultas) : null;
+
+                          return (
+                            <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                              {rowIdx === 0 && (
+                                <>
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {groupIdx + 1}
+                                  </td>
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                    {group.nama}
+                                  </td>
+                                </>
+                              )}
+                              <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                                {row.kode} {row.nama}
+                              </td>
+                              {/* Target Universitas — per level 1 sub */}
+                              {row.isSubFirst && (
+                                <>
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {univPct}
+                                  </td>
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                    Triwulan I
+                                  </td>
+                                </>
+                              )}
+                              {/* Target Fakultas — per level 2 row */}
+                              {row.level === 2 ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {childFakKualitas}
+                                  </td>
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {childFakKuantitas !== null ? `${childFakKuantitas} Lulusan` : "-"}
+                                  </td>
+                                </>
+                              ) : row.isSubFirst ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                </>
+                              ) : null}
+                              {/* Disposisi — only level 2 */}
+                              {row.level === 2 ? (
+                                <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top" }}>
+                                  <button
+                                    onClick={() => handleGroupedDisposisiClick(row.id, Number(row.targetFakultas || 0), null)}
+                                    style={{
+                                      padding: "4px 10px",
+                                      borderRadius: 4,
+                                      border: "1px solid #86efac",
+                                      backgroundColor: "#ecfdf5",
+                                      color: "#16a34a",
+                                      fontWeight: 700,
+                                      fontSize: 11,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Disposisi
+                                  </button>
+                                </td>
+                              ) : row.isSubFirst ? (
+                                <td style={{ padding: "10px 12px" }} />
+                              ) : null}
+                            </tr>
+                          );
+                        });
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {!loading && groupedData.length === 0 && (
+                <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data indikator</p>
+              )}
             </>
           ) : (
             <>
-          <div style={{ background: "#ffffff", borderRadius: 8, padding: 0, marginBottom: 26 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 16,
-                marginBottom: 12,
-              }}
-            >
-              <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Target</label>
-                <select
-                  value={filterTarget}
-                  onChange={(e) => setFilterTarget(e.target.value)}
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#374151" }}
-                >
-                  {targetOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option === "semua" ? "Semua" : option}
-                    </option>
-                  ))}
-                </select>
+              <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
+                  <select
+                    value={jenis}
+                    onChange={(e) => setJenis(e.target.value)}
+                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                  >
+                    <option value="IKU">Indikator Kinerja Utama</option>
+                    <option value="PK">Perjanjian Kerja</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
+                  <select
+                    value={tahun}
+                    onChange={(e) => setTahun(e.target.value)}
+                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                  >
+                    {["2024", "2025", "2026", "2027"].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Periode</label>
-                <select
-                  value={filterPeriode}
-                  onChange={(e) => setFilterPeriode(e.target.value)}
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#374151" }}
-                >
-                  {periodOptions.map((period) => (
-                    <option key={period} value={period}>
-                      {period === "semua" ? "Semua" : period}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+              {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
-            <div style={{ maxWidth: 400, marginBottom: 14 }}>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Status</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#374151" }}
-              >
-                <option value="semua">Semua</option>
-                <option value="input">Input</option>
-                <option value="proses">Proses</option>
-                <option value="disposisi">Disposisi</option>
-              </select>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-              <button
-                onClick={onResetFilters}
-                style={{ background: "white", color: "#10b759", border: "1px solid #10b759", borderRadius: 4, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
-                Reset Filter
-              </button>
-              <button
-                style={{ background: "#10b759", color: "white", border: "none", borderRadius: 4, padding: "8px 24px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
-                Cari
-              </button>
-            </div>
-          </div>
-
-          {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
-
-          {!loading && (
-            <div>
-              <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, fontWeight: 700 }}>
-                {role === 'dekan' ? 'Disposisi Target IKU dan PK' : 'Target IKU dan PK'}
-              </h4>
-              <div style={{ overflowX: "auto", marginBottom: 26 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
-                  <thead>
-                    <tr style={{ backgroundColor: "#f9fafb" }}>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Tenggat</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.length > 0 ? (
-                      filteredRows.map((row) => (
-                        <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
-                          <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
-                          <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
-                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            {role === 'dekan' ? (
-                              <button
-                                onClick={() => handleDisposisiClick(row)}
-                                style={{
-                                  padding: "4px 10px",
-                                  borderRadius: 4,
-                                  border: "1px solid #86efac",
-                                  backgroundColor: "#ecfdf5",
-                                  color: "#16a34a",
-                                  fontWeight: 700,
-                                  fontSize: 11,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Disposisi
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleActionClick(row)}
-                                style={{
-                                  padding: "4px 10px",
-                                  borderRadius: 4,
-                                  border: "1px solid #86efac",
-                                  backgroundColor: "#ecfdf5",
-                                  color: "#16a34a",
-                                  fontWeight: 700,
-                                  fontSize: 11,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                {row.aksi}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
-                          Tidak ada data target
-                        </td>
+              {!loading && groupedData.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
+                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Dosen</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Capaian</th>
+                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Aksi</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedData.map((group, groupIdx) => {
+                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null; disposisiJumlah?: number | null }[] = [];
+                        for (const sub of group.subIndikators) {
+                          const childCount = 1 + sub.children.length;
+                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, targetFakultas: sub.targetFakultas });
+                          for (const child of sub.children) {
+                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, targetFakultas: child.targetFakultas, disposisiJumlah: (child as IndikatorGroupedChild & { disposisiJumlah?: number | null }).disposisiJumlah ?? null });
+                          }
+                        }
+                        const totalRowSpan = flatRows.length;
 
-              {role === 'dekan' && (
-                <>
-                  <h4 style={{ fontSize: 16, color: "#111827", marginBottom: 12, marginTop: 32, fontWeight: 700 }}>
-                    Target IKU dan PK
-                  </h4>
-                  <div style={{ overflowX: "auto", marginBottom: 26 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
-                      <thead>
-                        <tr style={{ backgroundColor: "#f9fafb" }}>
-                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Tenggat</th>
-                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
-                          <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
-                          <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Capaian</th>
-                          <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {disposisiRows.length > 0 ? (
-                          disposisiRows.map((row) => (
-                            <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                              <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.tenggat}</td>
-                              <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
-                              <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
-                              <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700, color: "#111827" }}>{Math.round(row.capaian)}%</td>
-                              <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                                <button
-                                  onClick={() => handleActionClick(row)}
-                                  style={{
-                                    padding: "4px 10px",
-                                    borderRadius: 4,
-                                    border: "1px solid #86efac",
-                                    backgroundColor: "#ecfdf5",
-                                    color: "#16a34a",
-                                    fontWeight: 700,
-                                    fontSize: 11,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  {row.aksi}
-                                </button>
+                        return flatRows.map((row, rowIdx) => {
+                          const childFakKualitas = (() => {
+                            if (row.level === 2 && row.targetFakultas !== null && row.baselineJumlah && Number(row.baselineJumlah) > 0) {
+                              const pct = (Number(row.targetFakultas) / Number(row.baselineJumlah)) * 100;
+                              return `${Math.round(pct * 100) / 100}%`;
+                            }
+                            return "-";
+                          })();
+                          const childFakKuantitas = row.level === 2 && row.targetFakultas !== null ? Number(row.targetFakultas) : null;
+
+                          return (
+                            <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                              {rowIdx === 0 && (
+                                <>
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {groupIdx + 1}
+                                  </td>
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                    {group.nama}
+                                  </td>
+                                </>
+                              )}
+                              <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                                {row.kode} {row.nama}
                               </td>
+                              {/* Target Fakultas — per level 2 row */}
+                              {row.level === 2 ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {childFakKualitas}
+                                  </td>
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {childFakKuantitas !== null ? `${childFakKuantitas} Lulusan` : "-"}
+                                  </td>
+                                </>
+                              ) : row.isSubFirst ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                </>
+                              ) : null}
+                              {/* Target Dosen — only level 2 */}
+                              {row.level === 2 ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {row.disposisiJumlah !== null && row.disposisiJumlah !== undefined ? row.disposisiJumlah : "-"}
+                                  </td>
+                                  {/* Kolom Capaian */}
+                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: row.realisasiJumlah !== undefined && row.disposisiJumlah ? (row.realisasiJumlah >= row.disposisiJumlah ? '#16a34a' : '#eab308') : '#374151', fontWeight: 700 }}>
+                                    {row.realisasiJumlah !== undefined && row.disposisiJumlah && row.disposisiJumlah > 0
+                                      ? (row.realisasiJumlah >= row.disposisiJumlah
+                                          ? '100%'
+                                          : `${Math.round((row.realisasiJumlah / row.disposisiJumlah) * 100)}%`)
+                                      : '-'}
+                                  </td>
+                                  {/* Kolom Aksi */}
+                                  <td style={{ padding: "10px 8px", textAlign: "center", verticalAlign: "top" }}>
+                                    <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+                                      <button
+                                        onClick={() => handleGroupedDisposisiClick(row.id, Number((row as any).disposisiJumlah || 0), authUser?.id)}
+                                        style={{
+                                          padding: "4px 10px", borderRadius: 4,
+                                          border: "1px solid #86efac", backgroundColor: "#ecfdf5",
+                                          color: "#16a34a", fontWeight: 700, fontSize: 11, cursor: "pointer",
+                                        }}
+                                      >
+                                        Disposisi
+                                      </button>
+                                      {row.realisasiJumlah !== undefined && row.disposisiJumlah && row.realisasiJumlah >= row.disposisiJumlah ? (
+                                        <button
+                                          onClick={() => handleInputFileClick(row.id, row.nama, Number((row as any).disposisiJumlah || 0))}
+                                          style={{
+                                            padding: "4px 10px", borderRadius: 4,
+                                            border: "1px solid #60a5fa", backgroundColor: "#f0f9ff",
+                                            color: "#2563eb", fontWeight: 700, fontSize: 11, cursor: "pointer",
+                                          }}
+                                        >
+                                          Lihat Detail
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleInputFileClick(row.id, row.nama, Number((row as any).disposisiJumlah || 0))}
+                                          style={{
+                                            padding: "4px 10px", borderRadius: 4,
+                                            border: "1px solid #93c5fd", backgroundColor: "#eff6ff",
+                                            color: "#2563eb", fontWeight: 700, fontSize: 11, cursor: "pointer",
+                                          }}
+                                        >
+                                          Input File
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </>
+                              ) : row.isSubFirst ? (
+                                <>
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
+                                  <td style={{ padding: "10px 12px" }} />
+                                </>
+                              ) : null}
                             </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
-                              Tidak ada data target
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                          );
+                        });
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
-          )}
+
+              {!loading && groupedData.length === 0 && (
+                <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data target yang didisposisikan kepada Anda</p>
+              )}
             </>
           )}
         </div>

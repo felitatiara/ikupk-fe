@@ -27,6 +27,8 @@ export interface IndikatorGroupedChild {
   kode: string;
   nama: string;
   level: number;
+  targetFakultas: number | null;
+  baselineJumlah: number | null;
 }
 
 export interface IndikatorGroupedSub {
@@ -35,6 +37,10 @@ export interface IndikatorGroupedSub {
   nama: string;
   level: number;
   parentId: number | null;
+  targetId: number | null;
+  targetFakultas: number | null;
+  targetUniversitas: number | null;
+  baselineJumlah: number | null;
   children: IndikatorGroupedChild[];
 }
 
@@ -48,9 +54,18 @@ export interface IndikatorGrouped {
   subIndikators: IndikatorGroupedSub[];
 }
 
-export async function getIndikatorGrouped(jenis: string, tahun: string): Promise<IndikatorGrouped[]> {
-  const response = await fetch(`${API_BASE_URL}/indikator/grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}`);
+export async function getIndikatorGrouped(jenis: string, tahun: string, unitId?: number): Promise<IndikatorGrouped[]> {
+  let url = `${API_BASE_URL}/indikator/grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}`;
+  if (unitId) url += `&unitId=${unitId}`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch grouped indikator');
+  return response.json();
+}
+
+export async function getIndikatorGroupedForUser(jenis: string, tahun: string, userId: number, unitId: number): Promise<IndikatorGrouped[]> {
+  const url = `${API_BASE_URL}/indikator/grouped-user?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&userId=${userId}&unitId=${unitId}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch grouped indikator for user');
   return response.json();
 }
 
@@ -105,16 +120,14 @@ export interface TargetDetail {
 }
 export interface BaselineData {
   id: number;
-  indikatorId: number;
   unitId: number;
-  tahun: string;
   jenisData: string;
   jumlah: number;
-  createdAt: string;
+  tahun: string;
 }
 
-export async function getBaselineDataByIndikatorAndUnit(indikatorId: number, unitId: number): Promise<BaselineData[]> {
-  const response = await fetch(`${API_BASE_URL}/baseline-data?indikatorId=${indikatorId}&unitId=${unitId}`);
+export async function getBaselineDataByJenisDataAndUnit(jenisData: string, unitId: number): Promise<BaselineData[]> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data?jenisData=${encodeURIComponent(jenisData)}&unitId=${unitId}`);
   if (!response.ok) throw new Error('Failed to fetch baseline data');
   return response.json();
 }
@@ -162,6 +175,16 @@ export async function upsertTargetUniversitas(indikatorId: number, unitId: numbe
     body: JSON.stringify({ indikatorId, unitId, tahun, targetUniversitas }),
   });
   if (!response.ok) throw new Error('Failed to upsert target universitas');
+  return response.json();
+}
+
+export async function upsertTargetFakultas(indikatorId: number, unitId: number, tahun: string, targetFakultas: number): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/targets/upsert-target-fakultas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ indikatorId, unitId, tahun, targetFakultas }),
+  });
+  if (!response.ok) throw new Error('Failed to upsert target fakultas');
   return response.json();
 }
 
@@ -374,6 +397,33 @@ export async function updateTargetStatus(id: number, status: string, assignedTo?
   return response.json();
 }
 
+export interface DisposisiItem {
+  id?: number;
+  assignedTo: number;
+  assignedUser?: { id: number; nama: string };
+  jumlah: number;
+}
+
+export async function getDisposisi(indikatorId: number, unitId: number, tahun: string, disposedBy?: number | null): Promise<DisposisiItem[]> {
+  let url = `${API_BASE_URL}/disposisi?indikatorId=${indikatorId}&unitId=${unitId}&tahun=${encodeURIComponent(tahun)}`;
+  if (disposedBy !== undefined) {
+    url += `&disposedBy=${disposedBy === null ? 'null' : disposedBy}`;
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch disposisi');
+  return response.json();
+}
+
+export async function upsertDisposisi(indikatorId: number, unitId: number, tahun: string, items: { assignedTo: number; jumlah: number }[], disposedBy?: number | null): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/disposisi`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ indikatorId, unitId, tahun, items, disposedBy: disposedBy ?? null }),
+  });
+  if (!response.ok) throw new Error('Failed to upsert disposisi');
+  return response.json();
+}
+
 export interface UnitUser {
   id: number;
   nama: string;
@@ -403,5 +453,29 @@ export async function createUserAccount(data: CreateUserPayload): Promise<any> {
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error('Failed to create user');
+  return response.json();
+}
+
+export interface FileRealisasiResult {
+  totalRealisasi: number;
+  targetFakultas: number | null;
+  targetUniversitas: number | null;
+  disposisiUsers: { userId: number; nama: string; jumlah: number; realisasi: number }[];
+}
+
+export async function submitFileRealisasi(data: {
+  indikatorId: number;
+  unitId: number;
+  tahun: string;
+  periode: string;
+  fileCount: number;
+  userId: number;
+}): Promise<FileRealisasiResult> {
+  const response = await fetch(`${API_BASE_URL}/realisasi/from-file`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to submit file realisasi');
   return response.json();
 }
