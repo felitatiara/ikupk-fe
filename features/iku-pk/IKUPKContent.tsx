@@ -1,6 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
+// Popup sukses custom
+function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0,0,0,0.25)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 32, minWidth: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', textAlign: 'center' }}>
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+            <div style={{ background: '#E6F9ED', borderRadius: '50%', width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+              <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="27" cy="27" r="27" fill="#4ADE80"/>
+                <path d="M16 28.5L24 36.5L38 20.5" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <svg width="24" height="24" style={{ position: 'absolute', top: 8, right: -8 }}><circle cx="12" cy="12" r="12" fill="#FDE68A"/></svg>
+              <svg width="16" height="16" style={{ position: 'absolute', bottom: 8, left: -8 }}><circle cx="8" cy="8" r="8" fill="#FDE68A"/></svg>
+            </div>
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 20, color: '#22292f', marginBottom: 6 }}>Data berhasil disimpan!</div>
+        </div>
+        <button onClick={onClose} style={{ background: '#4ADE80', color: 'white', border: 'none', borderRadius: 8, padding: '10px 0', width: '100%', fontWeight: 700, fontSize: 18, cursor: 'pointer' }}>Ya</button>
+      </div>
+    </div>
+  );
+}
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
 import { getUsersByUnit, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, submitFileRealisasi } from "../../lib/api";
@@ -8,6 +35,7 @@ import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedC
 import { useAuth } from "@/hooks/useAuth";
 
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' }) {
+  const [showSuccess, setShowSuccess] = useState(false);
   const { user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
 
@@ -173,6 +201,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
         userId: authUser.id,
       });
       setFileRepoModalOpen(false);
+      setShowSuccess(true);
     } catch {
       alert("Gagal menyimpan realisasi");
     } finally {
@@ -183,6 +212,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
   return (
     <div>
+      <SuccessPopup open={showSuccess} onClose={() => setShowSuccess(false)} />
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
           Indikator Kinerja Utama &amp; Perjanjian Kerja

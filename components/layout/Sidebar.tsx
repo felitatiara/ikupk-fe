@@ -80,7 +80,6 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
       { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
       { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
       { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
-      { key: "pengajuan", label: "Pengajuan Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/pengajuan-iku" },
       { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
     ];
   };

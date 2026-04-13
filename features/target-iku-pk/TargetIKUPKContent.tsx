@@ -192,7 +192,7 @@ export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' 
                 onClick={handleSave}
                 disabled={saving}
                 style={{
-                  backgroundColor: saving ? "#9ca3af" : "#e97a1f",
+                  backgroundColor: saving ? "#9ca3af" : "#1DB362",
                   color: "white",
                   border: "none",
                   borderRadius: 6,
