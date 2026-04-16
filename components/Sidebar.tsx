@@ -2,22 +2,53 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useContext } from "react";
+import { AuthContext } from "@/context/AuthContext";
 
 interface SidebarProps {
   activeMenu?: string;
   onMenuChange?: (menuKey: string) => void;
 }
 
-export default function Sidebar({ activeMenu, onMenuChange }: SidebarProps) {
+
   const pathname = usePathname();
+  const { user } = useContext(AuthContext) || {};
 
-  const menus = [
-    { key: "beranda", label: "Beranda", href: "/dashboard" },
-    { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
-    { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/iku-pk" },
-    { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/targets" },
-  ];
+  function getMenusByRole(role?: string) {
+    if (role === "Super Admin") {
+      return [
+        { key: "beranda", label: "Beranda", href: "/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
+        { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
+        { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
+        { key: "master-indikator", label: "Master Indikator", href: "/master-indikator" },
+        { key: "master-user", label: "Master User", href: "/master-user" },
+      ];
+    }
+    if (role === "Admin") {
+      return [
+        { key: "beranda", label: "Beranda", href: "/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
+        { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
+        { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
+        { key: "master-indikator", label: "Master Indikator", href: "/master-indikator" },
+      ];
+    }
+    // Default: User
+    return [
+      { key: "beranda", label: "Beranda", href: "/dashboard" },
+      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
+      { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
+      { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
+      { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
+    ];
+  }
 
+  // Jika role bukan Admin/Super Admin, treat as User
+  const effectiveRole = user?.role === "Admin" || user?.role === "Super Admin" ? user.role : "User";
+  const menus = getMenusByRole(effectiveRole);
   const currentActive = activeMenu || (pathname?.startsWith("/monitoring-unit-kerja") ? "monitoring" : pathname?.startsWith("/dashboard") ? "beranda" : "");
 
   return (
