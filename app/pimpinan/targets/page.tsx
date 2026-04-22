@@ -2,6 +2,6 @@
 
 import TargetIKUPKContent from "@/features/target-iku-pk/TargetIKUPKContent";
 
-export default function TargetsDekan() {
-  return <TargetIKUPKContent role="dekan" />;
+export default function TargetsPimpinan() {
+  return <TargetIKUPKContent role="pimpinan" />;
 }

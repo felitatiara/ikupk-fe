@@ -19,7 +19,7 @@ export default function TargetIKUPKAdmin({ apiBaseUrl = 'http://localhost:4000' 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch(`${apiBaseUrl}/targets/admin/pku`);
+        const response = await fetch(`${apiBaseUrl}/targets/admin`);
         if (!response.ok) throw new Error('Gagal mengambil data');
         const json = await response.json();
         setData(json);

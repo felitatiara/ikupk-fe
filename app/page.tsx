@@ -12,8 +12,11 @@ export default function Home() {
     if (!loading) {
       if (user) {
         // Route based on user role
-        if (user.role === 'admin') {
+        const userRole = user.role?.toLowerCase() || '';
+        if (userRole === 'admin' || userRole === 'superadmin') {
           router.push('/admin/dashboard');
+        } else if (userRole === 'pimpinan') {
+          router.push('/pimpinan/dashboard');
         } else {
           router.push('/user/dashboard');
         }

@@ -4,8 +4,9 @@ export interface User {
   nip?: string;
   email: string;
   nama: string;
-  role: 'user' | 'admin' | 'pku';
+  role: string;
   unitId: number;
+  jenis?: string;
   unitNama?: string;
   unitJenis?: string;
 }
@@ -73,7 +74,7 @@ export interface TargetContextType {
   error: string | null;
   fetchTargets: () => Promise<void>;
   fetchTargetsByUnit: (unitId: number) => Promise<void>;
-  fetchTargetsForAdminPKU: () => Promise<void>;
+  fetchTargetsForSuperAdmin: () => Promise<void>;
   createTarget: (data: TargetCreateRequest) => Promise<void>;
   updateTarget: (id: number, data: TargetUpdateRequest) => Promise<void>;
   deleteTarget: (id: number) => Promise<void>;

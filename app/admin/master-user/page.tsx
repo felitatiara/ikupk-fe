@@ -18,7 +18,7 @@ export default function AdminMasterUserPage() {
     const checkAccess = async () => {
       if (loading) return;
 
-      if (!user || user.role !== 'admin') {
+      if (!user || (user.role?.toLowerCase() !== 'admin' && user.role?.toLowerCase() !== 'superadmin')) {
         if (!cancelled) {
           setCanAccess(false);
           setCheckingAccess(false);

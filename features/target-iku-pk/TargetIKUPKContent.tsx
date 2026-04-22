@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { getIndikatorGrouped, upsertTargetFakultas, upsertTargetUniversitas } from "../../lib/api";
 import type { IndikatorGrouped, IndikatorGroupedSub } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
@@ -12,21 +12,24 @@ const JENIS_OPTIONS = [
   { value: "PK", label: "Perjanjian Kerja" },
 ];
 
-export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' | 'dekan' }) {
+export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' | 'pimpinan' }) {
   const { user } = useAuth();
   const [jenis, setJenis] = useState("IKU");
   const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [data, setData] = useState<IndikatorGrouped[]>([]);
   // kualitasFakultas state: { [indikatorId]: percentageValue } — for level 2 input
   const [kualitasFakultas, setKualitasFakultas] = useState<Record<number, string>>({});
-  // kualitasUniv state: { [subIndikatorId]: percentageValue } — for Biro PKU input per level 1
-  const [kualitasUniv, setKualitasUniv] = useState<Record<number, string>>({});
+  // univTargetValue: { [sasaranId]: quantityValue } — for Super Admin input per level 0
+  const [univTargetValue, setUnivTargetValue] = useState<Record<number, string>>({});
+  const [univTargetWaktu, setUnivTargetWaktu] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
   const unitId = user?.unitId;
+  const userRole = user?.role?.toLowerCase() || '';
   const isFakultas = user?.unitJenis?.toLowerCase() === 'fakultas';
-  const isBiroPKU = user?.unitJenis?.toLowerCase() === 'biro';
+  // Super Admin & Admin di Fakultas Ilmu Komputer (unit_id = 1) mendapat fitur Target Universitas
+  const isSuperAdminFIK = (userRole === 'superadmin' || userRole === 'admin') && Number(unitId) === 1;
 
   useEffect(() => {
     if (!jenis) return;
@@ -35,34 +38,31 @@ export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' 
       .then((d) => {
         if (cancelled) return;
         setData(d);
-        // Initialize kualitasFakultas from existing targetFakultas on level 2 children
-        const init: Record<number, string> = {};
-        for (const g of d) {
-          for (const sub of g.subIndikators) {
-            for (const child of sub.children) {
-              if (child.targetFakultas !== null && child.baselineJumlah && Number(child.baselineJumlah) > 0) {
-                const pct = (Number(child.targetFakultas) / Number(child.baselineJumlah)) * 100;
-                init[child.id] = String(Math.round(pct * 100) / 100);
-              } else {
-                init[child.id] = "";
-              }
-            }
-          }
-        }
-        setKualitasFakultas(init);
-        // Initialize kualitasUniv from existing targetUniversitas per sub-indikator
+
+        const initFak: Record<number, string> = {};
         const initUniv: Record<number, string> = {};
+        const initWaktu: Record<number, string> = {};
+
         for (const g of d) {
+          initUniv[g.id] = g.targetUniversitas !== null ? String(g.targetUniversitas) : "";
+          initWaktu[g.id] = g.tenggat || "Triwulan I";
+
           for (const sub of g.subIndikators) {
-            if (sub.targetUniversitas !== null && sub.baselineJumlah && Number(sub.baselineJumlah) > 0) {
-              const pct = (Number(sub.targetUniversitas) / Number(sub.baselineJumlah)) * 100;
-              initUniv[sub.id] = String(Math.round(pct * 100) / 100);
+            // Effective baseline: use l1 if available, else use group (Level 0)
+            const effectiveBaseline = sub.baselineJumlah ?? g.baselineJumlah;
+
+            // Initialization for Target Fakultas
+            if (sub.targetFakultas !== null && effectiveBaseline && Number(effectiveBaseline) > 0) {
+              const pct = (Number(sub.targetFakultas) / Number(effectiveBaseline)) * 100;
+              initFak[sub.id] = String(Math.round(pct * 100) / 100);
             } else {
-              initUniv[sub.id] = "";
+              initFak[sub.id] = "";
             }
           }
         }
-        setKualitasUniv(initUniv);
+        setKualitasFakultas(initFak);
+        setUnivTargetValue(initUniv);
+        setUnivTargetWaktu(initWaktu);
       })
       .catch(() => { if (!cancelled) setData([]); });
     return () => { cancelled = true; };
@@ -74,43 +74,19 @@ export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' 
     return Math.round((pct / 100) * Number(baselineJumlah));
   };
 
-  const getUnivPct = (sub: IndikatorGroupedSub): string => {
-    if (sub.targetUniversitas !== null && sub.baselineJumlah && Number(sub.baselineJumlah) > 0) {
-      const pct = (Number(sub.targetUniversitas) / Number(sub.baselineJumlah)) * 100;
-      return `${Math.round(pct * 100) / 100}`;
-    }
-    return "-";
-  };
-
-  const getUnivKuantitas = (id: number, baselineJumlah: number | null | undefined): number | null => {
-    const pct = parseFloat(kualitasUniv[id] || "");
-    if (isNaN(pct) || baselineJumlah === null || baselineJumlah === undefined) return null;
-    return Math.round((pct / 100) * Number(baselineJumlah));
-  };
-
   const handleSave = async () => {
     if (!unitId) return;
     setSaving(true);
     try {
-      if (isBiroPKU) {
-        // Biro PKU saves Target Universitas per sub-indikator (level 1)
+      // No longer saving Target Universitas here. It is managed in Master Indikator.
+      if (isFakultas || isSuperAdminFIK) {
+        // Both Admin and SuperAdmin FIK save Target Fakultas per level 1 indikator
         for (const group of data) {
           for (const sub of group.subIndikators) {
-            const kuantitas = getUnivKuantitas(sub.id, sub.baselineJumlah);
-            if (kuantitas === null) continue;
-            await upsertTargetUniversitas(sub.id, unitId, tahun, kuantitas);
-          }
-        }
-      }
-      if (isFakultas) {
-        // Fakultas saves Target Fakultas per level 2 indikator only
-        for (const group of data) {
-          for (const sub of group.subIndikators) {
-            for (const child of sub.children) {
-              const childKuantitas = getRowKuantitas(child.id, child.baselineJumlah);
-              if (childKuantitas !== null) {
-                await upsertTargetFakultas(child.id, unitId, tahun, childKuantitas);
-              }
+            const effectiveBaseline = sub.baselineJumlah ?? group.baselineJumlah;
+            const kuantitas = getRowKuantitas(sub.id, effectiveBaseline);
+            if (kuantitas !== null) {
+              await upsertTargetFakultas(sub.id, unitId, tahun, kuantitas);
             }
           }
         }
@@ -126,251 +102,188 @@ export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' 
     }
   };
 
-  // Build flat rows for the table
-  interface FlatRow {
-    id: number;
-    kode: string;
-    nama: string;
-    level: number;
-    baselineJumlah: number | null;
-    subId: number;
-    isSubFirst: boolean;
-    subChildCount: number;
-    sub: IndikatorGroupedSub;
-  }
-
-  const buildRows = (group: IndikatorGrouped): FlatRow[] => {
-    const rows: FlatRow[] = [];
-    for (const sub of group.subIndikators) {
-      const childCount = 1 + sub.children.length;
-      rows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, baselineJumlah: sub.baselineJumlah, subId: sub.id, isSubFirst: true, subChildCount: childCount, sub });
-      for (const child of sub.children) {
-        rows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, baselineJumlah: child.baselineJumlah, subId: sub.id, isSubFirst: false, subChildCount: childCount, sub });
-      }
-    }
-    return rows;
-  };
 
   return (
     <div>
+      <SuccessModal isOpen={showSuccess} onClose={() => setShowSuccess(false)} />
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 12, fontWeight: 600, marginBottom: 14 }}>
-          Target Indikator Kinerja Utama &amp; Perjanjian Kerja
-        </p>
-        <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          <a href="/admin/target-iku-pk">Target Indikator Kinerja Utama &amp; Perjanjian Kerja</a>
+        </nav>
+
+        <div className="page-card">
           <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937" }}>
             Target Indikator Kinerja Utama &amp; Perjanjian Kerja
           </h3>
 
-          <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
-            <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
+          <div className="filter" style={{ marginBottom: 20 }}>
+            <div className="filter-content">
+              <label className="filter-content-label">Target</label>
               <select
                 value={jenis}
                 onChange={(e) => setJenis(e.target.value)}
-                style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                className="filter-isi"
               >
                 {JENIS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
+            <div className="filter-content">
+              <label className="filter-content-label">Tahun</label>
               <select
                 value={tahun}
                 onChange={(e) => setTahun(e.target.value)}
-                style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                className="filter-isi"
               >
                 {["2024", "2025", "2026", "2027"].map((y) => (
                   <option key={y} value={y}>{y}</option>
                 ))}
               </select>
             </div>
-            {(isFakultas || isBiroPKU) && (
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{
-                  backgroundColor: saving ? "#9ca3af" : "#1DB362",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 6,
-                  padding: "8px 20px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: saving ? "not-allowed" : "pointer",
-                }}
-              >
-                {saving ? "Menyimpan..." : "Simpan"}
-              </button>
+            {(isFakultas || isSuperAdminFIK) && (
+              <div className="filter-content" style={{ justifyContent: 'flex-end', marginLeft: 'auto' }}>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="btn-main"
+                  style={{ height: 38 }}
+                >
+                  {saving ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
             )}
           </div>
 
-          {data.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+          <div className="table-wrapper">
+            {data.length > 0 ? (
+              <table className="table-universal">
                 <thead>
-                  <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
-                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
-                    <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
-                    <th colSpan={isBiroPKU ? 3 : 2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas {tahun}</th>
-                    {isFakultas && (
-                      <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
-                    )}
+                  <tr>
+                    <th rowSpan={2} style={{ width: "5%" }}>Nomor</th>
+                    <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
+                    <th rowSpan={2} style={{ width: "35%", minWidth: 250 }}>Indikator Kinerja Utama</th>
+                    <th colSpan={2}>Target Universitas {tahun}</th>
+                    <th colSpan={2}>Target Fakultas</th>
                   </tr>
-                  <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                    {isBiroPKU ? (
-                      <>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Waktu</th>
-
-                      </>
-                    ) : (
-                      <>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kuantitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: isFakultas ? "1px solid #e5e7eb" : undefined, textAlign: "center", minWidth: 100 }}>Waktu</th>
-                      </>
-                    )}
-                    {isFakultas && (
-                      <>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kualitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center", minWidth: 120 }}>Kuantitas</th>
-                      </>
-                    )}
+                  <tr>
+                    <th style={{ width: 100 }}>Kuantitas</th>
+                    <th style={{ width: 100 }}>Waktu</th>
+                    <th style={{ width: 100 }}>Kualitas (%)</th>
+                    <th style={{ width: 120 }}>Kuantitas</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.map((group, groupIdx) => {
-                    const allRows = buildRows(group);
-                    const totalRowSpan = allRows.length;
+                    const l1Items = group.subIndikators;
+                    const groupRows = l1Items.reduce((acc, curr) => acc + 1 + curr.children.length, 0);
 
-                    return allRows.map((row, rowIdx) => {
-                      const rowKuantitas = row.level === 2 ? getRowKuantitas(row.id, row.baselineJumlah) : null;
+                    return l1Items.flatMap((l1, l1Idx) => {
+                      const children = l1.children || [];
+                      const totalSubRows = 1 + children.length;
 
-                      return (
-                        <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                          {rowIdx === 0 && (
+                      const baseVal = l1.baselineJumlah ?? group.baselineJumlah;
+                      const effectiveBaseline = baseVal !== null && baseVal !== undefined ? Number(baseVal) : null;
+                      const rowKuantitas = getRowKuantitas(l1.id, effectiveBaseline);
+
+                      const l1Row = (
+                        <tr key={l1.id}>
+                          {l1Idx === 0 && (
                             <>
                               <td
-                                rowSpan={totalRowSpan}
-                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                                rowSpan={groupRows}
+                                className="text-center vertical-top"
+                                style={{ fontWeight: 700 }}
                               >
                                 {groupIdx + 1}
                               </td>
                               <td
-                                rowSpan={totalRowSpan}
-                                style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
+                                rowSpan={groupRows}
+                                className="vertical-top"
+                                style={{ fontWeight: 600, color: "#374151" }}
                               >
                                 {group.nama}
                               </td>
                             </>
                           )}
-                          <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
-                            {row.kode} {row.nama}
+
+                          <td style={{ fontWeight: 600 }}>
+                            {l1.kode} {l1.nama}
                           </td>
-                          {/* Target Universitas - per level 1 sub-indikator */}
-                          {row.isSubFirst ? (
+
+                          {/* Merged Target Univ Columns: Only on first Level 1 row of the group */}
+                          {l1Idx === 0 && (
                             <>
                               <td
-                                rowSpan={row.subChildCount}
-                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
+                                rowSpan={groupRows}
+                                className="text-center"
+                                style={{ fontWeight: 600, color: "#1f2937" }}
                               >
-                                {isBiroPKU ? (
-                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={100}
-                                      value={kualitasUniv[row.sub.id] ?? ""}
-                                      onChange={(e) => setKualitasUniv((prev) => ({ ...prev, [row.sub.id]: e.target.value }))}
-                                      style={{
-                                        width: 60,
-                                        border: "1px solid #e5e7eb",
-                                        borderRadius: 4,
-                                        padding: "4px 6px",
-                                        fontSize: 13,
-                                        textAlign: "center",
-                                        color: "#374151",
-                                      }}
-                                    />
-                                    <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
-                                  </div>
-                                ) : (
-                                  row.sub.targetUniversitas !== null ? Number(row.sub.targetUniversitas) : "-"
-                                )}
+                                {group.targetUniversitas !== null ? group.targetUniversitas : "-"}
                               </td>
-                              {isBiroPKU && (
-                                <td
-                                  rowSpan={row.subChildCount}
-                                  style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}
-                                >
-                                  {getUnivKuantitas(row.sub.id, row.sub.baselineJumlah) !== null ? getUnivKuantitas(row.sub.id, row.sub.baselineJumlah) : "-"}
-                                </td>
+                              <td
+                                rowSpan={groupRows}
+                                className="text-center"
+                                style={{ color: "#4b5563" }}
+                              >
+                                {group.tenggat || "Triwulan I"}
+                              </td>
+                            </>
+                          )}
+
+                          <td rowSpan={totalSubRows} className="text-center">
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={kualitasFakultas[l1.id] ?? ""}
+                                  onChange={(e) => setKualitasFakultas((prev) => ({ ...prev, [l1.id]: e.target.value }))}
+                                  style={{
+                                    width: 60,
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 4,
+                                    padding: "4px 6px",
+                                    fontSize: 13,
+                                    textAlign: "center",
+                                  }}
+                                />
+                                <span style={{ fontWeight: 600 }}>%</span>
+                              </div>
+                              {effectiveBaseline !== null && effectiveBaseline > 0 && (
+                                <span style={{ fontSize: 10, color: "#6b7280" }}>
+                                  Acuan: {effectiveBaseline}
+                                </span>
                               )}
-                              <td
-                                rowSpan={row.subChildCount}
-                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}
-                              >
-                                Triwulan I
-                              </td>
-                            </>
-                          ) : null}
-                          {/* Target Fakultas */}
-                          {isFakultas && row.level === 2 ? (
-                            <>
-                              <td
-                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb" }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    value={kualitasFakultas[row.id] ?? ""}
-                                    onChange={(e) => setKualitasFakultas((prev) => ({ ...prev, [row.id]: e.target.value }))}
-                                    style={{
-                                      width: 60,
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 4,
-                                      padding: "4px 6px",
-                                      fontSize: 13,
-                                      textAlign: "center",
-                                      color: "#374151",
-                                    }}
-                                  />
-                                  <span style={{ color: "#374151", fontWeight: 600 }}>%</span>
-                                </div>
-                              </td>
-                              <td
-                                style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", color: "#374151", fontWeight: 600 }}
-                              >
-                                {rowKuantitas !== null ? rowKuantitas : "-"}
-                              </td>
-                            </>
-                          ) : isFakultas && row.isSubFirst ? (
-                            <>
-                              <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                              <td style={{ padding: "10px 12px" }} />
-                            </>
-                          ) : null}
+                            </div>
+                          </td>
+
+                          <td rowSpan={totalSubRows} className="text-center" style={{ fontWeight: 600 }}>
+                            {rowKuantitas !== null ? `${rowKuantitas} Lulusan` : "-"}
+                          </td>
                         </tr>
                       );
+
+                      const l2Rows = children.map((l2) => (
+                        <tr key={l2.id}>
+                          <td style={{ color: "#6b7280", paddingLeft: 24, fontSize: 12 }}>
+                            {l2.kode} {l2.nama}
+                          </td>
+                        </tr>
+                      ));
+
+                      return [l1Row, ...l2Rows];
                     });
                   })}
                 </tbody>
               </table>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
-                Menampilkan {data.length} dari {data.length}
+            ) : (
+              <p style={{ color: "#9ca3af", padding: 24, textAlign: "center" }}>
+                Tidak ada data indikator untuk ditampilkan.
               </p>
-            </div>
-          )}
-
-          {data.length === 0 && (
-            <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data indikator</p>
-          )}
+            )}
+          </div>
         </div>
       </PageTransition>
       <SuccessModal isOpen={showSuccess} onClose={() => setShowSuccess(false)} />

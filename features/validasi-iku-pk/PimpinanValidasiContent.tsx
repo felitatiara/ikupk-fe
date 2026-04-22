@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import PageTransition from "@/components/layout/PageTransition";
-import { getDekanValidasi, updateTargetStatus } from "@/lib/api";
-import type { DekanValidasiRow } from "@/lib/api";
+import { getPimpinanValidasi, updateTargetStatus } from "@/lib/api";
+import type { PimpinanValidasiRow } from "@/lib/api";
 
 interface ValidasiData {
   id: number;
@@ -14,7 +14,7 @@ interface ValidasiData {
   status: string;
 }
 
-export default function DekanValidasiContent() {
+export default function PimpinanValidasiContent() {
   const [data, setData] = useState<ValidasiData[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +28,7 @@ export default function DekanValidasiContent() {
         const userStr = sessionStorage.getItem("user");
         if (!userStr) return;
         const user = JSON.parse(userStr);
-        const rows: DekanValidasiRow[] = await getDekanValidasi(user.unitId);
+        const rows: PimpinanValidasiRow[] = await getPimpinanValidasi(user.unitId);
         const mapped: ValidasiData[] = rows.map((r) => ({
           id: r.id,
           tenggat: r.tahun,
@@ -39,7 +39,7 @@ export default function DekanValidasiContent() {
         }));
         setData(mapped);
       } catch (err) {
-        console.error("Failed to fetch dekan validasi data:", err);
+        console.error("Failed to fetch pimpinan validasi data:", err);
       } finally {
         setLoading(false);
       }
@@ -96,7 +96,7 @@ export default function DekanValidasiContent() {
     return matchTarget && matchPeriode && matchStatus;
   });
 
-  const shownRows = filteredData.filter((item) => item.status === "pending_dekan");
+  const shownRows = filteredData.filter((item) => item.status === "pending_pimpinan");
 
   const tableHeaderStyle: React.CSSProperties = {
     textAlign: "left",

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
-import { getDekanValidasi } from '@/lib/api';
-import type { DekanValidasiRow } from '@/lib/api';
+import { getPimpinanValidasi } from '@/lib/api';
+import type { PimpinanValidasiRow } from '@/lib/api';
 
 interface TargetRow {
   id: number;
@@ -15,7 +15,7 @@ interface TargetRow {
   aksi: "Input" | "Proses";
 }
 
-export default function DekanDashboardContent() {
+export default function PimpinanDashboardContent() {
   const [user, setUser] = useState<any>(null);
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,7 +33,7 @@ export default function DekanDashboardContent() {
     async function fetchTargets() {
       try {
         setLoading(true);
-        const data: DekanValidasiRow[] = await getDekanValidasi(user.unitId);
+        const data: PimpinanValidasiRow[] = await getPimpinanValidasi(user.unitId);
         setRows(data.map((item) => ({
           id: item.id,
           tenggat: item.tahun,

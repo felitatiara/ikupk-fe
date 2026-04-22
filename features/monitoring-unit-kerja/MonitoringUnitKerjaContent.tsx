@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
@@ -89,7 +89,7 @@ const CustomPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, name, valu
   );
 };
 
-export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: "admin" | "user" }) {
+export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: string }) {
   const [user, setUser] = useState<any>(null);
   const [selectedUnit, setSelectedUnit] = useState("Fakultas Ilmu Komputer");
 

@@ -10,10 +10,12 @@ export function useUser(): User | null {
 
 export function useIsAdmin(): boolean {
   const user = useUser();
-  return user?.role === 'admin' || user?.role === 'pku';
+  const role = user?.role?.toLowerCase() || '';
+  return role === 'admin' || role === 'superadmin';
 }
 
-export function useIsAdminPKU(): boolean {
+export function useIsSuperAdmin(): boolean {
   const user = useUser();
-  return user?.role === 'admin' && user?.unitId === 4;
+  const role = user?.role?.toLowerCase() || '';
+  return (role === 'admin' || role === 'superadmin') && user?.unitId === 1;
 }

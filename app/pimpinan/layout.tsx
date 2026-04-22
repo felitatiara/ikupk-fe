@@ -6,7 +6,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 
-export default function DekanLayout({
+export default function PimpinanLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -191,7 +191,7 @@ export default function DekanLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar role="dekan" />
+        <Sidebar role="pimpinan" />
         <main
           style={{
             flex: 1,

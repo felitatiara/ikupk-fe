@@ -23,10 +23,11 @@ export default function LoginPage() {
       const userStr = sessionStorage.getItem('user');
       const user = userStr ? JSON.parse(userStr) : null;
       if (user) {
-        if (user.role === 'admin' || user.role === 'pku') {
+        const userRole = user.role?.toLowerCase() || '';
+        if (userRole === 'admin' || userRole === 'superadmin') {
           router.push('/admin/dashboard');
-        } else if (user.role === 'dekan') {
-          router.push('/dekan/dashboard');
+        } else if (userRole === 'pimpinan') {
+          router.push('/pimpinan/dashboard');
         } else {
           router.push('/user/dashboard');
         }

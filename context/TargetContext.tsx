@@ -5,7 +5,7 @@ import { TargetContextType, TargetDetail, TargetRow, TargetCreateRequest, Target
 import {
   getTargets,
   getTargetsByUnit,
-  getTargetsForAdminPKU,
+  getTargetsForAdminFIK as getTargetsForSuperAdmin,
 } from '@/lib/api';
 
 export const TargetContext = createContext<TargetContextType | undefined>(undefined);
@@ -50,14 +50,14 @@ export function TargetProvider({ children }: TargetProviderProps) {
     }
   }, []);
 
-  const fetchTargetsForAdminPKU = useCallback(async (): Promise<void> => {
+  const fetchTargetsForSuperAdmin = useCallback(async (): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getTargetsForAdminPKU();
+      const data = await getTargetsForSuperAdmin();
       setTargets(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Gagal memuat target untuk admin PKU';
+      const message = err instanceof Error ? err.message : 'Gagal memuat target untuk super admin';
       setError(message);
       setTargets([]);
     } finally {
@@ -127,7 +127,7 @@ export function TargetProvider({ children }: TargetProviderProps) {
     error,
     fetchTargets,
     fetchTargetsByUnit,
-    fetchTargetsForAdminPKU,
+    fetchTargetsForSuperAdmin,
     createTarget,
     updateTarget,
     deleteTarget,

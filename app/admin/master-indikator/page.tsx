@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import MasterIndikatorContent from '@/features/master-indikator/MasterIndikatorContent';
-import { getUnits } from '@/lib/api';
+import MasterIndikatorLayout from './MasterIndikatorLayout';
 import { useState } from 'react';
 
 export default function MasterIndikatorPage() {
@@ -19,7 +19,7 @@ export default function MasterIndikatorPage() {
     const checkAccess = async () => {
       if (loading) return;
 
-      if (!user || user.role !== 'admin') {
+      if (!user) {
         if (!cancelled) {
           setCanAccess(false);
           setCheckingAccess(false);
@@ -28,31 +28,16 @@ export default function MasterIndikatorPage() {
         return;
       }
 
-      const fromSession = user.unitNama?.toLowerCase().replace(/\s+/g, ' ').trim() ?? '';
-      if (fromSession.includes('biro pku')) {
-        if (!cancelled) {
-          setCanAccess(true);
-          setCheckingAccess(false);
-        }
-        return;
-      }
+      // Super Admin & Admin di Fakultas Ilmu Komputer (unit_id = 1) bisa akses Master Indikator
+      const role = user.role?.toLowerCase() || '';
+      const isAdminFIK = (role === 'admin' || role === 'superadmin') && Number(user.unitId) === 1;
 
-      try {
-        const units = await getUnits();
-        if (cancelled) return;
-        const currentUnit = units.find((u) => u.id === user.unitId);
-        const normalizedUnit = (currentUnit?.nama ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-        const isBiroPku = normalizedUnit.includes('biro pku');
-        setCanAccess(isBiroPku);
+      if (!cancelled) {
+        setCanAccess(isAdminFIK);
         setCheckingAccess(false);
-        if (!isBiroPku) {
+        if (!isAdminFIK) {
           router.replace('/admin/dashboard');
         }
-      } catch {
-        if (cancelled) return;
-        setCanAccess(false);
-        setCheckingAccess(false);
-        router.replace('/admin/dashboard');
       }
     };
 
@@ -68,5 +53,10 @@ export default function MasterIndikatorPage() {
     return null;
   }
 
-  return <MasterIndikatorContent />;
+  return (
+    <MasterIndikatorLayout>
+      <MasterIndikatorContent />
+    </MasterIndikatorLayout>
+  );
 }
+

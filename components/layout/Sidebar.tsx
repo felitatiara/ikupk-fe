@@ -6,11 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import { getUnits } from "@/lib/api";
 
 interface SidebarProps {
-  role?: 'admin' | 'user' | 'dekan';
+  role?: string;
   unitNama?: string;
   unitId?: number;
   unitJenis?: string;
-  authRole?: 'user' | 'admin' | 'pku';
+  authRole?: string;
 }
 
 export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, authRole }: SidebarProps) {
@@ -51,16 +51,15 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
     [resolvedUnitNama]
   );
 
-  const canAccessMasterIndikator = role === 'admin' && authRole === 'admin' && normalizedUnit.includes('biro pku');
-  const canAccessMasterUser = role === 'admin' && authRole === 'admin' && unitJenis?.toLowerCase() === 'fakultas';
+  const isSuperAdmin = (authRole?.toLowerCase() === 'admin' || authRole?.toLowerCase() === 'superadmin') && Number(unitId) === 1;
 
   const getMenus = () => {
-    if (role === 'dekan') {
+    if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
       return [
-        { key: "beranda", label: "Beranda", href: "/dekan/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/dekan/monitoring-unit-kerja" },
-        { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/iku-pk" },
-        { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/dekan/targets" },
+        { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/pimpinan/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk" },
+        { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/pimpinan/targets" },
       ];
     }
 
@@ -68,19 +67,22 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
-        { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/user/iku-pk" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/user/iku-pk" },
       ];
     }
-    
+
     // Admin menus
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-      ...(canAccessMasterUser ? [{ key: "master_user", label: "Master User", href: "/admin/master-user" }] : []),
-      ...(canAccessMasterIndikator ? [{ key: "master_indikator", label: "Master Indikator Kinerja Utama", href: "/admin/master-indikator" }] : []),
-      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
-      { key: "iku_pk", label: "Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/iku-pk" },
-      { key: "validasi", label: "Validasi Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/validasi-iku-pk" },
-      { key: "target", label: "Target Indikator Kinerja Utama & Perjanjian Kerja", href: "/admin/target-iku-pk" },
+      { key: "monitoring", label: "Monitoring", href: "/admin/monitoring-unit-kerja" },
+      { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
+      { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
+      { key: "target_iku_pk", label: "Target IKU PK", href: "/admin/target-iku-pk" },
+      ...(isSuperAdmin ? [
+        { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator" },
+        { key: "master_data", label: "Master Data", href: "/admin/master-data" },
+        { key: "master_user", label: "Master User", href: "/admin/master-user" }
+      ] : []),
     ];
   };
 
@@ -104,7 +106,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
   return (
     <aside
       style={{
-        width: 240,
+        width: 180,
         backgroundColor: "#f8f9fa",
         borderRight: "1px solid #e5e7eb",
         height: "100%",
@@ -131,7 +133,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
         >
           Indikator Kinerja Utama & Perjanjian Kerja
         </h2>
-        {role === 'admin' && (
+        {role?.toLowerCase() === 'admin' && (
           <div
             style={{
               fontSize: 11,
@@ -165,7 +167,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
             )}
           </div>
         )}
-        {role === 'dekan' && (
+        {(role === 'dekan' || role?.toLowerCase() === 'pimpinan') && (
           <div
             style={{
               fontSize: 11,
@@ -174,7 +176,7 @@ export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, a
               fontWeight: 600,
             }}
           >
-            Dashboard Dekan
+            Dashboard Pimpinan
             {resolvedUnitNama && (
               <span style={{ display: 'block', fontSize: 10, color: '#6b7280', fontWeight: 500, marginTop: 2 }}>
                 {resolvedUnitNama}

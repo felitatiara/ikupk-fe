@@ -2,78 +2,136 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useContext } from "react";
-import { AuthContext } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 
 interface SidebarProps {
   activeMenu?: string;
   onMenuChange?: (menuKey: string) => void;
+  unitNama?: string;
+  unitId?: number | null;
+  unitJenis?: string | null;
+  authRole?: string;
 }
 
-
+export default function Sidebar({ activeMenu, onMenuChange, unitNama, unitId, unitJenis, authRole }: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useContext(AuthContext) || {};
+  const { user } = useAuth();
 
-  function getMenusByRole(role?: string) {
-    if (role === "Super Admin") {
+  const role = (authRole || user?.role || "").toLowerCase();
+  const effectiveUnitId = unitId ?? user?.unitId ?? null;
+  const isAdminFIK = (role === "admin" || role === "superadmin") && Number(effectiveUnitId) === 1;
+
+  function getMenus() {
+    if (role === "superadmin" && isAdminFIK) {
       return [
-        { key: "beranda", label: "Beranda", href: "/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
-        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
-        { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
-        { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
-        { key: "master-indikator", label: "Master Indikator", href: "/master-indikator" },
-        { key: "master-user", label: "Master User", href: "/master-user" },
+        { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
+        { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
+        { key: "target-iku-pk", label: "Target IKU PK", href: "/admin/target-iku-pk" },
+        { key: "master-indikator", label: "Master Indikator", href: "/admin/master-indikator" },
+        { key: "master-user", label: "Master User", href: "/admin/master-user" },
       ];
     }
-    if (role === "Admin") {
+    if (role === "admin" && isAdminFIK) {
       return [
-        { key: "beranda", label: "Beranda", href: "/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
-        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
-        { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
-        { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
-        { key: "master-indikator", label: "Master Indikator", href: "/master-indikator" },
+        { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
+        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
+        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
+        { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
+        { key: "target-iku-pk", label: "Target IKU PK", href: "/admin/target-iku-pk" },
+        { key: "master-indikator", label: "Master Indikator", href: "/admin/master-indikator" },
       ];
     }
-    // Default: User
+    // User biasa / admin non-FIK
     return [
-      { key: "beranda", label: "Beranda", href: "/dashboard" },
-      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/monitoring-unit-kerja" },
-      { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/iku-pk" },
-      { key: "validasi", label: "Validasi IKU PK", href: "/validasi-iku-pk" },
-      { key: "pengajuan", label: "Pengajuan Target IKU PK", href: "/pengajuan-iku" },
+      { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
+      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
+      { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
+      { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
     ];
   }
 
-  // Jika role bukan Admin/Super Admin, treat as User
-  const effectiveRole = user?.role === "Admin" || user?.role === "Super Admin" ? user.role : "User";
-  const menus = getMenusByRole(effectiveRole);
-  const currentActive = activeMenu || (pathname?.startsWith("/monitoring-unit-kerja") ? "monitoring" : pathname?.startsWith("/dashboard") ? "beranda" : "");
+  const menus = getMenus();
+
+  const isActive = (href: string) => {
+    if (activeMenu) {
+      return menus.find((m) => m.href === href)?.key === activeMenu;
+    }
+    return pathname === href || pathname?.startsWith(href + "/");
+  };
 
   return (
-    <aside className="w-64 bg-white border-r">
-      <div className="mb-6 p-6 font-bold text-orange-600">
-        <div className="text-sm text-gray-500">Indikator Kinerja Utama & Perjanjian Kerja</div>
-      </div>
+    <aside
+      style={{
+        width: 240,
+        minHeight: "100%",
+        backgroundColor: "#ffffff",
+        borderRight: "1px solid #f3f4f6",
+        padding: "24px 0",
+        flexShrink: 0,
+      }}
+    >
+      {/* Unit info */}
+      {unitNama && (
+        <div
+          style={{
+            padding: "0 20px 16px",
+            borderBottom: "1px solid #f3f4f6",
+            marginBottom: 12,
+          }}
+        >
+          <p style={{ fontSize: 11, color: "#9ca3af", marginBottom: 2 }}>Unit</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#374151", margin: 0 }}>
+            {unitNama}
+          </p>
+          {role && (
+            <span
+              style={{
+                display: "inline-block",
+                marginTop: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 99,
+                background: role === "superadmin" ? "#fef3c7" : role === "admin" ? "#dbeafe" : "#f3f4f6",
+                color: role === "superadmin" ? "#92400e" : role === "admin" ? "#1d4ed8" : "#6b7280",
+                textTransform: "capitalize",
+              }}
+            >
+              {role}
+            </span>
+          )}
+        </div>
+      )}
 
-      <nav className="space-y-5 px-5">
-        {menus.map((m) => (
-          <Link
-            key={m.key}
-            href={m.href}
-            className={`mb-4 block w-full text-left text-sm ${
-              currentActive === m.key
-                ? "font-bold text-orange-600"
-                : "text-gray-600 hover:text-orange-600"
-            }`}
-            onClick={() => onMenuChange?.(m.key)}
-          >
-            {m.label}
-          </Link>
-        ))}
+      <nav style={{ padding: "0 12px" }}>
+        {menus.map((m) => {
+          const active = isActive(m.href);
+          return (
+            <Link
+              key={m.key}
+              href={m.href}
+              onClick={() => onMenuChange?.(m.key)}
+              style={{
+                display: "block",
+                padding: "10px 12px",
+                borderRadius: 8,
+                marginBottom: 4,
+                fontSize: 13,
+                fontWeight: active ? 700 : 500,
+                color: active ? "#FF7900" : "#6b7280",
+                backgroundColor: active ? "#fff7ed" : "transparent",
+                textDecoration: "none",
+                transition: "all 0.15s",
+                borderLeft: active ? "3px solid #FF7900" : "3px solid transparent",
+              }}
+            >
+              {m.label}
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );
 }
-

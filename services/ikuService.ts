@@ -40,7 +40,7 @@ export async function getIKUList(): Promise<IKUData[]> {
   }
 
   try {
-    const fallback = await fetchJSON(`${API_BASE_URL}/targets/admin/pku`);
+    const fallback = await fetchJSON(`${API_BASE_URL}/targets/admin`);
     const rows = Array.isArray(fallback) ? fallback : [];
     return rows.map(normalizeIKURow);
   } catch (err) {

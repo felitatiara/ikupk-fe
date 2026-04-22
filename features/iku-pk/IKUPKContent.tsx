@@ -14,11 +14,11 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
             <div style={{ background: '#E6F9ED', borderRadius: '50%', width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
               <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="27" cy="27" r="27" fill="#4ADE80"/>
-                <path d="M16 28.5L24 36.5L38 20.5" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="27" cy="27" r="27" fill="#4ADE80" />
+                <path d="M16 28.5L24 36.5L38 20.5" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <svg width="24" height="24" style={{ position: 'absolute', top: 8, right: -8 }}><circle cx="12" cy="12" r="12" fill="#FDE68A"/></svg>
-              <svg width="16" height="16" style={{ position: 'absolute', bottom: 8, left: -8 }}><circle cx="8" cy="8" r="8" fill="#FDE68A"/></svg>
+              <svg width="24" height="24" style={{ position: 'absolute', top: 8, right: -8 }}><circle cx="12" cy="12" r="12" fill="#FDE68A" /></svg>
+              <svg width="16" height="16" style={{ position: 'absolute', bottom: 8, left: -8 }}><circle cx="8" cy="8" r="8" fill="#FDE68A" /></svg>
             </div>
           </div>
           <div style={{ fontWeight: 700, fontSize: 20, color: '#22292f', marginBottom: 6 }}>Data berhasil disimpan!</div>
@@ -30,11 +30,13 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
 }
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByUnit, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, submitFileRealisasi } from "../../lib/api";
+import { getUsersByUnit, getRelatedUsersFor, getRelatedUsers, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, submitFileRealisasi, fetchRepositoryFolders, fetchRepositoryFilesByFolder } from "../../lib/api";
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
-export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' }) {
+export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan' }) {
+  const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
+
   const [showSuccess, setShowSuccess] = useState(false);
   const { user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,8 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [disposisiAllocations, setDisposisiAllocations] = useState<{ userId: number; jumlah: string }[]>([]);
   const [disposisiTargetFakultas, setDisposisiTargetFakultas] = useState<number>(0);
   const [disposedBy, setDisposedBy] = useState<number | null>(null);
+  // Jumlah yang diterima oleh disposedBy dari disposisi sebelumnya (untuk validasi batas re-disposisi)
+  const [receivedJumlah, setReceivedJumlah] = useState<number>(0);
 
   // File repository modal state
   const [fileRepoModalOpen, setFileRepoModalOpen] = useState(false);
@@ -57,12 +61,18 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [fileRepoLoading, setFileRepoLoading] = useState(false);
   const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
+  const [fileRepoFolders, setFileRepoFolders] = useState<any[]>([]);
+  const [fileRepoViewMode, setFileRepoViewMode] = useState<'folders' | 'files'>('folders');
+  const [selectedRepoFolderId, setSelectedRepoFolderId] = useState<string | null>(null);
+  const [selectedRepoFolderName, setSelectedRepoFolderName] = useState<string | null>(null);
 
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [jenis, setJenis] = useState("IKU");
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
+  const [fileRepoChildId, setFileRepoChildId] = useState<number> (0);
+  const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
 
   const unitId = authUser?.unitId;
 
@@ -70,15 +80,30 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   useEffect(() => {
     if (!unitId) return;
     let cancelled = false;
-    setLoading(true);
-    const fetchPromise = role === 'user' && authUser?.id
-      ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
-      : (role === 'admin' || role === 'dekan')
-        ? getIndikatorGrouped(jenis, tahun, unitId)
+    const isAdminOrDekan = displayRole === 'admin' || displayRole === 'dekan';
+    
+    const fetchPromise = isAdminOrDekan
+      ? getIndikatorGrouped(jenis, tahun, unitId)
+      : (authUser?.id)
+        ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
         : Promise.resolve([]);
+        
+    console.log(`DEBUG IKUPKContent: Fetching data for jenis=${jenis}, tahun=${tahun}, userId=${authUser?.id}, unitId=${unitId}, role=${displayRole}`);
     fetchPromise
-      .then((d) => { if (!cancelled) { setGroupedData(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
+      .then((d) => { 
+        if (!cancelled) { 
+          console.log("DEBUG IKUPKContent: Data received from API:", d);
+          setGroupedData(d); 
+          setLoading(false); 
+        } 
+      })
+      .catch((err) => { 
+        if (!cancelled) { 
+          console.error("DEBUG IKUPKContent: Error fetching data:", err);
+          setGroupedData([]); 
+          setLoading(false); 
+        } 
+      });
     return () => { cancelled = true; };
   }, [role, jenis, tahun, unitId, authUser?.id]);
 
@@ -88,13 +113,42 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setDisposisiTargetFakultas(targetAmount);
     setDisposisiAllocations([]);
     setDisposedBy(disposedByUserId ?? null);
+    setReceivedJumlah(0);
     if (!unitId) return;
+
     try {
-      const users = await getUsersByUnit(unitId);
+      let users: UnitUser[] = [];
+      if (displayRole === 'dekan' || displayRole === 'admin') {
+        // Pimpinan/Admin: bisa disposisi ke semua user di unit dan subunit
+        const allUsers = await getUsersByUnit(unitId);
+        users = allUsers.filter((u) => u.id !== authUser?.id);
+      } else if (authUser?.id) {
+        // User biasa: disposisi ke bawahan dari user_relations
+        users = await getRelatedUsersFor(authUser.id);
+        // Fallback: jika tidak ada bawahan spesifik, izinkan lihat rekan satu unit (opsional)
+        if (users.length === 0) {
+          const allUsers = await getUsersByUnit(unitId);
+          users = allUsers.filter((u) => u.id !== authUser?.id);
+        }
+      }
       setUnitUsers(users);
     } catch {
       setUnitUsers([]);
     }
+
+    // Ambil batas: berapa jumlah yang diterima disposedByUserId dari disposisi sebelumnya
+    if (disposedByUserId && unitId) {
+      try {
+        const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, unitId, tahun);
+        setReceivedJumlah(received);
+        // Jika batas = 0, gunakan targetAmount (dari pimpinan tidak ada batas khusus)
+        if (received > 0) setDisposisiTargetFakultas(received);
+      } catch {
+        setReceivedJumlah(0);
+      }
+    }
+
+    // Ambil existing disposisi
     try {
       const existing = await getDisposisi(subId, unitId, tahun, disposedByUserId ?? null);
       if (existing.length > 0) {
@@ -128,13 +182,14 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
       if (disposisiSubId && unitId) {
         await upsertDisposisi(disposisiSubId, unitId, tahun, validItems, disposedBy);
         // Refresh data
-        if (role === 'user' && authUser?.id) {
+        if (displayRole === 'user' && authUser?.id) {
           const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
           setGroupedData(d);
         } else {
           const d = await getIndikatorGrouped(jenis, tahun, unitId);
           setGroupedData(d);
         }
+        setShowSuccess(true);
       }
     } catch {
       alert("Gagal menyimpan disposisi");
@@ -153,7 +208,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     `September ${tahun} - Desember ${tahun}`,
   ];
 
-  const handleInputFileClick = (indikatorId: number, nama: string, target: number) => {
+  const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = []) => {
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
     setFileRepoPeriode(periodeOptions[0]);
@@ -161,39 +216,56 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setFileRepoLoading(false);
     setFileRepoSubmitting(false);
     setFileRepoTarget(target);
+    setFileRepoChildren(children);
+    setFileRepoChildId(children.length > 0 ? children[0].id : 0);
+    setFileRepoViewMode('folders');
+    setSelectedRepoFolderId(null);
+    setSelectedRepoFolderName(null);
+    setFileRepoFolders([]);
     setFileRepoModalOpen(true);
   };
 
-  // Mock: simulate fetching files from external repository app
-  // In production, replace with real API call matching user + target name
+  // Fetch repository folders or files
   useEffect(() => {
-    if (!fileRepoModalOpen || !fileRepoPeriode || !fileRepoIndikatorId) return;
-    setFileRepoLoading(true);
-    const timer = setTimeout(() => {
-      // Generate mock files based on indikator name and periode
-      const count = Math.floor(Math.random() * 8) + 2;
-      const mockFiles = Array.from({ length: count }, (_, i) => {
-        const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, "0");
-        const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, "0");
-        return {
-          no: i + 1,
-          namaFile: `${fileRepoNama} - Dokumen ${i + 1}.pdf`,
-          tanggal: `${day}/${month}/${tahun}`,
-          sumber: "Repository FIK",
-        };
-      });
-      setFileRepoFiles(mockFiles);
-      setFileRepoLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [fileRepoModalOpen, fileRepoPeriode, fileRepoIndikatorId, fileRepoNama, tahun]);
+    if (!fileRepoModalOpen || !authUser?.email) return;
+
+    if (fileRepoViewMode === 'folders') {
+      setFileRepoLoading(true);
+      fetchRepositoryFolders(authUser.email)
+        .then(folders => {
+          setFileRepoFolders(folders);
+          setFileRepoLoading(false);
+        })
+        .catch(() => {
+          setFileRepoFolders([]);
+          setFileRepoLoading(false);
+        });
+    } else if (fileRepoViewMode === 'files' && selectedRepoFolderId) {
+      setFileRepoLoading(true);
+      fetchRepositoryFilesByFolder(selectedRepoFolderId, authUser.email)
+        .then(files => {
+          const mapped = files.map((f, i) => ({
+            no: i + 1,
+            namaFile: f.name,
+            tanggal: new Date(f.created_at).toLocaleDateString("id-ID"),
+            sumber: "Repository FIK",
+          }));
+          setFileRepoFiles(mapped);
+          setFileRepoLoading(false);
+        })
+        .catch(() => {
+          setFileRepoFiles([]);
+          setFileRepoLoading(false);
+        });
+    }
+  }, [fileRepoModalOpen, fileRepoViewMode, selectedRepoFolderId, authUser?.email]);
 
   const handleFileRepoSubmit = async () => {
     if (!fileRepoIndikatorId || !unitId || !authUser?.id) return;
     setFileRepoSubmitting(true);
     try {
       await submitFileRealisasi({
-        indikatorId: fileRepoIndikatorId,
+        indikatorId: fileRepoChildId || fileRepoIndikatorId, // Use Level 2 if selected, else Level 1
         unitId,
         tahun,
         periode: fileRepoPeriode,
@@ -232,23 +304,45 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             <div
               style={{
                 backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 540, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                width: 560, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
                 maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
+              <p style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
+                {displayRole === 'dekan' ? 'Disposisikan target kepada user di unit Anda' : 'Disposisikan ulang target kepada bawahan Anda'}
+              </p>
 
-              <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              {/* Info bar */}
+              <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Target Fakultas: </span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{disposisiTargetFakultas}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{displayRole === 'dekan' ? 'Target Fakultas' : 'Jumlah Diterima'}: </span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{disposisiTargetFakultas}</span>
                 </div>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Sisa: </span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: sisaTarget < 0 ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sudah dialokasikan: </span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{totalAllocated}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sisa: </span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: sisaTarget < 0 ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
                 </div>
               </div>
+
+              {/* Warning: total melebihi batas */}
+              {sisaTarget < 0 && (
+                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#fef2f2", borderRadius: 6, border: "1px solid #fca5a5", fontSize: 12, color: "#dc2626" }}>
+                  ⚠️ Total disposisi melebihi jumlah yang tersedia. Harap kurangi jumlah.
+                </div>
+              )}
+
+              {/* Warning: tidak ada user bawahan */}
+              {unitUsers.length === 0 && (
+                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#fef3c7", borderRadius: 6, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e" }}>
+                  ℹ️ Tidak ada user yang dapat menerima disposisi. Pastikan relasi user sudah dikonfigurasi di Master User.
+                </div>
+              )}
 
               {/* Allocation rows */}
               {disposisiAllocations.map((alloc, idx) => (
@@ -263,12 +357,13 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                   >
                     <option value={0} disabled>Pilih nama...</option>
                     {unitUsers.map((u) => (
-                      <option key={u.id} value={u.id}>{u.nama}</option>
+                      <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>
                     ))}
                   </select>
                   <input
                     type="number"
                     min={0}
+                    max={disposisiTargetFakultas}
                     placeholder="Jumlah"
                     value={alloc.jumlah}
                     onChange={(e) => {
@@ -288,14 +383,16 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
               <button
                 onClick={addAllocation}
+                disabled={unitUsers.length === 0}
                 style={{
                   width: "100%", padding: "8px 12px", borderRadius: 6,
-                  border: "1px dashed #d1d5db", backgroundColor: "#f9fafb",
-                  color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  border: "1px dashed #d1d5db", backgroundColor: unitUsers.length === 0 ? "#f3f4f6" : "#f9fafb",
+                  color: unitUsers.length === 0 ? "#9ca3af" : "#374151", fontSize: 13, fontWeight: 600,
+                  cursor: unitUsers.length === 0 ? "not-allowed" : "pointer",
                   marginBottom: 20,
                 }}
               >
-                + Tambah
+                + Tambah Penerima
               </button>
 
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
@@ -307,12 +404,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </button>
                 <button
                   onClick={handleDisposisiSubmit}
-                  disabled={disposisiAllocations.length === 0 || sisaTarget < 0}
+                  disabled={disposisiAllocations.length === 0 || sisaTarget < 0 || unitUsers.length === 0}
                   style={{
                     padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: disposisiAllocations.length > 0 && sisaTarget >= 0 ? "#16a34a" : "#9ca3af",
+                    backgroundColor: disposisiAllocations.length > 0 && sisaTarget >= 0 && unitUsers.length > 0 ? "#16a34a" : "#9ca3af",
                     color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: disposisiAllocations.length > 0 && sisaTarget >= 0 ? "pointer" : "not-allowed",
+                    cursor: disposisiAllocations.length > 0 && sisaTarget >= 0 && unitUsers.length > 0 ? "pointer" : "not-allowed",
                   }}
                 >
                   Simpan Disposisi
@@ -334,7 +431,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             }}
             onClick={() => setFileRepoModalOpen(false)}
           >
-            
+
             <div
               style={{
                 backgroundColor: "white", borderRadius: 12, padding: 28,
@@ -343,108 +440,187 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, color: "#1f2937", textAlign: "center" }}>
-                Pilih File Repository
+                {fileRepoViewMode === 'folders' ? 'Pilih Folder Repository' : `Pilih File: ${selectedRepoFolderName}`}
               </h3>
 
-               {/* Warning if files < target */}
-              {!fileRepoLoading && fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
-                <div style={{
-                  marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef3c7",
-                  borderRadius: 8, border: "1px solid #fcd34d", fontSize: 13, color: "#92400e",
-                  textAlign: "center", lineHeight: 1.5,
-                }}>
-                  Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
-                  Mohon untuk memenuhi target melalui{" "}
-                  <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#b45309", fontWeight: 700, textDecoration: "underline" }}>
-                    Repository.fik.upnvj.ac.id
-                  </a>
-                </div>
-              )}
-
-              {/* Pilih Periode */}
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Pilih Periode</label>
-                <select
-                  value={fileRepoPeriode}
-                  onChange={(e) => setFileRepoPeriode(e.target.value)}
-                  style={{
-                    width: "100%", padding: "10px 12px", borderRadius: 6,
-                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                    boxSizing: "border-box", backgroundColor: "white",
-                  }}
-                >
-                  {periodeOptions.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Nama Target */}
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Nama Target</label>
-                <div
-                  style={{
-                    width: "100%", padding: "10px 12px", borderRadius: 6,
-                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                    backgroundColor: "#f9fafb", boxSizing: "border-box",
-                  }}
-                >
-                  {fileRepoNama}
-                </div>
-              </div>
-
-              {/* Jumlah File Ditemukan */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jumlah File Ditemukan</label>
-                <div
-                  style={{
-                    width: "100%", padding: "10px 12px", borderRadius: 6,
-                    border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                    backgroundColor: "#f9fafb", boxSizing: "border-box",
-                  }}
-                >
-                  {fileRepoLoading ? "Mencari..." : fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "-"}
-                </div>
-              </div>
-
-              {/* File Table */}
-              {fileRepoLoading ? (
-                <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat data file...</div>
-              ) : fileRepoFiles.length > 0 ? (
-                <div style={{ marginBottom: 20, maxHeight: 260, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ backgroundColor: "#f9fafb" }}>
-                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 36 }}>No</th>
-                        <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>Nama File</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 90 }}>Tanggal</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 100 }}>Sumber</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fileRepoFiles.map((f) => (
-                        <tr key={f.no} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.no}</td>
-                          <td style={{ padding: "7px 10px", color: "#1f2937" }}>{f.namaFile}</td>
-                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
-                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.sumber}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {fileRepoViewMode === 'folders' ? (
+                /* FOLDER LIST VIEW */
+                <>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Folder Tersedia</label>
+                    {fileRepoLoading ? (
+                      <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat daftar folder...</div>
+                    ) : fileRepoFolders.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxHeight: 300, overflowY: 'auto', padding: 4 }}>
+                        {fileRepoFolders.map((folder) => (
+                          <div
+                            key={folder.id}
+                            onClick={() => {
+                              setSelectedRepoFolderId(folder.id);
+                              setSelectedRepoFolderName(folder.name);
+                              setFileRepoViewMode('files');
+                            }}
+                            style={{
+                              padding: '12px 16px',
+                              borderRadius: 8,
+                              border: '1px solid #e5e7eb',
+                              backgroundColor: '#f9fafb',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.borderColor = '#93c5fd';
+                              e.currentTarget.style.backgroundColor = '#eff6ff';
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.borderColor = '#e5e7eb';
+                              e.currentTarget.style.backgroundColor = '#f9fafb';
+                            }}
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            <span style={{ fontSize: 13, fontWeight: 500, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {folder.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13 }}>Tidak ada folder ditemukan</div>
+                    )}
+                  </div>
+                </>
               ) : (
-                <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13, marginBottom: 20 }}>Tidak ada file ditemukan</div>
-              )}
+                /* FILE LIST VIEW */
+                <>
+                  {/* Warning if files < target */}
+                  {!fileRepoLoading && fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
+                    <div style={{
+                      marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef3c7",
+                      borderRadius: 8, border: "1px solid #fcd34d", fontSize: 13, color: "#92400e",
+                      textAlign: "center", lineHeight: 1.5,
+                    }}>
+                      Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
+                      Mohon untuk memenuhi target melalui{" "}
+                      <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#b45309", fontWeight: 700, textDecoration: "underline" }}>
+                        Repository.fik.upnvj.ac.id
+                      </a>
+                    </div>
+                  )}
 
-             
+                  {/* Pilih Periode */}
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Pilih Periode</label>
+                    <select
+                      value={fileRepoPeriode}
+                      onChange={(e) => setFileRepoPeriode(e.target.value)}
+                      style={{
+                        width: "100%", padding: "10px 12px", borderRadius: 6,
+                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                        boxSizing: "border-box", backgroundColor: "white",
+                      }}
+                    >
+                      {periodeOptions.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Nama Target */}
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Nama Target</label>
+                    <div
+                      style={{
+                        width: "100%", padding: "10px 12px", borderRadius: 6,
+                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                        backgroundColor: "#f9fafb", boxSizing: "border-box",
+                      }}
+                    >
+                      {fileRepoNama}
+                    </div>
+                  </div>
+
+                  {/* Pilih Anakan Level 2 (jika ada) */}
+                  {fileRepoChildren.length > 0 && (
+                    <div style={{ marginBottom: 18 }}>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jenis File (Anakan)</label>
+                      <select
+                        value={fileRepoChildId}
+                        onChange={(e) => setFileRepoChildId(Number(e.target.value))}
+                        style={{
+                          width: "100%", padding: "10px 12px", borderRadius: 6,
+                          border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                          boxSizing: "border-box", backgroundColor: "white",
+                        }}
+                      >
+                        {fileRepoChildren.map((c) => (
+                          <option key={c.id} value={c.id}>{c.kode} {c.nama}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Jumlah File Ditemukan */}
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jumlah File Ditemukan</label>
+                    <div
+                      style={{
+                        width: "100%", padding: "10px 12px", borderRadius: 6,
+                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
+                        backgroundColor: "#f9fafb", boxSizing: "border-box",
+                      }}
+                    >
+                      {fileRepoLoading ? "Mencari..." : fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "-"}
+                    </div>
+                  </div>
+
+                  {/* File Table */}
+                  {fileRepoLoading ? (
+                    <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat data file...</div>
+                  ) : fileRepoFiles.length > 0 ? (
+                    <div style={{ marginBottom: 20, maxHeight: 260, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ backgroundColor: "#f9fafb" }}>
+                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 36 }}>No</th>
+                            <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>Nama File</th>
+                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 90 }}>Tanggal</th>
+                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 100 }}>Sumber</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fileRepoFiles.map((f) => (
+                            <tr key={f.no} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.no}</td>
+                              <td style={{ padding: "7px 10px", color: "#1f2937" }}>{f.namaFile}</td>
+                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
+                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.sumber}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13, marginBottom: 20 }}>Tidak ada file ditemukan</div>
+                  )}
+                </>
+              )}
 
               {/* Buttons */}
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <button
-                  onClick={() => setFileRepoModalOpen(false)}
+                  onClick={() => {
+                    if (fileRepoViewMode === 'files') {
+                      setFileRepoViewMode('folders');
+                    } else {
+                      setFileRepoModalOpen(false);
+                    }
+                  }}
                   style={{
                     padding: "8px 24px", borderRadius: 6,
                     border: "1px solid #d1d5db", backgroundColor: "white",
@@ -455,12 +631,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </button>
                 <button
                   onClick={handleFileRepoSubmit}
-                  disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
+                  disabled={fileRepoViewMode === 'folders' || fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
                   style={{
                     padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
+                    backgroundColor: fileRepoViewMode === 'files' && !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
                     color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
+                    cursor: fileRepoViewMode === 'files' && !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
                   }}
                 >
                   {fileRepoSubmitting ? "Menyimpan..." : "Simpan"}
@@ -471,38 +647,32 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           document.body
         )}
 
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: 12,
-            padding: 24,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
+
+        <div className="page-card">
           <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937" }}>
             Indikator Kinerja Utama & Perjanjian Kerja
           </h3>
 
-          {(role === 'admin' || role === 'dekan') ? (
+          {(displayRole === 'admin' || displayRole === 'dekan') ? (
             <>
-              <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
+              <div className="filter" style={{ marginBottom: 20 }}>
+                <div className="filter-content">
+                  <label className="filter-content-label">Target</label>
                   <select
                     value={jenis}
                     onChange={(e) => setJenis(e.target.value)}
-                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                    className="filter-isi"
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kerja</option>
                   </select>
                 </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
+                <div className="filter-content">
+                  <label className="filter-content-label">Tahun</label>
                   <select
                     value={tahun}
                     onChange={(e) => setTahun(e.target.value)}
-                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                    className="filter-isi"
                   >
                     {["2024", "2025", "2026", "2027"].map((y) => (
                       <option key={y} value={y}>{y}</option>
@@ -514,28 +684,34 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
               {!loading && groupedData.length > 0 && (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                <div className="table-wrapper">
+                  <table className="table-universal">
                     <thead>
-                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
-                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Universitas</th>
-                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Disposisi</th>
+                      <tr>
+                        <th rowSpan={2} style={{ width: "5%", textAlign: "center" }}>Nomor</th>
+                        <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
+                        <th rowSpan={2} style={{ width: "35%" }}>Sub Indikator Kinerja Utama</th>
+                        <th colSpan={2} style={{ textAlign: "center" }}>Target Universitas</th>
+                        <th colSpan={2} style={{ textAlign: "center" }}>Target Fakultas</th>
+                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Disposisi</th>
                       </tr>
-                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Waktu</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                      <tr>
+                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                        <th style={{ textAlign: "center", minWidth: 100 }}>Waktu</th>
+                        <th style={{ textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
                       </tr>
                     </thead>
+
                     <tbody>
-                      {groupedData.map((group, groupIdx) => {
+                      {groupedData.filter(g => g.targetUniversitas !== null).flatMap((group, groupIdx) => {
+                        // Tampilkan semua sub-indikator jika Sasaran Strategis memiliki target universitas
+                        const filteredSubs = group.subIndikators;
+
+                        if (filteredSubs.length === 0) return [];
+
                         const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null }[] = [];
-                        for (const sub of group.subIndikators) {
+                        for (const sub of filteredSubs) {
                           const childCount = 1 + sub.children.length;
                           flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, targetFakultas: sub.targetFakultas });
                           for (const child of sub.children) {
@@ -545,88 +721,65 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                         const totalRowSpan = flatRows.length;
 
                         return flatRows.map((row, rowIdx) => {
-                          // Target Universitas kualitas%
-                          const univPct = (() => {
-                            if (row.sub.targetUniversitas !== null && row.sub.baselineJumlah && Number(row.sub.baselineJumlah) > 0) {
-                              const pct = (Number(row.sub.targetUniversitas) / Number(row.sub.baselineJumlah)) * 100;
-                              return `${Math.round(pct * 100) / 100}%`;
-                            }
-                            return "-";
-                          })();
+                          const univKuantitas = group.targetUniversitas;
 
-                          // Target Fakultas per level 2 row
-                          const childFakKualitas = (() => {
-                            if (row.level === 2 && row.targetFakultas !== null && row.baselineJumlah && Number(row.baselineJumlah) > 0) {
-                              const pct = (Number(row.targetFakultas) / Number(row.baselineJumlah)) * 100;
-                              return `${Math.round(pct * 100) / 100}%`;
-                            }
-                            return "-";
-                          })();
-                          const childFakKuantitas = row.level === 2 && row.targetFakultas !== null ? Number(row.targetFakultas) : null;
+                          const fakBaseline = row.sub.baselineJumlah ?? group.baselineJumlah;
+                          const fakKuantitas = row.sub.targetFakultas !== null ? Number(row.sub.targetFakultas) : null;
+                          const fakKualitas = (fakKuantitas !== null && fakBaseline && Number(fakBaseline) > 0)
+                            ? `${Math.round((fakKuantitas / Number(fakBaseline)) * 100)}%`
+                            : "-";
 
                           return (
                             <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
                               {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {groupIdx + 1}
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                    <p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p>
                                   </td>
                                   <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
-                                    {group.nama}
+                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{group.nama}</div>
                                   </td>
                                 </>
                               )}
                               <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
                                 {row.kode} {row.nama}
                               </td>
-                              {/* Target Universitas — per level 1 sub */}
-                              {row.isSubFirst && (
+
+                              {/* Target Universitas — merged per group */}
+                              {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {univPct}
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#1d4ed8", fontWeight: 700 }}>
+                                    {univKuantitas !== null ? `${univKuantitas} Lulusan` : "-"}
                                   </td>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
-                                    Triwulan I
+                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#1d4ed8", fontWeight: 700 }}>
+                                    {group.tenggat || "-"}
                                   </td>
                                 </>
                               )}
-                              {/* Target Fakultas — per level 2 row */}
-                              {row.level === 2 ? (
+
+                              {/* Target Fakultas — merged per Sub (Level 1) */}
+                              {row.isSubFirst && (
                                 <>
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {childFakKualitas}
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {fakKualitas}
                                   </td>
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {childFakKuantitas !== null ? `${childFakKuantitas} Lulusan` : "-"}
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {fakKuantitas !== null ? `${fakKuantitas} Lulusan` : "-"}
                                   </td>
                                 </>
-                              ) : row.isSubFirst ? (
-                                <>
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                </>
-                              ) : null}
-                              {/* Disposisi — only level 2 */}
-                              {row.level === 2 ? (
-                                <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top" }}>
+                              )}
+
+                              {/* Disposisi — merged per Sub (Level 1) */}
+                              {row.isSubFirst ? (
+                                <td rowSpan={row.subChildCount} style={{ textAlign: "center", verticalAlign: "top" }}>
                                   <button
-                                    onClick={() => handleGroupedDisposisiClick(row.id, Number(row.targetFakultas || 0), null)}
-                                    style={{
-                                      padding: "4px 10px",
-                                      borderRadius: 4,
-                                      border: "1px solid #86efac",
-                                      backgroundColor: "#ecfdf5",
-                                      color: "#16a34a",
-                                      fontWeight: 700,
-                                      fontSize: 11,
-                                      cursor: "pointer",
-                                    }}
+                                    onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(row.sub.targetFakultas || 0), null)}
+                                    className="btn-small"
+                                    style={{ border: "1px solid #86efac", backgroundColor: "#ecfdf5", color: "#16a34a" }}
                                   >
                                     Disposisi
                                   </button>
                                 </td>
-                              ) : row.isSubFirst ? (
-                                <td style={{ padding: "10px 12px" }} />
                               ) : null}
                             </tr>
                           );
@@ -643,24 +796,24 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             </>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "flex-end" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Target</label>
+              <div className="filter" style={{ marginBottom: 20 }}>
+                <div className="filter-content">
+                  <label className="filter-content-label">Target</label>
                   <select
                     value={jenis}
                     onChange={(e) => setJenis(e.target.value)}
-                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                    className="filter-isi"
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kerja</option>
                   </select>
                 </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Tahun</label>
+                <div className="filter-content">
+                  <label className="filter-content-label">Tahun</label>
                   <select
                     value={tahun}
                     onChange={(e) => setTahun(e.target.value)}
-                    style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
+                    className="filter-isi"
                   >
                     {["2024", "2025", "2026", "2027"].map((y) => (
                       <option key={y} value={y}>{y}</option>
@@ -672,26 +825,26 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
 
               {!loading && groupedData.length > 0 && (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+                <div className="table-wrapper">
+                  <table className="table-universal">
                     <thead>
-                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Nomor</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sasaran Strategis</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Sub Indikator Kinerja Utama</th>
-                        <th colSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Fakultas</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Target Dosen</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center" }}>Capaian</th>
-                        <th rowSpan={2} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>Aksi</th>
+                      <tr>
+                        <th rowSpan={2} style={{ width: "5%", textAlign: "center" }}>Nomor</th>
+                        <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
+                        <th rowSpan={2} style={{ width: "35%" }}>Sub Indikator Kinerja Utama</th>
+                        <th colSpan={2} style={{ textAlign: "center" }}>Target Fakultas</th>
+                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Target Dosen</th>
+                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Capaian</th>
+                        <th rowSpan={2} style={{ width: "20%", textAlign: "center" }}>Aksi</th>
                       </tr>
-                      <tr style={{ backgroundColor: "#e97a1f", color: "white" }}>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid #e5e7eb", borderRight: "1px solid #e5e7eb", textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                      <tr>
+                        <th style={{ textAlign: "center", minWidth: 80 }}>Kualitas</th>
+                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
                       </tr>
                     </thead>
                     <tbody>
                       {groupedData.map((group, groupIdx) => {
-                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null; disposisiJumlah?: number | null }[] = [];
+                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null; disposisiJumlah?: number | null; realisasiJumlah?: number | null }[] = [];
                         for (const sub of group.subIndikators) {
                           const childCount = 1 + sub.children.length;
                           flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, targetFakultas: sub.targetFakultas });
@@ -702,14 +855,14 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                         const totalRowSpan = flatRows.length;
 
                         return flatRows.map((row, rowIdx) => {
-                          const childFakKualitas = (() => {
-                            if (row.level === 2 && row.targetFakultas !== null && row.baselineJumlah && Number(row.baselineJumlah) > 0) {
-                              const pct = (Number(row.targetFakultas) / Number(row.baselineJumlah)) * 100;
-                              return `${Math.round(pct * 100) / 100}%`;
-                            }
-                            return "-";
-                          })();
-                          const childFakKuantitas = row.level === 2 && row.targetFakultas !== null ? Number(row.targetFakultas) : null;
+                          const fakBaseline = row.sub.baselineJumlah ?? group.baselineJumlah;
+                          const fakKuantitas = row.sub.targetFakultas !== null ? Number(row.sub.targetFakultas) : null;
+                          const fakKualitas = (fakKuantitas !== null && fakBaseline && Number(fakBaseline) > 0)
+                            ? `${Math.round((fakKuantitas / Number(fakBaseline)) * 100)}%`
+                            : "-";
+
+                          const disposisiJumlah = row.sub.disposisiJumlah ?? null;
+                          const realisasiJumlah = row.sub.realisasiJumlah ?? 0;
 
                           return (
                             <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
@@ -726,82 +879,52 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                               <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
                                 {row.kode} {row.nama}
                               </td>
-                              {/* Target Fakultas — per level 2 row */}
-                              {row.level === 2 ? (
+                              {/* Target Fakultas — merged per Sub (Level 1) */}
+                              {row.isSubFirst && (
                                 <>
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {childFakKualitas}
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {fakKualitas}
                                   </td>
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {childFakKuantitas !== null ? `${childFakKuantitas} Lulusan` : "-"}
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {fakKuantitas !== null ? `${fakKuantitas} Lulusan` : "-"}
                                   </td>
                                 </>
-                              ) : row.isSubFirst ? (
+                              )}
+                              {/* Target Dosen & Capaian — merged per Sub (Level 1) */}
+                              {row.isSubFirst && (
                                 <>
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                </>
-                              ) : null}
-                              {/* Target Dosen — only level 2 */}
-                              {row.level === 2 ? (
-                                <>
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {row.disposisiJumlah !== null && row.disposisiJumlah !== undefined ? row.disposisiJumlah : "-"}
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                    {disposisiJumlah !== null ? disposisiJumlah : "-"}
                                   </td>
-                                  {/* Kolom Capaian */}
-                                  <td style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: row.realisasiJumlah !== undefined && row.disposisiJumlah ? (row.realisasiJumlah >= row.disposisiJumlah ? '#16a34a' : '#eab308') : '#374151', fontWeight: 700 }}>
-                                    {row.realisasiJumlah !== undefined && row.disposisiJumlah && row.disposisiJumlah > 0
-                                      ? (row.realisasiJumlah >= row.disposisiJumlah
-                                          ? '100%'
-                                          : `${Math.round((row.realisasiJumlah / row.disposisiJumlah) * 100)}%`)
+                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: (realisasiJumlah > 0 && disposisiJumlah) ? (realisasiJumlah >= disposisiJumlah ? '#16a34a' : '#eab308') : '#374151', fontWeight: 700 }}>
+                                    {(realisasiJumlah > 0 && disposisiJumlah && disposisiJumlah > 0)
+                                      ? (realisasiJumlah >= disposisiJumlah ? '100%' : `${Math.round((realisasiJumlah / disposisiJumlah) * 100)}%`)
                                       : '-'}
                                   </td>
-                                  {/* Kolom Aksi */}
-                                  <td style={{ padding: "10px 8px", textAlign: "center", verticalAlign: "top" }}>
-                                    <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
-                                      <button
-                                        onClick={() => handleGroupedDisposisiClick(row.id, Number((row as any).disposisiJumlah || 0), authUser?.id)}
-                                        style={{
-                                          padding: "4px 10px", borderRadius: 4,
-                                          border: "1px solid #86efac", backgroundColor: "#ecfdf5",
-                                          color: "#16a34a", fontWeight: 700, fontSize: 11, cursor: "pointer",
-                                        }}
-                                      >
-                                        Disposisi
-                                      </button>
-                                      {row.realisasiJumlah !== undefined && row.disposisiJumlah && row.realisasiJumlah >= row.disposisiJumlah ? (
-                                        <button
-                                          onClick={() => handleInputFileClick(row.id, row.nama, Number((row as any).disposisiJumlah || 0))}
-                                          style={{
-                                            padding: "4px 10px", borderRadius: 4,
-                                            border: "1px solid #60a5fa", backgroundColor: "#f0f9ff",
-                                            color: "#2563eb", fontWeight: 700, fontSize: 11, cursor: "pointer",
-                                          }}
-                                        >
-                                          Lihat Detail
-                                        </button>
-                                      ) : (
-                                        <button
-                                          onClick={() => handleInputFileClick(row.id, row.nama, Number((row as any).disposisiJumlah || 0))}
-                                          style={{
-                                            padding: "4px 10px", borderRadius: 4,
-                                            border: "1px solid #93c5fd", backgroundColor: "#eff6ff",
-                                            color: "#2563eb", fontWeight: 700, fontSize: 11, cursor: "pointer",
-                                          }}
-                                        >
-                                          Input File
-                                        </button>
-                                      )}
-                                    </div>
-                                  </td>
                                 </>
-                              ) : row.isSubFirst ? (
-                                <>
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                  <td style={{ padding: "10px 12px", borderRight: "1px solid #e5e7eb" }} />
-                                  <td style={{ padding: "10px 12px" }} />
-                                </>
-                              ) : null}
+                              )}
+
+                              {/* Aksi — merged per Sub (Level 1) */}
+                              {row.isSubFirst && (
+                                <td rowSpan={row.subChildCount} style={{ textAlign: 'center', verticalAlign: 'top' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                                    <button
+                                      onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(disposisiJumlah || 0), row.sub.children)}
+                                      className="btn-small"
+                                      style={{ border: "1px solid #86efac", backgroundColor: "#ecfdf5", color: "#16a34a", width: 100 }}
+                                    >
+                                      Input File
+                                    </button>
+                                    <button
+                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(disposisiJumlah || 0), authUser?.id)}
+                                      className="btn-small"
+                                      style={{ border: "1px solid #93c5fd", backgroundColor: "#eff6ff", color: "#2563eb", width: 100 }}
+                                    >
+                                      Redisposisi
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
                             </tr>
                           );
                         });

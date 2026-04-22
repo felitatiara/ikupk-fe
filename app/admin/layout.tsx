@@ -188,6 +188,7 @@ export default function AdminLayout({
           display: "flex",
           gap: 0,
           minHeight: "calc(100vh - 68px)",
+          backgroundColor: "#ffffff",
         }}
       >
           <Sidebar unitNama={user?.unitNama} unitId={user?.unitId} unitJenis={user?.unitJenis} authRole={user?.role} />

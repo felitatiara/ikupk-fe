@@ -1,4 +1,5 @@
 const API_BASE_URL = 'http://localhost:4000';
+const REPOSITORY_API_URL = 'http://localhost:3002/api';
 
 export interface Indikator {
   id: number;
@@ -28,6 +29,9 @@ export interface IndikatorGroupedChild {
   nama: string;
   level: number;
   targetFakultas: number | null;
+  targetUniversitas: number | null;
+  targetUniversitasId: number | null;
+  tenggat: string | null;
   baselineJumlah: number | null;
 }
 
@@ -49,6 +53,7 @@ export interface IndikatorGrouped {
   kode: string;
   nama: string;
   targetUniversitas: number | null;
+  tenggat: string | null;
   targetUniversitasTahun: string;
   baselineJumlah: number | null;
   subIndikators: IndikatorGroupedSub[];
@@ -70,7 +75,7 @@ export async function getIndikatorGroupedForUser(jenis: string, tahun: string, u
 }
 
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null; jenisData?: string | null }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -80,7 +85,7 @@ export async function createIndikator(data: { jenis: string; kode: string; nama:
   return response.json();
 }
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null }>): Promise<Indikator> {
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null; jenisData: string | null }>): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -93,6 +98,18 @@ export async function updateIndikator(id: number, data: Partial<{ jenis: string;
 export async function deleteIndikator(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete indikator');
+}
+
+export async function deleteAllIndikator(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/indikator/all`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete all indikator');
+}
+
+export async function getBaselineByJenisData(jenisData: string, tahun: string): Promise<{ jumlah: number | null } | null> {
+  const url = `${API_BASE_URL}/baseline-data?jenisData=${encodeURIComponent(jenisData)}&tahun=${encodeURIComponent(tahun)}`;
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  return response.json();
 }
 
 export async function getKriteria(): Promise<Kriteria[]> {
@@ -132,6 +149,43 @@ export async function getBaselineDataByJenisDataAndUnit(jenisData: string, unitI
   return response.json();
 }
 
+export async function getAllBaselineData(): Promise<BaselineData[]> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data`);
+  if (!response.ok) throw new Error('Failed to fetch all baseline data');
+  return response.json();
+}
+
+export async function getBaselineDataByUnit(unitId: number): Promise<BaselineData[]> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data/unit/${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch baseline data by unit');
+  return response.json();
+}
+
+export async function createBaselineData(data: { unitId: number; jenisData: string; jumlah: number; tahun: string }): Promise<BaselineData> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create baseline data');
+  return response.json();
+}
+
+export async function updateBaselineData(id: number, data: Partial<{ unitId: number; jenisData: string; jumlah: number; tahun: string }>): Promise<BaselineData> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update baseline data');
+  return response.json();
+}
+
+export async function deleteBaselineData(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete baseline data');
+}
+
 export interface Unit {
   id: number;
   nama: string;
@@ -150,6 +204,7 @@ export interface TargetUniversitasData {
   indikatorId: number;
   tahun: string;
   targetAngka: number;
+  tenggat?: string | null;
 }
 
 export async function getTargetUniversitas(indikatorId: number, tahun: string): Promise<TargetUniversitasData | null> {
@@ -168,13 +223,20 @@ export async function saveTargetUniversitas(indikatorId: number, tahun: string, 
   return response.json();
 }
 
-export async function upsertTargetUniversitas(indikatorId: number, unitId: number, tahun: string, targetUniversitas: number): Promise<any> {
+export async function upsertTargetUniversitas(indikatorId: number, unitId: number, tahun: string, targetUniversitas: number, tenggat?: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/targets/upsert-target-universitas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, unitId, tahun, targetUniversitas }),
+    body: JSON.stringify({ indikatorId, unitId, tahun, targetUniversitas, tenggat }),
   });
   if (!response.ok) throw new Error('Failed to upsert target universitas');
+  return response.json();
+}
+
+export async function getPengajuanGrouped(jenis: string, tahun: string, unitId: number): Promise<any[]> {
+  const url = `${API_BASE_URL}/indikator/pengajuan-grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&unitId=${unitId}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch pengajuan grouped');
   return response.json();
 }
 
@@ -193,7 +255,7 @@ export async function login(email: string, password: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ nip: email, password }),
   });
   if (!response.ok) {
     const text = await response.text();
@@ -214,9 +276,9 @@ export async function getTargetsByUnit(unitId: number): Promise<TargetDetail[]> 
   return response.json();
 }
 
-export async function getTargetsForAdminPKU(): Promise<any[]> {
-  const response = await fetch(`${API_BASE_URL}/targets/admin/pku`);
-  if (!response.ok) throw new Error('Failed to fetch targets for admin PKU');
+export async function getTargetsForAdminFIK(): Promise<any[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/admin/fik`);
+  if (!response.ok) throw new Error('Failed to fetch targets for admin FIK');
   return response.json();
 }
 
@@ -294,7 +356,7 @@ export async function updateRealisasiStatus(id: number, status: string): Promise
   return response.json();
 }
 
-export interface DekanValidasiRow {
+export interface PimpinanValidasiRow {
   id: number;
   indikatorId: number;
   tahun: string;
@@ -306,9 +368,9 @@ export interface DekanValidasiRow {
   createdAt: string;
 }
 
-export async function getDekanValidasi(unitId: number): Promise<DekanValidasiRow[]> {
-  const response = await fetch(`${API_BASE_URL}/targets/dekan-validasi?unitId=${unitId}`);
-  if (!response.ok) throw new Error('Failed to fetch dekan validasi');
+export async function getPimpinanValidasi(unitId: number): Promise<PimpinanValidasiRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/pimpinan-validasi?unitId=${unitId}`);
+  if (!response.ok) throw new Error('Failed to fetch pimpinan validasi');
   return response.json();
 }
 
@@ -414,6 +476,14 @@ export async function getDisposisi(indikatorId: number, unitId: number, tahun: s
   return response.json();
 }
 
+export async function getReceivedDisposisiJumlah(assignedTo: number, indikatorId: number, unitId: number, tahun: string): Promise<number> {
+  const url = `${API_BASE_URL}/disposisi/received-jumlah?assignedTo=${assignedTo}&indikatorId=${indikatorId}&unitId=${unitId}&tahun=${encodeURIComponent(tahun)}`;
+  const response = await fetch(url);
+  if (!response.ok) return 0;
+  const data = await response.json();
+  return Number(data.jumlah) || 0;
+}
+
 export async function upsertDisposisi(indikatorId: number, unitId: number, tahun: string, items: { assignedTo: number; jumlah: number }[], disposedBy?: number | null): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/disposisi`, {
     method: 'POST',
@@ -421,6 +491,12 @@ export async function upsertDisposisi(indikatorId: number, unitId: number, tahun
     body: JSON.stringify({ indikatorId, unitId, tahun, items, disposedBy: disposedBy ?? null }),
   });
   if (!response.ok) throw new Error('Failed to upsert disposisi');
+  return response.json();
+}
+
+export async function getUsers(): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users`);
+  if (!response.ok) throw new Error('Failed to fetch users');
   return response.json();
 }
 
@@ -437,12 +513,36 @@ export interface CreateUserPayload {
   email: string;
   password: string;
   role: string;
+  jenis: string;
   unitId?: number | null;
+  atasanId?: number | null;
 }
 
 export async function getUsersByUnit(unitId: number): Promise<UnitUser[]> {
   const response = await fetch(`${API_BASE_URL}/users/by-unit?unitId=${unitId}`);
   if (!response.ok) throw new Error('Failed to fetch users by unit');
+  return response.json();
+}
+
+/** Mengambil bawahan langsung dari seorang user (berdasarkan user_relations di mana parent_id = userId) */
+export async function getRelatedUsersFor(userId: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/related?userId=${userId}`);
+  if (!response.ok) throw new Error('Failed to fetch related users for user');
+  return response.json();
+}
+
+/** Cek apakah user memiliki bawahan */
+export async function hasRelatedUsers(userId: number): Promise<boolean> {
+  const response = await fetch(`${API_BASE_URL}/users/has-related?userId=${userId}`);
+  if (!response.ok) return false;
+  const data = await response.json();
+  return data.hasRelated === true;
+}
+
+/** (legacy) Mengambil user yang berelasi dengan userId - aitu parent dari userId */
+export async function getRelatedUsers(userId: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/related?userId=${userId}`);
+  if (!response.ok) throw new Error('Failed to fetch related users');
   return response.json();
 }
 
@@ -454,6 +554,23 @@ export async function createUserAccount(data: CreateUserPayload): Promise<any> {
   });
   if (!response.ok) throw new Error('Failed to create user');
   return response.json();
+}
+
+export async function updateUserAccount(id: number, data: Partial<CreateUserPayload>): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/users/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update user');
+  return response.json();
+}
+
+export async function deleteUserAccount(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/users/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete user');
 }
 
 export interface FileRealisasiResult {
@@ -479,3 +596,31 @@ export async function submitFileRealisasi(data: {
   if (!response.ok) throw new Error('Failed to submit file realisasi');
   return response.json();
 }
+
+/** Fetch real files from Repository system matching a name */
+export async function fetchRepositoryFilesByName(name: string, email?: string): Promise<any[]> {
+  let url = `${REPOSITORY_API_URL}/integration/files/search?name=${encodeURIComponent(name)}`;
+  if (email) {
+    url += `&email=${encodeURIComponent(email)}`;
+  }
+  const response = await fetch(url);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+/** Fetch accessible folders for a user from Repository system */
+export async function fetchRepositoryFolders(email: string): Promise<any[]> {
+  const url = `${REPOSITORY_API_URL}/integration/folders?email=${encodeURIComponent(email)}`;
+  const response = await fetch(url);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+/** Fetch files from a specific folder in Repository system */
+export async function fetchRepositoryFilesByFolder(folderId: string, email: string): Promise<any[]> {
+  const url = `${REPOSITORY_API_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`;
+  const response = await fetch(url);
+  if (!response.ok) return [];
+  return response.json();
+}
+
