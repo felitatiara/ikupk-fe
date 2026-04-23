@@ -22,6 +22,7 @@ interface IndikatorGroupForm {
   existingLevel1Id: number | null;
   kodeIndikator: string;
   indikatorKinerja: string;
+  isPkBerbasisIku: boolean;
   subItems: SubIndikatorItem[];
 }
 
@@ -55,6 +56,7 @@ function blankGroup(): IndikatorGroupForm {
     existingLevel1Id: null,
     kodeIndikator: "",
     indikatorKinerja: "",
+    isPkBerbasisIku: false,
     subItems: [blankSub()],
   };
 }
@@ -312,7 +314,14 @@ export default function MasterIndikatorContent() {
           jenisData: targetAcuan || null
         });
         for (const g of groups) {
-          const level1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), level: 1, parentId: level0.id });
+          const level1 = await createIndikator({ 
+            jenis, 
+            kode: g.kodeIndikator.trim(), 
+            nama: g.indikatorKinerja.trim(), 
+            level: 1, 
+            parentId: level0.id,
+            isPkBerbasisIku: g.isPkBerbasisIku // Pass flag
+          });
           for (const s of g.subItems) {
             await createIndikator({
               jenis,
@@ -348,7 +357,14 @@ export default function MasterIndikatorContent() {
           if (g.existingLevel1Id !== null) {
             level1Id = g.existingLevel1Id;
           } else {
-            const newL1 = await createIndikator({ jenis: parentLevel0.jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), level: 1, parentId: parentLevel0.id });
+            const newL1 = await createIndikator({ 
+              jenis: parentLevel0.jenis, 
+              kode: g.kodeIndikator.trim(), 
+              nama: g.indikatorKinerja.trim(), 
+              level: 1, 
+              parentId: parentLevel0.id,
+              isPkBerbasisIku: g.isPkBerbasisIku // Pass flag
+            });
             level1Id = newL1.id;
           }
           for (const s of g.subItems) {
@@ -845,6 +861,23 @@ export default function MasterIndikatorContent() {
                     </div>
                   </div>
 
+                  {/* PK berbasis IKU Checkbox for Level 1 */}
+                  {jenis === "IKU" && (
+                    <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                      <input 
+                        type="checkbox"
+                        id={`pk-berbasis-baru-${group.id}`}
+                        checked={group.isPkBerbasisIku}
+                        onChange={(e) => {
+                          setGroups(prev => prev.map(pg => pg.id === group.id ? { ...pg, isPkBerbasisIku: e.target.checked } : pg));
+                        }}
+                      />
+                      <label htmlFor={`pk-berbasis-baru-${group.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#4b5563", cursor: "pointer" }}>
+                        PK Berbasis IKU?
+                      </label>
+                    </div>
+                  )}
+
                   <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Sub Indikator (Level 2)</p>
                   {group.subItems.map((sub, sIdx) => (
                     <div key={sub.id} style={{ background: "#f9fafb", borderRadius: 6, padding: "10px 12px", marginBottom: 8 }}>
@@ -951,6 +984,26 @@ export default function MasterIndikatorContent() {
                             </div>
                             {groups.length > 1 && <button type="button" onClick={() => removeGroup(group.id)} style={{ alignSelf: "flex-end", background: "none", border: "none", color: "#dc2626", fontSize: 18, cursor: "pointer", paddingBottom: 6 }}>−</button>}
                           </div>
+                        </div>
+                      )}
+
+                      {/* PK berbasis IKU Checkbox for Level 1 */}
+                      {(() => {
+                        const level0 = indikatorList.find(i => i.id === selectedLevel0Id);
+                        return level0?.jenis === "IKU";
+                      })() && (
+                        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                          <input 
+                            type="checkbox"
+                            id={`pk-berbasis-tambah-${group.id}`}
+                            checked={group.isPkBerbasisIku}
+                            onChange={(e) => {
+                              setGroups(prev => prev.map(pg => pg.id === group.id ? { ...pg, isPkBerbasisIku: e.target.checked } : pg));
+                            }}
+                          />
+                          <label htmlFor={`pk-berbasis-tambah-${group.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#4b5563", cursor: "pointer" }}>
+                            PK Berbasis IKU?
+                          </label>
                         </div>
                       )}
 

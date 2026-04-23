@@ -743,6 +743,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                               )}
                               <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
                                 {row.kode} {row.nama}
+                                {row.sub.isPkBerbasisIku && jenis === "PK" && (
+                                  <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, backgroundColor: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, border: "1px solid #93c5fd", verticalAlign: "middle" }}>
+                                    Berbasis IKU
+                                  </span>
+                                )}
                               </td>
 
                               {/* Target Universitas — merged per group */}
@@ -878,6 +883,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                               )}
                               <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
                                 {row.kode} {row.nama}
+                                {row.sub.isPkBerbasisIku && jenis === "PK" && (
+                                  <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, backgroundColor: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, border: "1px solid #93c5fd", verticalAlign: "middle" }}>
+                                    Berbasis IKU
+                                  </span>
+                                )}
                               </td>
                               {/* Target Fakultas — merged per Sub (Level 1) */}
                               {row.isSubFirst && (

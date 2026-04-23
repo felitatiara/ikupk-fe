@@ -8,6 +8,7 @@ export interface Indikator {
   level?: number;
   jenis: string;
   kode: string;
+  isPkBerbasisIku?: boolean;
 }
 
 export interface Kriteria {
@@ -33,6 +34,7 @@ export interface IndikatorGroupedChild {
   targetUniversitasId: number | null;
   tenggat: string | null;
   baselineJumlah: number | null;
+  isPkBerbasisIku?: boolean;
 }
 
 export interface IndikatorGroupedSub {
@@ -44,9 +46,12 @@ export interface IndikatorGroupedSub {
   targetId: number | null;
   targetFakultas: number | null;
   targetUniversitas: number | null;
+  targetPersentase?: number | null;
   baselineJumlah: number | null;
+  isPkBerbasisIku?: boolean;
   children: IndikatorGroupedChild[];
 }
+
 
 export interface IndikatorGrouped {
   id: number;
@@ -75,7 +80,7 @@ export async function getIndikatorGroupedForUser(jenis: string, tahun: string, u
 }
 
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null; jenisData?: string | null }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null; jenisData?: string | null; isPkBerbasisIku?: boolean }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,7 +90,7 @@ export async function createIndikator(data: { jenis: string; kode: string; nama:
   return response.json();
 }
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null; jenisData: string | null }>): Promise<Indikator> {
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null; jenisData: string | null; isPkBerbasisIku: boolean }>): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

@@ -209,6 +209,11 @@ export default function TargetIKUPKContent({ role = 'admin' }: { role?: 'admin' 
 
                           <td style={{ fontWeight: 600 }}>
                             {l1.kode} {l1.nama}
+                            {l1.isPkBerbasisIku && jenis === "PK" && (
+                              <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, backgroundColor: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, border: "1px solid #93c5fd", verticalAlign: "middle" }}>
+                                Berbasis IKU
+                              </span>
+                            )}
                           </td>
 
                           {/* Merged Target Univ Columns: Only on first Level 1 row of the group */}
