@@ -242,288 +242,144 @@ export default function TambahIndikatorForm() {
   return (
     <PageTransition>
       <div>
-        {/* Breadcrumb */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 32, paddingLeft: 16 }}>
+    
+        <nav className="breadcrumb page" aria-label="Breadcrumb">
           <button
-            style={{
-              color: "#FF7900",
-              fontWeight: 600,
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 16,
-              padding: 0,
-            }}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 600, fontSize: 13, color: "#FF7900" }}
             onClick={() => router.push("/admin/master-indikator")}
           >
             Master Indikator
           </button>
-          <span style={{ color: "#9ca3af", fontSize: 18 }}>&gt;</span>
-          <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 16 }}>Form Tambah</span>
-        </div>
+          <span style={{ color: "#9ca3af", margin: "0 6px" }}>/</span>
+          <span style={{ color: "#16a34a", fontWeight: 600 }}>Form Tambah</span>
+        </nav>
 
+            <div style={{ marginBottom: 24 }}>
+            <h3>Tambah Indikator Baru</h3>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Isi data berikut untuk membuat indikator kinerja baru.</p>
+          </div>
 
-        <h3 style={{ fontSize: 18, fontWeight: 600, color: "#374151", marginBottom: 24 }}>
-          Tambah Indikator Baru
-        </h3>
+          {/* === LEVEL 0: Sasaran Strategis === */}
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "20px 20px 20px 20px", marginBottom: 24, borderLeft: "4px solid #f59e0b" }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: "#92400e", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              Level 0 — Sasaran Strategis
+            </p>
 
-        {/* === Bagian Level 0: Sasaran Strategis === */}
-        <div
-          style={{
-            borderRadius: 8,
-            padding: "16px 20px",
-            marginBottom: 20,
-          }}
-        >
-          <p style={{ fontSize: 12, fontWeight: 700, color: "#b45309", marginBottom: 12, textTransform: "uppercase" }}>
-            📌 Level 0 — Sasaran Strategis
-          </p>
-
-          {/* Jenis + Tahun Target + Tenggat */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={labelStyle}>Jenis Indikator</label>
-              <select value={jenis} onChange={(e) => setJenis(e.target.value)} style={inputStyle}>
-                <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-                <option value="PK">Perjanjian Kerja (PK)</option>
-              </select>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Jenis Indikator</label>
+                <select value={jenis} onChange={(e) => setJenis(e.target.value)} style={inputStyle}>
+                  <option value="IKU">Indikator Kinerja Utama (IKU)</option>
+                  <option value="PK">Perjanjian Kerja (PK)</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Tahun Target</label>
+                <select value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)} style={inputStyle}>
+                  {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Tenggat Waktu</label>
+                <select value={tenggat} onChange={(e) => setTenggat(e.target.value)} style={inputStyle}>
+                  <option value="">-- Pilih Tenggat --</option>
+                  {TRIWULAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Tahun Target</label>
-              <select value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)} style={inputStyle}>
-                {TAHUN_OPTIONS.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Tenggat Waktu</label>
-              <select value={tenggat} onChange={(e) => setTenggat(e.target.value)} style={inputStyle}>
-                <option value="">-- Pilih Tenggat --</option>
-                {TRIWULAN_OPTIONS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+
+            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>Nomor / Kode</label>
+                <input type="text" value={nomor} onChange={(e) => setNomor(e.target.value)} placeholder="contoh: 1" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Sasaran Strategis</label>
+                <input type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Target Universitas</label>
+                <input type="number" min={0} value={targetUniversitas} onChange={(e) => setTargetUniversitas(e.target.value)} placeholder="contoh: 80" style={inputStyle} />
+              </div>
             </div>
           </div>
 
-          {/* Nomor + Sasaran Strategis + Target Universitas */}
-          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px", gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Nomor / Kode</label>
-              <input
-                type="text"
-                value={nomor}
-                onChange={(e) => setNomor(e.target.value)}
-                placeholder="contoh: 1"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Sasaran Strategis</label>
-              <input
-                type="text"
-                value={sasaranStrategis}
-                onChange={(e) => setSasaranStrategis(e.target.value)}
-                placeholder="contoh: Meningkatnya kualitas lulusan pendidikan tinggi"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Target Universitas</label>
-              <input
-                type="number"
-                min={0}
-                value={targetUniversitas}
-                onChange={(e) => setTargetUniversitas(e.target.value)}
-                placeholder="contoh: 80"
-                style={inputStyle}
-              />
-            </div>
-
-          </div>
-
-          {/* === Bagian Level 1 & 2 === */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", margin: 0 }}>
-              🔵 Level 1 & Level 2 — Indikator Kinerja
+          {/* === LEVEL 1 & 2 === */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: "#374151", margin: 0, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              Level 1 &amp; Level 2 — Indikator Kinerja
             </p>
             <button
               type="button"
               onClick={addGroup}
-              style={{
-                background: "#f0f9ff",
-                border: "1px solid #bae6fd",
-                color: "#0284c7",
-                borderRadius: 6,
-                padding: "4px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 6, padding: "5px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
             >
               + Tambah Level 1
             </button>
           </div>
 
           {groups.map((group, gIdx) => (
-            <div
-              key={group.id}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: 16,
-                marginBottom: 16,
-              }}
-            >
+            <div key={group.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, marginBottom: 18, background: "#fff" }}>
               {/* Level 1 Header */}
-              <div
-                style={{
-                  background: "#f1f5f9",
-                  borderRadius: 6,
-                  padding: "8px 12px",
-                  marginBottom: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  justifyContent: "space-between",
-                }}
-              >
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase" }}>
-                  Level 1 — Indikator Kinerja Kegiatan #{gIdx + 1}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <span style={{ display: "inline-block", background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "3px 12px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Level 1 #{gIdx + 1} — Indikator Kinerja Kegiatan
                 </span>
                 {groups.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeGroup(group.id)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "#dc2626",
-                      fontSize: 16,
-                      cursor: "pointer",
-                      fontWeight: 700,
-                    }}
+                    style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 6, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                   >
-                    × Hapus
+                    Hapus
                   </button>
                 )}
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 16, marginBottom: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 14, marginBottom: 16 }}>
                 <div>
                   <label style={labelStyle}>Kode</label>
-                  <input
-                    type="text"
-                    value={group.kodeIndikator}
-                    onChange={(e) => updateGroup(group.id, "kodeIndikator", e.target.value)}
-                    placeholder={`${nomor || "1"}.${gIdx + 1}`}
-                    style={inputStyle}
-                  />
+                  <input type="text" value={group.kodeIndikator} onChange={(e) => updateGroup(group.id, "kodeIndikator", e.target.value)} placeholder={`${nomor || "1"}.${gIdx + 1}`} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Nama Indikator Kinerja Kegiatan</label>
-                  <input
-                    type="text"
-                    value={group.indikatorKinerja}
-                    onChange={(e) => updateGroup(group.id, "indikatorKinerja", e.target.value)}
-                    placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang"
-                    style={inputStyle}
-                  />
+                  <input type="text" value={group.indikatorKinerja} onChange={(e) => updateGroup(group.id, "indikatorKinerja", e.target.value)} placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" style={inputStyle} />
                 </div>
               </div>
 
-              {/* Level 2 Sub Items */}
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 8 }}>
-                ⬇ Level 2 — Sub Indikator
-              </p>
+              {/* Level 2 label */}
+              <div style={{ marginBottom: 10 }}>
+                <span style={{ display: "inline-block", background: "#f0fdf4", color: "#15803d", fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Level 2 — Sub Indikator
+                </span>
+              </div>
+
               {group.subItems.map((sub, sIdx) => (
-                <div
-                  key={sub.id}
-                  style={{
-                    background: "#f9fafb",
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    marginBottom: 8,
-                    border: "1px solid #f3f4f6",
-                  }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, marginBottom: 8 }}>
+                <div key={sub.id} style={{ background: "#f9fafb", borderRadius: 8, padding: "12px 14px", marginBottom: 10, border: "1px solid #f3f4f6" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, marginBottom: 10 }}>
                     <div>
                       <label style={labelStyle}>Kode Sub</label>
-                      <input
-                        type="text"
-                        value={sub.kodeSubIndikator}
-                        onChange={(e) =>
-                          updateSubItem(group.id, sub.id, "kodeSubIndikator", e.target.value)
-                        }
-                        placeholder={`${group.kodeIndikator || `${nomor || "1"}.${gIdx + 1}`}.${sIdx + 1}`}
-                        style={inputStyle}
-                      />
+                      <input type="text" value={sub.kodeSubIndikator} onChange={(e) => updateSubItem(group.id, sub.id, "kodeSubIndikator", e.target.value)} placeholder={`${group.kodeIndikator || `${nomor || "1"}.${gIdx + 1}`}.${sIdx + 1}`} style={inputStyle} />
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 10 }}>
                       <div style={{ flex: 1 }}>
                         <label style={labelStyle}>Nama Sub Indikator</label>
-                        <input
-                          type="text"
-                          value={sub.subIndikatorKinerja}
-                          onChange={(e) =>
-                            updateSubItem(group.id, sub.id, "subIndikatorKinerja", e.target.value)
-                          }
-                          placeholder="contoh: Lulusan bekerja dalam 6 bulan"
-                          style={inputStyle}
-                        />
+                        <input type="text" value={sub.subIndikatorKinerja} onChange={(e) => updateSubItem(group.id, sub.id, "subIndikatorKinerja", e.target.value)} placeholder="contoh: Lulusan bekerja dalam 6 bulan" style={inputStyle} />
                       </div>
                       {group.subItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeSubItem(group.id, sub.id)}
-                          style={{
-                            alignSelf: "flex-end",
-                            background: "none",
-                            border: "none",
-                            color: "#dc2626",
-                            fontSize: 18,
-                            cursor: "pointer",
-                            paddingBottom: 6,
-                          }}
-                        >
-                          −
-                        </button>
+                        <button type="button" onClick={() => removeSubItem(group.id, sub.id)} style={{ alignSelf: "flex-end", background: "none", border: "none", color: "#dc2626", fontSize: 18, cursor: "pointer", paddingBottom: 6, lineHeight: 1 }}>−</button>
                       )}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Jenis Data (untuk baseline)</label>
-                      <input
-                        type="text"
-                        value={sub.jenisData}
-                        onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)}
-                        placeholder="contoh: mahasiswa_lulus"
-                        style={inputStyle}
-                      />
+                      <input type="text" value={sub.jenisData} onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)} placeholder="contoh: mahasiswa_lulus" style={inputStyle} />
                     </div>
-                    <div style={{ minWidth: 140, paddingBottom: 2 }}>
+                    <div style={{ minWidth: 140 }}>
                       <label style={labelStyle}>Baseline ({targetTahun})</label>
-                      <div
-                        style={{
-                          border: "1px solid #e5e7eb",
-                          borderRadius: 6,
-                          padding: "8px 12px",
-                          fontSize: 13,
-                          background: "#f3f4f6",
-                          color: sub.baseline !== null ? "#1f2937" : "#9ca3af",
-                          minHeight: 36,
-                        }}
-                      >
-                        {sub.baselineLoading
-                          ? "Memuat..."
-                          : sub.baseline !== null
-                            ? typeof sub.baseline === "number"
-                              ? sub.baseline.toLocaleString("id-ID")
-                              : sub.baseline
-                            : "—"}
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, background: "#f3f4f6", color: sub.baseline !== null ? "#1f2937" : "#9ca3af", minHeight: 36 }}>
+                        {sub.baselineLoading ? "Memuat..." : sub.baseline !== null ? (typeof sub.baseline === "number" ? sub.baseline.toLocaleString("id-ID") : sub.baseline) : "—"}
                       </div>
                     </div>
                   </div>
@@ -531,19 +387,7 @@ export default function TambahIndikatorForm() {
               ))}
 
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  onClick={() => addSubItem(group.id)}
-                  style={{
-                    background: "none",
-                    border: "1px dashed #d1d5db",
-                    color: "#6b7280",
-                    borderRadius: 6,
-                    padding: "4px 14px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                >
+                <button type="button" onClick={() => addSubItem(group.id)} style={{ background: "none", border: "1px dashed #d1d5db", color: "#6b7280", borderRadius: 6, padding: "4px 14px", fontSize: 12, cursor: "pointer" }}>
                   + Sub Indikator
                 </button>
               </div>
@@ -551,43 +395,15 @@ export default function TambahIndikatorForm() {
           ))}
 
           {/* Action Buttons */}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-            <button
-              type="button"
-              onClick={() => router.push("/admin/master-indikator")}
-              disabled={submitLoading}
-              style={{
-                background: "white",
-                color: "#374151",
-                border: "1px solid #d1d5db",
-                borderRadius: 6,
-                padding: "9px 24px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 20, borderTop: "1px solid #f3f4f6", marginTop: 8 }}>
+            <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading} className="btn-outline">
               Kembali
             </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitLoading}
-              style={{
-                background: submitLoading ? "#d1d5db" : "#16a34a",
-                color: "white",
-                border: "none",
-                borderRadius: 6,
-                padding: "9px 28px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: submitLoading ? "not-allowed" : "pointer",
-              }}
-            >
+            <button type="button" onClick={handleSubmit} disabled={submitLoading} className="btn-main" style={{ backgroundColor: submitLoading ? "#9ca3af" : undefined, cursor: submitLoading ? "not-allowed" : "pointer" }}>
               {submitLoading ? "Menyimpan..." : "Simpan Indikator"}
             </button>
           </div>
         </div>
-      </div>
-    </PageTransition>
-  );
-}
+      </PageTransition>
+    );
+  }

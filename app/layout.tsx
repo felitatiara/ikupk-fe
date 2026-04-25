@@ -1,9 +1,13 @@
-"use client";
 
 import { Nunito_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import type { Metadata } from "next";
+import 'bootstrap/dist/css/bootstrap.min.css';
 
+export const metadata: Metadata = {
+  title: "IKU & PK UPN Veteran Jakarta",
+};
 const nunitoSans = Nunito_Sans({
   variable: "--font-nunito-sans",
   subsets: ["latin"],

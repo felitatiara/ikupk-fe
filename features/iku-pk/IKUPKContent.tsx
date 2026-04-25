@@ -30,7 +30,57 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
 }
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByUnit, getRelatedUsersFor, getRelatedUsers, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, submitFileRealisasi, fetchRepositoryFolders, fetchRepositoryFilesByFolder } from "../../lib/api";
+import { getUsersByUnit, getRelatedUsersFor, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi } from "../../lib/api";
+
+const MOCK_FOLDERS = [
+  { id: "folder-1", name: "Penelitian 2025" },
+  { id: "folder-2", name: "Pengabdian Masyarakat 2025" },
+  { id: "folder-3", name: "Publikasi Jurnal 2025" },
+  { id: "folder-4", name: "Bimbingan Skripsi 2025" },
+  { id: "folder-5", name: "Seminar & Konferensi 2025" },
+  { id: "folder-6", name: "Lulusan Tepat Waktu 2025" },
+  { id: "folder-7", name: "Praktisi Mengajar 2025" },
+  { id: "folder-8", name: "Sertifikasi Dosen 2025" },
+];
+
+const MOCK_FILES_BY_FOLDER: Record<string, { name: string; created_at: string }[]> = {
+  "folder-1": [
+    { name: "Proposal_Penelitian_Hibah_2025.pdf", created_at: "2025-02-10" },
+    { name: "Laporan_Kemajuan_Penelitian_Q1.pdf", created_at: "2025-04-01" },
+    { name: "Laporan_Akhir_Penelitian_2025.pdf", created_at: "2025-11-15" },
+  ],
+  "folder-2": [
+    { name: "Proposal_PKM_Desa_Binaan.pdf", created_at: "2025-03-05" },
+    { name: "Dokumentasi_Kegiatan_PKM.pdf", created_at: "2025-07-20" },
+  ],
+  "folder-3": [
+    { name: "Artikel_Jurnal_Sinta2_2025.pdf", created_at: "2025-01-22" },
+    { name: "Bukti_Acceptance_Scopus.pdf", created_at: "2025-05-11" },
+    { name: "Publikasi_Prosiding_Internasional.pdf", created_at: "2025-08-30" },
+    { name: "Artikel_Jurnal_Terakreditasi_2025.pdf", created_at: "2025-10-05" },
+  ],
+  "folder-4": [
+    { name: "Daftar_Mahasiswa_Bimbingan_TA.pdf", created_at: "2025-02-14" },
+    { name: "Berita_Acara_Sidang_Skripsi.pdf", created_at: "2025-06-18" },
+  ],
+  "folder-5": [
+    { name: "Sertifikat_Seminar_Nasional_TI.pdf", created_at: "2025-03-28" },
+    { name: "Bukti_Presentasi_Konferensi_Internasional.pdf", created_at: "2025-09-12" },
+  ],
+  "folder-6": [
+    { name: "Data_Lulusan_S1_2024.xlsx", created_at: "2025-01-08" },
+    { name: "Rekapitulasi_Kelulusan_Tepat_Waktu.pdf", created_at: "2025-04-22" },
+  ],
+  "folder-7": [
+    { name: "SK_Praktisi_Mengajar_2025.pdf", created_at: "2025-02-01" },
+    { name: "Laporan_Pelaksanaan_Kuliah_Tamu.pdf", created_at: "2025-05-30" },
+    { name: "Daftar_Hadir_Praktisi_Sem_Ganjil.pdf", created_at: "2025-08-10" },
+  ],
+  "folder-8": [
+    { name: "Sertifikat_Kompetensi_Nasional.pdf", created_at: "2025-03-15" },
+    { name: "Sertifikat_Pelatihan_AI_2025.pdf", created_at: "2025-07-04" },
+  ],
+};
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -49,8 +99,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [disposisiAllocations, setDisposisiAllocations] = useState<{ userId: number; jumlah: string }[]>([]);
   const [disposisiTargetFakultas, setDisposisiTargetFakultas] = useState<number>(0);
   const [disposedBy, setDisposedBy] = useState<number | null>(null);
-  // Jumlah yang diterima oleh disposedBy dari disposisi sebelumnya (untuk validasi batas re-disposisi)
-  const [receivedJumlah, setReceivedJumlah] = useState<number>(0);
 
   // File repository modal state
   const [fileRepoModalOpen, setFileRepoModalOpen] = useState(false);
@@ -61,7 +109,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [fileRepoLoading, setFileRepoLoading] = useState(false);
   const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
-  const [fileRepoFolders, setFileRepoFolders] = useState<any[]>([]);
+  const [fileRepoFolders, setFileRepoFolders] = useState<{ id: string; name: string }[]>([]);
   const [fileRepoViewMode, setFileRepoViewMode] = useState<'folders' | 'files'>('folders');
   const [selectedRepoFolderId, setSelectedRepoFolderId] = useState<string | null>(null);
   const [selectedRepoFolderName, setSelectedRepoFolderName] = useState<string | null>(null);
@@ -73,6 +121,23 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
   const [fileRepoChildId, setFileRepoChildId] = useState<number> (0);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
+
+  // Local realisasi: subId → fileCount (dari repository). Persisted in localStorage.
+  const [localRealisasi, setLocalRealisasi] = useState<Record<number, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem('ikupk_realisasi');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+
+  const saveRealisasi = (subId: number, fileCount: number) => {
+    setLocalRealisasi(prev => {
+      const next = { ...prev, [subId]: fileCount };
+      try { localStorage.setItem('ikupk_realisasi', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const unitId = authUser?.unitId;
 
@@ -105,7 +170,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
         } 
       });
     return () => { cancelled = true; };
-  }, [role, jenis, tahun, unitId, authUser?.id]);
+  }, [displayRole, jenis, tahun, unitId, authUser?.id]);
 
   const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null) => {
     setDisposisiSubId(subId);
@@ -113,7 +178,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setDisposisiTargetFakultas(targetAmount);
     setDisposisiAllocations([]);
     setDisposedBy(disposedByUserId ?? null);
-    setReceivedJumlah(0);
     if (!unitId) return;
 
     try {
@@ -140,11 +204,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     if (disposedByUserId && unitId) {
       try {
         const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, unitId, tahun);
-        setReceivedJumlah(received);
         // Jika batas = 0, gunakan targetAmount (dari pimpinan tidak ada batas khusus)
         if (received > 0) setDisposisiTargetFakultas(received);
       } catch {
-        setReceivedJumlah(0);
+        // ignore
       }
     }
 
@@ -225,38 +288,29 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setFileRepoModalOpen(true);
   };
 
-  // Fetch repository folders or files
+  // Load mock folders/files for repo modal
   useEffect(() => {
-    if (!fileRepoModalOpen || !authUser?.email) return;
+    if (!fileRepoModalOpen) return;
 
     if (fileRepoViewMode === 'folders') {
       setFileRepoLoading(true);
-      fetchRepositoryFolders(authUser.email)
-        .then(folders => {
-          setFileRepoFolders(folders);
-          setFileRepoLoading(false);
-        })
-        .catch(() => {
-          setFileRepoFolders([]);
-          setFileRepoLoading(false);
-        });
+      setTimeout(() => {
+        setFileRepoFolders(MOCK_FOLDERS);
+        setFileRepoLoading(false);
+      }, 300);
     } else if (fileRepoViewMode === 'files' && selectedRepoFolderId) {
       setFileRepoLoading(true);
-      fetchRepositoryFilesByFolder(selectedRepoFolderId, authUser.email)
-        .then(files => {
-          const mapped = files.map((f, i) => ({
-            no: i + 1,
-            namaFile: f.name,
-            tanggal: new Date(f.created_at).toLocaleDateString("id-ID"),
-            sumber: "Repository FIK",
-          }));
-          setFileRepoFiles(mapped);
-          setFileRepoLoading(false);
-        })
-        .catch(() => {
-          setFileRepoFiles([]);
-          setFileRepoLoading(false);
-        });
+      setTimeout(() => {
+        const rawFiles = MOCK_FILES_BY_FOLDER[selectedRepoFolderId] ?? [];
+        const mapped = rawFiles.map((f, i) => ({
+          no: i + 1,
+          namaFile: f.name,
+          tanggal: new Date(f.created_at).toLocaleDateString("id-ID"),
+          sumber: "Repository FIK",
+        }));
+        setFileRepoFiles(mapped);
+        setFileRepoLoading(false);
+      }, 300);
     }
   }, [fileRepoModalOpen, fileRepoViewMode, selectedRepoFolderId, authUser?.email]);
 
@@ -264,14 +318,8 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     if (!fileRepoIndikatorId || !unitId || !authUser?.id) return;
     setFileRepoSubmitting(true);
     try {
-      await submitFileRealisasi({
-        indikatorId: fileRepoChildId || fileRepoIndikatorId, // Use Level 2 if selected, else Level 1
-        unitId,
-        tahun,
-        periode: fileRepoPeriode,
-        fileCount: fileRepoFiles.length,
-        userId: authUser.id,
-      });
+      // Simpan realisasi ke localStorage (jumlah file ditemukan = capaian)
+      saveRealisasi(fileRepoIndikatorId, fileRepoFiles.length);
       setFileRepoModalOpen(false);
       setShowSuccess(true);
     } catch {
@@ -317,7 +365,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               {/* Info bar */}
               <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{displayRole === 'dekan' ? 'Target Fakultas' : 'Jumlah Diterima'}: </span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{displayRole === 'dekan' ? 'Target Universitas' : 'Jumlah Diterima'}: </span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{disposisiTargetFakultas}</span>
                 </div>
                 <div>
@@ -692,14 +740,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                         <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
                         <th rowSpan={2} style={{ width: "35%" }}>Sub Indikator Kinerja Utama</th>
                         <th colSpan={2} style={{ textAlign: "center" }}>Target Universitas</th>
-                        <th colSpan={2} style={{ textAlign: "center" }}>Target Fakultas</th>
                         <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Disposisi</th>
                       </tr>
                       <tr>
                         <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
                         <th style={{ textAlign: "center", minWidth: 100 }}>Waktu</th>
-                        <th style={{ textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
                       </tr>
                     </thead>
 
@@ -722,12 +767,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                         return flatRows.map((row, rowIdx) => {
                           const univKuantitas = group.targetUniversitas;
-
-                          const fakBaseline = row.sub.baselineJumlah ?? group.baselineJumlah;
-                          const fakKuantitas = row.sub.targetFakultas !== null ? Number(row.sub.targetFakultas) : null;
-                          const fakKualitas = (fakKuantitas !== null && fakBaseline && Number(fakBaseline) > 0)
-                            ? `${Math.round((fakKuantitas / Number(fakBaseline)) * 100)}%`
-                            : "-";
 
                           return (
                             <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
@@ -762,23 +801,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                                 </>
                               )}
 
-                              {/* Target Fakultas — merged per Sub (Level 1) */}
-                              {row.isSubFirst && (
-                                <>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {fakKualitas}
-                                  </td>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {fakKuantitas !== null ? `${fakKuantitas} Lulusan` : "-"}
-                                  </td>
-                                </>
-                              )}
-
                               {/* Disposisi — merged per Sub (Level 1) */}
                               {row.isSubFirst ? (
                                 <td rowSpan={row.subChildCount} style={{ textAlign: "center", verticalAlign: "top" }}>
                                   <button
-                                    onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(row.sub.targetFakultas || 0), null)}
+                                    onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetUniversitas || 0), null)}
                                     className="btn-small"
                                     style={{ border: "1px solid #86efac", backgroundColor: "#ecfdf5", color: "#16a34a" }}
                                   >
@@ -834,17 +861,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                   <table className="table-universal">
                     <thead>
                       <tr>
-                        <th rowSpan={2} style={{ width: "5%", textAlign: "center" }}>Nomor</th>
-                        <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
-                        <th rowSpan={2} style={{ width: "35%" }}>Sub Indikator Kinerja Utama</th>
-                        <th colSpan={2} style={{ textAlign: "center" }}>Target Fakultas</th>
-                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Target Dosen</th>
-                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Capaian</th>
-                        <th rowSpan={2} style={{ width: "20%", textAlign: "center" }}>Aksi</th>
-                      </tr>
-                      <tr>
-                        <th style={{ textAlign: "center", minWidth: 80 }}>Kualitas</th>
-                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
+                        <th style={{ width: "5%", textAlign: "center" }}>Nomor</th>
+                        <th style={{ width: "20%" }}>Sasaran Strategis</th>
+                        <th>Sub Indikator Kinerja Utama</th>
+                        <th style={{ width: "10%", textAlign: "center" }}>Target Disposisi</th>
+                        <th style={{ width: "10%", textAlign: "center" }}>Capaian</th>
+                        <th style={{ width: "20%", textAlign: "center" }}>Aksi</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -860,14 +882,9 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                         const totalRowSpan = flatRows.length;
 
                         return flatRows.map((row, rowIdx) => {
-                          const fakBaseline = row.sub.baselineJumlah ?? group.baselineJumlah;
-                          const fakKuantitas = row.sub.targetFakultas !== null ? Number(row.sub.targetFakultas) : null;
-                          const fakKualitas = (fakKuantitas !== null && fakBaseline && Number(fakBaseline) > 0)
-                            ? `${Math.round((fakKuantitas / Number(fakBaseline)) * 100)}%`
-                            : "-";
-
                           const disposisiJumlah = row.sub.disposisiJumlah ?? null;
-                          const realisasiJumlah = row.sub.realisasiJumlah ?? 0;
+                          // Capaian dari repository file count (localStorage), fallback ke API
+                          const realisasiJumlah = localRealisasi[row.sub.id] ?? (row.sub.realisasiJumlah ?? 0);
 
                           return (
                             <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
@@ -889,18 +906,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                                   </span>
                                 )}
                               </td>
-                              {/* Target Fakultas — merged per Sub (Level 1) */}
-                              {row.isSubFirst && (
-                                <>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {fakKualitas}
-                                  </td>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
-                                    {fakKuantitas !== null ? `${fakKuantitas} Lulusan` : "-"}
-                                  </td>
-                                </>
-                              )}
-                              {/* Target Dosen & Capaian — merged per Sub (Level 1) */}
+                              {/* Target Disposisi & Capaian — merged per Sub (Level 1) */}
                               {row.isSubFirst && (
                                 <>
                                   <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>

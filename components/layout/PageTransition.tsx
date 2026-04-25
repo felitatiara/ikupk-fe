@@ -14,11 +14,7 @@ export default function PageTransition({ children }: { children: React.ReactNode
 
   return (
     <div
-      style={{
-        transition: "opacity 180ms ease, transform 180ms ease",
-        opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0px)" : "translateY(4px)",
-      }}
+      className={`page-transition ${visible ? 'visible' : 'hidden'}`}
     >
       {children}
     </div>

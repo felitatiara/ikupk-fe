@@ -9,6 +9,7 @@ export interface Indikator {
   jenis: string;
   kode: string;
   isPkBerbasisIku?: boolean;
+  jenisData?: string;
 }
 
 export interface Kriteria {
@@ -49,6 +50,8 @@ export interface IndikatorGroupedSub {
   targetPersentase?: number | null;
   baselineJumlah: number | null;
   isPkBerbasisIku?: boolean;
+  disposisiJumlah?: number | null;
+  realisasiJumlah?: number | null;
   children: IndikatorGroupedChild[];
 }
 
@@ -627,5 +630,106 @@ export async function fetchRepositoryFilesByFolder(folderId: string, email: stri
   const response = await fetch(url);
   if (!response.ok) return [];
   return response.json();
+}
+
+// ─────────────────────────────────────────────
+//  Target Validation (Admin)
+// ─────────────────────────────────────────────
+
+export interface TargetWithRepositoryFile {
+  id: number;
+  no?: number;
+  unitKerja: string;
+  namaIndikator: string;
+  kodeIndikator: string;
+  targetKuantitas: number | null;
+  satuan: string;
+  linkFile: string; // URL dari Repository API
+  namaFile: string;
+  periode: string;
+  statusValidasi: "pending" | "approved" | "rejected";
+  catatanAdmin?: string;
+}
+
+/**
+ * TODO: Implementasi di Backend
+ * GET /targets/for-validation
+ * Mengambil semua target beserta link file dari Repository
+ * Filter: unitId?, tahun?, statusValidasi?
+ */
+export async function getTargetsForValidation(unitId?: number, tahun?: string, statusValidasi?: string): Promise<TargetWithRepositoryFile[]> {
+  const params = new URLSearchParams();
+  if (unitId) params.append('unitId', String(unitId));
+  if (tahun) params.append('tahun', tahun);
+  if (statusValidasi) params.append('statusValidasi', statusValidasi);
+
+  const queryString = params.toString();
+  const url = queryString ? `${API_BASE_URL}/targets/for-validation?${queryString}` : `${API_BASE_URL}/targets/for-validation`;
+  
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch targets for validation');
+  return response.json();
+}
+
+/**
+ * TODO: Implementasi di Backend
+ * PATCH /targets/:id/validation-status
+ * Update status validasi target beserta catatan admin
+ */
+export async function updateTargetValidationStatus(
+  targetId: number,
+  status: "approved" | "rejected",
+  catatanAdmin?: string
+): Promise<TargetWithRepositoryFile> {
+  const response = await fetch(`${API_BASE_URL}/targets/${targetId}/validation-status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, catatanAdmin }),
+  });
+  if (!response.ok) throw new Error('Failed to update target validation status');
+  return response.json();
+}
+
+// ─────────────────────────────────────────────
+//  Master SKP (Admin)
+// ─────────────────────────────────────────────
+
+export interface MasterSKPRow {
+  id: number;
+  userId: number;
+  nip: string;
+  namaPegawai: string;
+  jabatan: string;
+  unitKerja: string;
+  unitId?: number;
+  periode: string;
+  jumlahIndikator: number;
+  tervalidasi: number;
+  statusSKP: "draft" | "submitted" | "approved" | "rejected";
+  rataCapaian: number | null;
+}
+
+export async function getMasterSKP(tahun?: string, unitId?: number): Promise<MasterSKPRow[]> {
+  const params = new URLSearchParams();
+  if (tahun) params.append('tahun', tahun);
+  if (unitId) params.append('unitId', String(unitId));
+  const qs = params.toString();
+  const url = qs ? `${API_BASE_URL}/targets/master-skp?${qs}` : `${API_BASE_URL}/targets/master-skp`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch master SKP');
+  return response.json();
+}
+
+export async function updateUserSKPStatus(
+  userId: number,
+  status: 'approved' | 'rejected',
+  tahun?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/targets/master-skp/${userId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, tahun }),
+  });
+  if (!response.ok) throw new Error('Failed to update SKP status');
 }
 

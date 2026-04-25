@@ -1,7 +1,9 @@
 ﻿"use client";
-
-import UserTargetContent from "@/features/targets/UserTargetContent";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function TargetsUser() {
-  return <UserTargetContent />;
+  const router = useRouter();
+  useEffect(() => { router.replace("/user/iku-pk"); }, [router]);
+  return null;
 }

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useEffect } from 'react';
+import Header from '@/components/layout/Header';
+
 
 export default function LandingPage() {
   const router = useRouter();

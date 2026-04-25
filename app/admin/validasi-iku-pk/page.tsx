@@ -1,5 +1,7 @@
-import ValidasiIKUPKContent from '@/features/validasi-iku-pk/ValidasiIKUPKContent';
+"use client";
+
+import AdminValidasiIKUPKContent from '@/features/validasi-iku-pk/AdminValidasiIKUPKContent';
 
 export default function AdminValidasiIKUPKPage() {
-  return <ValidasiIKUPKContent />;
+  return <AdminValidasiIKUPKContent />;
 }
