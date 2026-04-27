@@ -8,21 +8,18 @@ interface SidebarProps {
   activeMenu?: string;
   onMenuChange?: (menuKey: string) => void;
   unitNama?: string;
-  unitId?: number | null;
-  unitJenis?: string | null;
   authRole?: string;
 }
 
-export default function Sidebar({ activeMenu, onMenuChange, unitNama, unitId, unitJenis, authRole }: SidebarProps) {
+export default function Sidebar({ activeMenu, onMenuChange, unitNama, authRole }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
 
   const role = (authRole || user?.role || "").toLowerCase();
-  const effectiveUnitId = unitId ?? user?.unitId ?? null;
-  const isAdminFIK = (role === "admin" || role === "superadmin") && Number(effectiveUnitId) === 1;
+  const isSuperAdmin = (user?.roleLevel ?? 99) === 0;
 
   function getMenus() {
-    if (role === "superadmin" && isAdminFIK) {
+    if (role === "superadmin" && isSuperAdmin) {
       return [
         { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
@@ -33,7 +30,7 @@ export default function Sidebar({ activeMenu, onMenuChange, unitNama, unitId, un
         { key: "master-user", label: "Master User", href: "/admin/master-user" },
       ];
     }
-    if (role === "admin" && isAdminFIK) {
+    if (role === "admin" && isSuperAdmin) {
       return [
         { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },

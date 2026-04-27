@@ -3,37 +3,28 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { createUserAccount, getUnits, getUsers, Unit, UnitUser, updateUserAccount, deleteUserAccount } from "@/lib/api";
+import { createUserAccount, getAllRoles, getUsers, RoleOption, UnitUser, updateUserAccount, deleteUserAccount } from "@/lib/api";
 
-const ROLE_OPTIONS = ["Superadmin", "Admin", "Pimpinan"];
+// Role jabatan struktural → otomatis juga Dosen
+const STRUCTURAL_ROLES = new Set([
+  "dekan", "wakil dekan 1", "wakil dekan 2", "wakil dekan 3",
+  "kepala bagian", "kepala jurusan", "koordinator prodi",
+]);
+
 const JENIS_OPTIONS = ["Dosen", "Tendik", "Administrasi"];
 
-const ROLE_COLOR: Record<string, { bg: string; color: string }> = {
-  Superadmin: { bg: "#f3e8ff", color: "#7c3aed" },
-  Admin:      { bg: "#dbeafe", color: "#1d4ed8" },
-  Pimpinan:   { bg: "#d1fae5", color: "#15803d" },
-  Dosen:      { bg: "#fef9c3", color: "#92400e" },
-  Tendik:     { bg: "#fce7f3", color: "#be185d" },
-  Kaprodi:    { bg: "#e0f2fe", color: "#0369a1" },
-};
-
 const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#374151",
-  marginBottom: 4,
+  display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4,
 };
 
 const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "8px 12px",
-  borderRadius: 6,
-  border: "1px solid #e5e7eb",
-  fontSize: 13,
-  color: "#374151",
-  backgroundColor: "white",
-  boxSizing: "border-box",
+  width: "100%", padding: "8px 12px", borderRadius: 6,
+  border: "1px solid #e5e7eb", fontSize: 13, color: "#374151",
+  backgroundColor: "white", boxSizing: "border-box",
+};
+
+const readonlyStyle: React.CSSProperties = {
+  ...inputStyle, backgroundColor: "#f9fafb", color: "#6b7280",
 };
 
 interface FormData {
@@ -42,38 +33,56 @@ interface FormData {
   nama: string;
   email: string;
   password: string;
-  role: string;
+  roleId: number | "";
   jenis: string;
-  unitId: number | "";
   atasanId: number | "";
 }
 
 const blankForm = (): FormData => ({
   nip: "", nama: "", email: "", password: "",
-  role: "", jenis: "Dosen", unitId: "", atasanId: "",
+  roleId: "", jenis: "Dosen", atasanId: "",
 });
 
 export default function InputUserContent() {
-  const [units, setUnits] = useState<Unit[]>([]);
   const [allUsers, setAllUsers] = useState<UnitUser[]>([]);
+  const [allRoles, setAllRoles] = useState<RoleOption[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRole, setFilterRole] = useState("all");
 
-  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"tambah" | "edit">("tambah");
   const [formData, setFormData] = useState<FormData>(blankForm());
   const [saving, setSaving] = useState(false);
 
-  // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<UnitUser | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => { refreshData(); }, []);
 
   const refreshData = () => {
-    getUnits().then(setUnits).catch(() => setUnits([]));
-    getUsers().then(setAllUsers).catch(() => setAllUsers([]));
+    getUsers().then(setAllUsers).catch((e) => { console.error('getUsers error:', e); setAllUsers([]); });
+    getAllRoles().then(setAllRoles).catch((e) => { console.error('getAllRoles error:', e); setAllRoles([]); });
+  };
+
+  // Role yang dipilih saat ini
+  const selectedRole = allRoles.find((r) => r.id === formData.roleId);
+  const isStructural = selectedRole
+    ? STRUCTURAL_ROLES.has(selectedRole.name.toLowerCase())
+    : false;
+
+  // Cari role Dosen di unit yang sama untuk extraRoleIds
+  const dosenRole = isStructural && selectedRole
+    ? allRoles.find((r) => r.name.toLowerCase() === "dosen" && r.unitNama === selectedRole.unitNama)
+    : null;
+
+  const handleRoleChange = (roleId: number | "") => {
+    const role = allRoles.find((r) => r.id === roleId);
+    const structural = role ? STRUCTURAL_ROLES.has(role.name.toLowerCase()) : false;
+    setFormData((p) => ({
+      ...p,
+      roleId,
+      jenis: structural ? "Dosen" : p.jenis,
+    }));
   };
 
   const openTambah = () => {
@@ -83,15 +92,17 @@ export default function InputUserContent() {
   };
 
   const openEdit = (user: UnitUser) => {
+    const primaryRoleId = (user as any).userRoles?.find((ur: any) => ur.isPrimary)?.roleId
+      ?? (user as any).userRoles?.[0]?.roleId
+      ?? "";
     setFormData({
       id: user.id,
       nip: (user as any).nip || "",
       nama: user.nama,
       email: user.email,
       password: "",
-      role: user.role,
+      roleId: primaryRoleId,
       jenis: (user as any).jenis || "Dosen",
-      unitId: (user as any).unitId || "",
       atasanId: "",
     });
     setModalMode("edit");
@@ -99,22 +110,32 @@ export default function InputUserContent() {
   };
 
   const handleSave = async () => {
-    if (!formData.nama.trim() || !formData.email.trim() || (!formData.id && !formData.password.trim()) || !formData.role) {
-      alert("Nama, email, password (user baru), dan role wajib diisi.");
+    if (!formData.nama.trim() || !formData.email.trim()) {
+      alert("Nama dan email wajib diisi.");
+      return;
+    }
+    if (!formData.id && !formData.password.trim()) {
+      alert("Password wajib diisi untuk user baru.");
+      return;
+    }
+    if (formData.roleId === "") {
+      alert("Role wajib dipilih.");
       return;
     }
     setSaving(true);
     try {
+      const extraRoleIds: number[] = dosenRole ? [dosenRole.id] : [];
       const payload: any = {
         nip: formData.nip.trim() || undefined,
         nama: formData.nama.trim(),
         email: formData.email.trim(),
-        role: formData.role,
+        roleId: Number(formData.roleId),
         jenis: formData.jenis,
-        unitId: formData.unitId === "" ? null : Number(formData.unitId),
         atasanId: formData.atasanId === "" ? null : Number(formData.atasanId),
+        ...(extraRoleIds.length ? { extraRoleIds } : {}),
       };
       if (formData.password.trim()) payload.password = formData.password;
+
       if (formData.id) {
         await updateUserAccount(formData.id, payload);
       } else {
@@ -146,12 +167,12 @@ export default function InputUserContent() {
   const filtered = allUsers.filter((u) => {
     const q = searchQuery.toLowerCase();
     const matchQ = !q || u.nama.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    const matchRole = filterRole === "all" || u.role === filterRole;
+    const matchRole = filterRole === "all" || u.role?.toLowerCase() === filterRole.toLowerCase();
     return matchQ && matchRole;
   });
 
-  const getUnitNama = (unitId?: number | null) =>
-    unitId ? (units.find((u) => u.id === unitId)?.nama ?? `Unit #${unitId}`) : "—";
+  // Nama role unik untuk filter dropdown
+  const uniqueRoleNames = Array.from(new Set(allRoles.map((r) => r.name)));
 
   return (
     <PageTransition>
@@ -159,7 +180,7 @@ export default function InputUserContent() {
         {/* Delete Confirm Modal */}
         {deleteTarget && createPortal(
           <div
-            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
             onClick={() => !deleteLoading && setDeleteTarget(null)}
           >
             <div
@@ -170,7 +191,7 @@ export default function InputUserContent() {
               <p style={{ fontSize: 13, color: "#6b7280", textAlign: "center", marginBottom: 8, lineHeight: 1.6 }}>Anda akan menghapus akun:</p>
               <div style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 16px", marginBottom: 24, textAlign: "center" }}>
                 <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: "#1f2937" }}>{deleteTarget.nama}</p>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>{deleteTarget.email} &middot; {deleteTarget.role}</p>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>{deleteTarget.email} · {deleteTarget.role}</p>
               </div>
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <button onClick={() => setDeleteTarget(null)} disabled={deleteLoading} className="btn-outline">Batal</button>
@@ -190,11 +211,11 @@ export default function InputUserContent() {
         {/* Add / Edit Modal */}
         {modalOpen && createPortal(
           <div
-            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
             onClick={() => !saving && setModalOpen(false)}
           >
             <div
-              style={{ backgroundColor: "white", borderRadius: 12, padding: 28, width: 540, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", boxSizing: "border-box" }}
+              style={{ backgroundColor: "white", borderRadius: 12, padding: 28, width: 560, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", boxSizing: "border-box" }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 style={{ fontSize: 17, fontWeight: 700, color: "#1f2937", textAlign: "center", marginBottom: 4 }}>
@@ -205,49 +226,96 @@ export default function InputUserContent() {
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                {/* NIP */}
                 <div>
                   <label style={labelStyle}>NIP</label>
                   <input value={formData.nip} onChange={(e) => setFormData(p => ({ ...p, nip: e.target.value }))} placeholder="Masukkan NIP" style={inputStyle} />
                 </div>
+
+                {/* Nama */}
                 <div>
                   <label style={labelStyle}>Nama Lengkap <span style={{ color: "#ef4444" }}>*</span></label>
                   <input value={formData.nama} onChange={(e) => setFormData(p => ({ ...p, nama: e.target.value }))} placeholder="Masukkan nama" style={inputStyle} />
                 </div>
+
+                {/* Email */}
                 <div>
                   <label style={labelStyle}>Email <span style={{ color: "#ef4444" }}>*</span></label>
                   <input type="email" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} placeholder="Masukkan email" style={inputStyle} />
                 </div>
+
+                {/* Password */}
                 <div>
                   <label style={labelStyle}>
-                    Password{formData.id ? <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}> (kosongkan jika tidak ganti)</span> : <span style={{ color: "#ef4444" }}> *</span>}
+                    Password{formData.id
+                      ? <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}> (kosongkan jika tidak ganti)</span>
+                      : <span style={{ color: "#ef4444" }}> *</span>}
                   </label>
                   <input type="password" value={formData.password} onChange={(e) => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Masukkan password" style={inputStyle} />
                 </div>
-                <div>
+
+                {/* Role — full width */}
+                <div style={{ gridColumn: "1 / -1" }}>
                   <label style={labelStyle}>Role <span style={{ color: "#ef4444" }}>*</span></label>
-                  <select value={formData.role} onChange={(e) => setFormData(p => ({ ...p, role: e.target.value }))} style={inputStyle}>
-                    <option value="">Pilih Role</option>
-                    {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <select
+                    value={formData.roleId}
+                    onChange={(e) => handleRoleChange(e.target.value === "" ? "" : Number(e.target.value))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Pilih Role --</option>
+                    {allRoles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}{r.unitNama ? ` — ${r.unitNama}` : ""}
+                      </option>
+                    ))}
                   </select>
+
+                  {/* Info unit dari role */}
+                  {selectedRole?.unitNama && (
+                    <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#6b7280" }}>Unit:</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "#374151", background: "#f3f4f6", padding: "2px 10px", borderRadius: 20 }}>
+                        {selectedRole.unitNama}
+                      </span>
+                      {isStructural && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#15803d", background: "#d1fae5", padding: "2px 10px", borderRadius: 20 }}>
+                          + Dosen{dosenRole ? "" : " (role Dosen belum ada di unit ini)"}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {/* Jenis Pegawai */}
                 <div>
                   <label style={labelStyle}>Jenis Pegawai</label>
-                  <select value={formData.jenis} onChange={(e) => setFormData(p => ({ ...p, jenis: e.target.value }))} style={inputStyle}>
+                  <select
+                    value={formData.jenis}
+                    onChange={(e) => setFormData(p => ({ ...p, jenis: e.target.value }))}
+                    disabled={isStructural}
+                    style={isStructural ? readonlyStyle : inputStyle}
+                  >
                     {JENIS_OPTIONS.map((j) => <option key={j} value={j}>{j}</option>)}
                   </select>
+                  {isStructural && (
+                    <p style={{ fontSize: 11, color: "#15803d", marginTop: 3 }}>
+                      Jabatan struktural otomatis sebagai Dosen
+                    </p>
+                  )}
                 </div>
-                <div>
-                  <label style={labelStyle}>Unit Kerja</label>
-                  <select value={formData.unitId} onChange={(e) => setFormData(p => ({ ...p, unitId: e.target.value === "" ? "" : Number(e.target.value) }))} style={inputStyle}>
-                    <option value="">Pilih Unit</option>
-                    {units.map((u) => <option key={u.id} value={u.id}>{u.nama}</option>)}
-                  </select>
-                </div>
+
+                {/* Atasan Langsung */}
                 <div>
                   <label style={labelStyle}>Atasan Langsung</label>
-                  <select value={formData.atasanId} onChange={(e) => setFormData(p => ({ ...p, atasanId: e.target.value === "" ? "" : Number(e.target.value) }))} style={inputStyle}>
+                  <select
+                    value={formData.atasanId}
+                    onChange={(e) => setFormData(p => ({ ...p, atasanId: e.target.value === "" ? "" : Number(e.target.value) }))}
+                    style={inputStyle}
+                  >
                     <option value="">Pilih Atasan (Opsional)</option>
-                    {allUsers.map((u) => <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>)}
+                    {allUsers.filter((u) => u.id !== formData.id).map((u) => (
+                      <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -277,13 +345,14 @@ export default function InputUserContent() {
               </div>
             </div>
 
-            {/* Filters */}
             <div className="filter" style={{ marginBottom: 16 }}>
               <div className="filter-content">
                 <label className="filter-content-label">Role</label>
                 <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className="filter-isi">
                   <option value="all">Semua Role</option>
-        {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  {uniqueRoleNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
                 </select>
               </div>
               <div className="filter-content">
@@ -310,22 +379,23 @@ export default function InputUserContent() {
                     <th style={{ width: "12%" }}>NIP</th>
                     <th style={{ width: "20%" }}>Nama</th>
                     <th style={{ width: "22%" }}>Email</th>
-                    <th style={{ width: "11%", textAlign: "center" }}>Role</th>
-                    <th style={{ width: "10%", textAlign: "center" }}>Jenis</th>
-                    <th style={{ width: "15%" }}>Unit Kerja</th>
-                    <th style={{ width: "10%", textAlign: "center" }}>Aksi</th>
+                    <th style={{ width: "14%", textAlign: "center" }}>Role</th>
+                    <th style={{ width: "14%" }}>Unit</th>
+                    <th style={{ width: "8%", textAlign: "center" }}>Jenis</th>
+                    <th style={{ width: "6%", textAlign: "center" }}>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={8} style={{ textAlign: "center", padding: "24px", color: "#9ca3af" }}>
-                        {allUsers.length === 0 ? 'Belum ada user. Klik "+ Tambah User" untuk memulai.' : "Tidak ada user yang cocok dengan filter."}
+                        {allUsers.length === 0 ? 'Belum ada user. Klik "+ Tambah User" untuk memulai.' : "Tidak ada user yang cocok."}
                       </td>
                     </tr>
                   ) : (
                     filtered.map((u, idx) => {
-                      const roleColor = ROLE_COLOR[u.role] ?? { bg: "#f3f4f6", color: "#374151" };
+                      const primaryRole = (u as any).userRoles?.find((ur: any) => ur.isPrimary) ?? (u as any).userRoles?.[0];
+                      const unitNama = primaryRole?.role?.unitNama ?? "—";
                       return (
                         <tr key={u.id}>
                           <td style={{ textAlign: "center" }}>{idx + 1}</td>
@@ -333,16 +403,16 @@ export default function InputUserContent() {
                           <td style={{ fontWeight: 600 }}>{u.nama}</td>
                           <td style={{ color: "#6b7280", fontSize: 12 }}>{u.email}</td>
                           <td style={{ textAlign: "center" }}>
-                            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: roleColor.bg, color: roleColor.color }}>
-                              {u.role}
+                            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#dbeafe", color: "#1d4ed8" }}>
+                              {u.role || "—"}
                             </span>
                           </td>
+                          <td style={{ fontSize: 12, color: "#374151" }}>{unitNama}</td>
                           <td style={{ textAlign: "center", fontSize: 12, color: "#6b7280" }}>
-                            {(u as any).jenis || "Dosen"}
+                            {(u as any).jenis || "—"}
                           </td>
-                          <td style={{ fontSize: 12, color: "#374151" }}>{getUnitNama((u as any).unitId)}</td>
                           <td style={{ textAlign: "center" }}>
-                            <div style={{ display: "flex", gap: 8, justifyContent: "center", padding: "6px 0" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                               <button onClick={() => openEdit(u)} className="btn-small" style={{ border: "1px solid #86efac", backgroundColor: "#dcfce7", color: "#16a34a" }}>Edit</button>
                               <button onClick={() => setDeleteTarget(u)} className="btn-small" style={{ border: "1px solid #fca5a5", backgroundColor: "#fef2f2", color: "#dc2626" }}>Hapus</button>
                             </div>

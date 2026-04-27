@@ -4,12 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   getAllBaselineData,
-  createBaselineData,
+  upsertBaselineData,
   updateBaselineData,
   deleteBaselineData,
-  getUnits,
   BaselineData,
-  Unit,
 } from "../../lib/api";
 
 const JENIS_DATA_OPTIONS = ["Dosen", "Tendik", "Mahasiswa", "Alumni", "Mitra"];
@@ -38,20 +36,18 @@ const inputStyle: React.CSSProperties = {
 
 interface ModalData {
   id?: number;
-  unitId: number;
   jenisData: string;
   jumlah: string;
   tahun: string;
+  keterangan: string;
 }
 
 export default function MasterDataContent() {
   const [dataList, setDataList] = useState<BaselineData[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [filterUnit, setFilterUnit] = useState<string>("all");
   const [filterTahun, setFilterTahun] = useState(String(new Date().getFullYear()));
   const [filterJenis, setFilterJenis] = useState<string>("all");
 
@@ -59,10 +55,10 @@ export default function MasterDataContent() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"tambah" | "edit">("tambah");
   const [modalData, setModalData] = useState<ModalData>({
-    unitId: 1,
     jenisData: "Dosen",
     jumlah: "",
     tahun: String(new Date().getFullYear()),
+    keterangan: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -74,9 +70,8 @@ export default function MasterDataContent() {
     setLoading(true);
     setError(null);
     try {
-      const [data, unitList] = await Promise.all([getAllBaselineData(), getUnits()]);
+      const data = await getAllBaselineData();
       setDataList(data);
-      setUnits(unitList);
     } catch {
       setError("Gagal memuat data. Pastikan server berjalan.");
     } finally {
@@ -87,21 +82,17 @@ export default function MasterDataContent() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = dataList.filter((d) => {
-    if (filterUnit !== "all" && String(d.unitId) !== filterUnit) return false;
     if (filterTahun !== "all" && d.tahun !== filterTahun) return false;
     if (filterJenis !== "all" && d.jenisData !== filterJenis) return false;
     return true;
   });
 
-  const getUnitNama = (unitId: number) =>
-    units.find((u) => u.id === unitId)?.nama ?? `Unit #${unitId}`;
-
   const openTambah = () => {
     setModalData({
-      unitId: units[0]?.id ?? 1,
       jenisData: "Dosen",
       jumlah: "",
       tahun: String(new Date().getFullYear()),
+      keterangan: "",
     });
     setModalMode("tambah");
     setModalOpen(true);
@@ -110,10 +101,10 @@ export default function MasterDataContent() {
   const openEdit = (row: BaselineData) => {
     setModalData({
       id: row.id,
-      unitId: row.unitId,
       jenisData: row.jenisData,
       jumlah: String(row.jumlah),
       tahun: row.tahun,
+      keterangan: row.keterangan ?? "",
     });
     setModalMode("edit");
     setModalOpen(true);
@@ -127,18 +118,18 @@ export default function MasterDataContent() {
     setSaving(true);
     try {
       if (modalMode === "tambah") {
-        await createBaselineData({
-          unitId: modalData.unitId,
+        await upsertBaselineData({
           jenisData: modalData.jenisData,
           jumlah: Number(modalData.jumlah),
           tahun: modalData.tahun,
+          keterangan: modalData.keterangan || null,
         });
       } else {
         await updateBaselineData(modalData.id!, {
-          unitId: modalData.unitId,
           jenisData: modalData.jenisData,
           jumlah: Number(modalData.jumlah),
           tahun: modalData.tahun,
+          keterangan: modalData.keterangan || null,
         });
       }
       setModalOpen(false);
@@ -192,7 +183,7 @@ export default function MasterDataContent() {
             </p>
             <div style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 16px", marginBottom: 24, textAlign: "center" }}>
               <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: "#1f2937" }}>
-                {deleteTarget.jenisData} &mdash; {getUnitNama(deleteTarget.unitId)}
+                {deleteTarget.jenisData}
               </p>
               <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>
                 {deleteTarget.jumlah.toLocaleString("id-ID")} orang | Tahun {deleteTarget.tahun}
@@ -261,29 +252,18 @@ export default function MasterDataContent() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Unit / Fakultas</label>
+                <label style={labelStyle}>Jenis Data</label>
                 <select
-                  value={modalData.unitId}
-                  onChange={(e) => setModalData((p) => ({ ...p, unitId: Number(e.target.value) }))}
+                  value={modalData.jenisData}
+                  onChange={(e) => setModalData((p) => ({ ...p, jenisData: e.target.value }))}
                   style={inputStyle}
                 >
-                  {units.map((u) => <option key={u.id} value={u.id}>{u.nama}</option>)}
+                  {JENIS_DATA_OPTIONS.map((j) => <option key={j} value={j}>{j}</option>)}
                 </select>
               </div>
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Jenis Data</label>
-              <select
-                value={modalData.jenisData}
-                onChange={(e) => setModalData((p) => ({ ...p, jenisData: e.target.value }))}
-                style={inputStyle}
-              >
-                {JENIS_DATA_OPTIONS.map((j) => <option key={j} value={j}>{j}</option>)}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Jumlah (Orang)</label>
               <input
                 type="number"
@@ -291,6 +271,17 @@ export default function MasterDataContent() {
                 value={modalData.jumlah}
                 onChange={(e) => setModalData((p) => ({ ...p, jumlah: e.target.value }))}
                 placeholder="contoh: 150"
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Keterangan (opsional)</label>
+              <input
+                type="text"
+                value={modalData.keterangan}
+                onChange={(e) => setModalData((p) => ({ ...p, keterangan: e.target.value }))}
+                placeholder="contoh: Data per semester ganjil"
                 style={inputStyle}
               />
             </div>
@@ -325,9 +316,9 @@ export default function MasterDataContent() {
         <div className="page-card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
             <div>
-              <h3>Data Fakultas Ilmu Komputer</h3>
+              <h3>Data Baseline</h3>
               <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>
-                Data dosen, tendik, dan mahasiswa per unit/fakultas sebagai acuan perhitungan target.
+                Data dosen, tendik, dan mahasiswa sebagai acuan perhitungan target indikator.
               </p>
             </div>
           </div>
@@ -343,17 +334,6 @@ export default function MasterDataContent() {
               >
                 <option value="all">Semua Tahun</option>
                 {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            <div className="filter-content">
-              <label className="filter-content-label">Unit / Fakultas</label>
-              <select
-                value={filterUnit}
-                onChange={(e) => setFilterUnit(e.target.value)}
-                className="filter-isi"
-              >
-                <option value="all">Semua Unit</option>
-                {units.map((u) => <option key={u.id} value={u.id}>{u.nama}</option>)}
               </select>
             </div>
             <div className="filter-content">
@@ -381,10 +361,10 @@ export default function MasterDataContent() {
                 <thead>
                   <tr>
                     <th style={{ width: "5%", minWidth: 50, textAlign: "center" }}>No</th>
-                    <th style={{ width: "30%", minWidth: 150 }}>Unit / Fakultas</th>
-                    <th style={{ width: "20%", minWidth: 100, textAlign: "center" }}>Jenis Data</th>
-                    <th style={{ width: "15%", minWidth: 80, textAlign: "center" }}>Jumlah (Orang)</th>
+                    <th style={{ width: "25%", minWidth: 100, textAlign: "center" }}>Jenis Data</th>
+                    <th style={{ width: "20%", minWidth: 80, textAlign: "center" }}>Jumlah (Orang)</th>
                     <th style={{ width: "15%", minWidth: 80, textAlign: "center" }}>Tahun</th>
+                    <th style={{ minWidth: 120 }}>Keterangan</th>
                     <th style={{ width: "15%", minWidth: 100, textAlign: "center" }}>Aksi</th>
                   </tr>
                 </thead>
@@ -399,7 +379,6 @@ export default function MasterDataContent() {
                     filtered.map((row, idx) => (
                       <tr key={row.id}>
                         <td style={{ textAlign: "center" }}>{idx + 1}</td>
-                        <td style={{ fontWeight: 500 }}>{getUnitNama(row.unitId)}</td>
                         <td style={{ textAlign: "center" }}>
                           <span style={{
                             display: "inline-block",
@@ -417,21 +396,20 @@ export default function MasterDataContent() {
                           {row.jumlah.toLocaleString("id-ID")}
                         </td>
                         <td style={{ textAlign: "center", color: "#6b7280" }}>{row.tahun}</td>
+                        <td style={{ color: "#6b7280", fontSize: 12 }}>{row.keterangan ?? "-"}</td>
                         <td style={{ textAlign: "center" }}>
                           <div style={{ display: "flex", gap: 10, justifyContent: "center", padding: "10px" }}>
                             <button
                               onClick={() => openEdit(row)}
                               className="btn-small"
-                              style={{ border: "1px solid #86efac", backgroundColor: "#dcfce7", color: "#16a34a", }}
+                              style={{ border: "1px solid #86efac", backgroundColor: "#dcfce7", color: "#16a34a" }}
                             >
                               Edit
                             </button>
                             <button
                               className="btn-small"
                               onClick={() => setDeleteTarget(row)}
-                              style={{
-                                border: "1px solid #fca5a5", backgroundColor: "#fef2f2", color: "#dc2626"
-                              }}
+                              style={{ border: "1px solid #fca5a5", backgroundColor: "#fef2f2", color: "#dc2626" }}
                             >
                               Hapus
                             </button>
@@ -450,7 +428,6 @@ export default function MasterDataContent() {
                 </tfoot>
               </table>
             </div>
-
           )}
         </div>
       </div>

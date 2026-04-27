@@ -12,7 +12,7 @@ export default function PimpinanLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -46,7 +46,7 @@ export default function PimpinanLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar role="pimpinan" />
+        <Sidebar role="pimpinan" unitNama={user?.unitNama} />
         <main
           style={{
             flex: 1,

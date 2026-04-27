@@ -8,7 +8,7 @@ import {
   getDisposisi,
   upsertDisposisi,
   getRelatedUsersFor,
-  getUsersByUnit,
+  getUsersByRole,
   getReceivedDisposisiJumlah,
 } from "@/lib/api";
 import type { IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, UnitUser } from "@/lib/api";
@@ -85,7 +85,7 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
 
 export default function DashboardContent() {
   const { user: authUser } = useAuth();
-  const unitId = authUser?.unitId;
+  const unitId = authUser?.roleId;
   const tahun = new Date().getFullYear().toString();
   const [jenis, setJenis] = useState("IKU");
 
@@ -216,7 +216,7 @@ export default function DashboardContent() {
     try {
       let users: UnitUser[] = await getRelatedUsersFor(authUser!.id);
       if (users.length === 0) {
-        const all = await getUsersByUnit(unitId);
+        const all = await getUsersByRole(unitId);
         users = all.filter((u) => u.id !== authUser?.id);
       }
       setUnitUsers(users);
@@ -425,12 +425,12 @@ export default function DashboardContent() {
                 </thead>
                 <tbody>
                   {groupedData.map((group, groupIdx) => {
-                    const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; targetFakultas: number | null; disposisiJumlah?: number | null; realisasiJumlah?: number | null }[] = [];
+                    const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; nilaiTarget: number | null; disposisiJumlah?: number | null; realisasiJumlah?: number | null }[] = [];
                     for (const sub of group.subIndikators) {
                       const childCount = 1 + sub.children.length;
-                      flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, targetFakultas: sub.targetFakultas });
+                      flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, nilaiTarget: sub.nilaiTarget });
                       for (const child of sub.children) {
-                        flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, targetFakultas: child.targetFakultas, disposisiJumlah: (child as IndikatorGroupedChild & { disposisiJumlah?: number | null }).disposisiJumlah ?? null });
+                        flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, nilaiTarget: child.nilaiTarget, disposisiJumlah: (child as IndikatorGroupedChild & { disposisiJumlah?: number | null }).disposisiJumlah ?? null });
                       }
                     }
                     const totalRowSpan = flatRows.length;
@@ -447,9 +447,6 @@ export default function DashboardContent() {
                           )}
                           <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
                             {row.kode} {row.nama}
-                            {row.sub.isPkBerbasisIku && jenis === "PK" && (
-                              <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, backgroundColor: "#eff6ff", color: "#2563eb", fontSize: 10, fontWeight: 700, border: "1px solid #93c5fd", verticalAlign: "middle" }}>Berbasis IKU</span>
-                            )}
                           </td>
                           {row.isSubFirst && (
                             <>

@@ -39,9 +39,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setLoading(true);
         const response: LoginResponse = await apiLogin(email, password);
 
-        setUser(response.user);
+        const primaryRole = (response.user as any).roles?.find((r: any) => r.isPrimary) ?? (response.user as any).roles?.[0];
+        const mappedUser: User = {
+          ...(response.user as any),
+          roleLevel: primaryRole?.level ?? 4,
+        };
+
+        setUser(mappedUser);
         setToken(response.token);
-        sessionStorage.setItem('user', JSON.stringify(response.user));
+        sessionStorage.setItem('user', JSON.stringify(mappedUser));
         sessionStorage.setItem('token', response.token);
       } catch (error) {
         throw error;

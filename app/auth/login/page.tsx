@@ -26,11 +26,10 @@ export default function LoginPage() {
       const user = userStr ? JSON.parse(userStr) : null;
 
       if (user) {
-        const role = user.role?.toLowerCase() || '';
-
-        if (role === 'admin' || role === 'superadmin') {
+        const level: number = user.roleLevel ?? 4;
+        if (level === 0) {
           router.push('/admin/dashboard');
-        } else if (role === 'pimpinan') {
+        } else if (level === 1) {
           router.push('/pimpinan/dashboard');
         } else {
           router.push('/user/dashboard');

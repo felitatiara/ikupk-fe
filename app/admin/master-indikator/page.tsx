@@ -28,14 +28,12 @@ export default function MasterIndikatorPage() {
         return;
       }
 
-      // Super Admin & Admin di Fakultas Ilmu Komputer (unit_id = 1) bisa akses Master Indikator
-      const role = user.role?.toLowerCase() || '';
-      const isAdminFIK = (role === 'admin' || role === 'superadmin') && Number(user.unitId) === 1;
+      const isSuperAdmin = (user.roleLevel ?? 99) === 0;
 
       if (!cancelled) {
-        setCanAccess(isAdminFIK);
+        setCanAccess(isSuperAdmin);
         setCheckingAccess(false);
-        if (!isAdminFIK) {
+        if (!isSuperAdmin) {
           router.replace('/admin/dashboard');
         }
       }

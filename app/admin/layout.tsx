@@ -49,7 +49,7 @@ export default function AdminLayout({
           backgroundColor: "#ffffff",
         }}
       >
-          <Sidebar unitNama={user?.unitNama} unitId={user?.unitId} unitJenis={user?.unitJenis} authRole={user?.role} />
+          <Sidebar unitNama={user?.unitNama} roleLevel={user?.roleLevel} authRole={user?.role} />
         <main
           style={{
             flex: 1,

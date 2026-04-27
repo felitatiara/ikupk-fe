@@ -4,11 +4,12 @@ export interface User {
   nip?: string;
   email: string;
   nama: string;
-  role: string;
-  unitId: number;
+  role: string;         // nama role lowercase, e.g. 'admin', 'dekan', 'dosen'
+  roleId: number | null;
+  roleLevel: number;    // 0=admin, 1=pimpinan, 2=kajur, 3=koordinator, 4=dosen/tendik
   jenis?: string;
-  unitNama?: string;
-  unitJenis?: string;
+  unitNama?: string;    // dari role.unitNama
+  roles?: Array<{ id: number; name: string; unitNama: string; level: number; isPrimary: boolean }>;
 }
 
 export interface LoginRequest {

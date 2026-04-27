@@ -17,10 +17,7 @@ export default function AdminMasterDataPage() {
     const checkAccess = async () => {
       if (loading) return;
 
-      // Hanya superadmin (admin/superadmin di unitId=1) yang bisa akses
-      const isSuperAdmin =
-        (user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'superadmin') &&
-        user?.unitId === 1;
+      const isSuperAdmin = (user?.roleLevel ?? 99) === 0;
 
       if (!user || !isSuperAdmin) {
         if (!cancelled) {

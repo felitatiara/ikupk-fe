@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   createIndikator,
+  getAllBaselineData,
   getBaselineByJenisData,
   upsertTargetUniversitas,
+  type BaselineData,
 } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
 
@@ -34,6 +36,12 @@ const labelStyle: React.CSSProperties = {
 let _nextId = 1;
 const nextId = () => _nextId++;
 
+type Level3Item = {
+  id: number;
+  kode: string;
+  nama: string;
+};
+
 type SubItem = {
   id: number;
   kodeSubIndikator: string;
@@ -41,7 +49,10 @@ type SubItem = {
   jenisData: string;
   baseline: number | null | string;
   baselineLoading: boolean;
+  level3Items: Level3Item[];
 };
+
+const blankLevel3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "" });
 
 const blankSub = (): SubItem => ({
   id: nextId(),
@@ -50,6 +61,7 @@ const blankSub = (): SubItem => ({
   jenisData: "",
   baseline: null,
   baselineLoading: false,
+  level3Items: [blankLevel3()],
 });
 
 const blankGroup = () => ({
@@ -71,7 +83,14 @@ export default function TambahIndikatorForm() {
   const [targetTahun, setTargetTahun] = useState(String(new Date().getFullYear()));
   const [groups, setGroups] = useState([blankGroup()]);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [baselineOptions, setBaselineOptions] = useState<BaselineData[]>([]);
   const debounceRefs = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    getAllBaselineData(targetTahun)
+      .then(setBaselineOptions)
+      .catch(() => setBaselineOptions([]));
+  }, [targetTahun]);
 
   const addGroup = () => setGroups((prev) => [...prev, blankGroup()]);
   const removeGroup = (gid: number) =>
@@ -104,6 +123,57 @@ export default function TambahIndikatorForm() {
               s.id === sid ? { ...s, [field]: value } : s
             ),
           }
+          : g
+      )
+    );
+
+  const addLevel3 = (gid: number, sid: number) =>
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === gid
+          ? {
+              ...g,
+              subItems: g.subItems.map((s) =>
+                s.id === sid ? { ...s, level3Items: [...(s.level3Items ?? []), blankLevel3()] } : s
+              ),
+            }
+          : g
+      )
+    );
+
+  const removeLevel3 = (gid: number, sid: number, l3id: number) =>
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === gid
+          ? {
+              ...g,
+              subItems: g.subItems.map((s) =>
+                s.id === sid
+                  ? { ...s, level3Items: (s.level3Items ?? []).filter((l) => l.id !== l3id) }
+                  : s
+              ),
+            }
+          : g
+      )
+    );
+
+  const updateLevel3 = (gid: number, sid: number, l3id: number, field: "kode" | "nama", value: string) =>
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === gid
+          ? {
+              ...g,
+              subItems: g.subItems.map((s) =>
+                s.id === sid
+                  ? {
+                      ...s,
+                      level3Items: (s.level3Items ?? []).map((l) =>
+                        l.id === l3id ? { ...l, [field]: value } : l
+                      ),
+                    }
+                  : s
+              ),
+            }
           : g
       )
     );
@@ -168,8 +238,9 @@ export default function TambahIndikatorForm() {
       alert("Nomor dan Sasaran Strategis wajib diisi.");
       return;
     }
-    if (!targetUniversitas || isNaN(Number(targetUniversitas))) {
-      alert("Target Universitas wajib diisi dengan angka.");
+    const persen = Number(targetUniversitas);
+    if (!targetUniversitas || isNaN(persen) || persen < 0 || persen > 100) {
+      alert("Target Universitas wajib diisi dengan persentase (0–100).");
       return;
     }
     if (!tenggat) {
@@ -196,6 +267,7 @@ export default function TambahIndikatorForm() {
         jenis,
         kode: nomor.trim(),
         nama: sasaranStrategis.trim(),
+        tahun: targetTahun,
         level: 0,
         parentId: null,
       });
@@ -203,30 +275,45 @@ export default function TambahIndikatorForm() {
       // 2. Simpan target universitas + tenggat untuk level 0
       await upsertTargetUniversitas(
         level0.id,
-        1,
         targetTahun,
-        Number(targetUniversitas),
+        persen,
         tenggat
       );
 
-      // 3. Buat indikator level 1 dan level 2
+      // 3. Buat indikator level 1, level 2, dan (jika PK) level 3
       for (const g of groups) {
         const level1 = await createIndikator({
           jenis,
           kode: g.kodeIndikator.trim(),
           nama: g.indikatorKinerja.trim(),
+          tahun: targetTahun,
           level: 1,
           parentId: level0.id,
         });
         for (const s of g.subItems) {
-          await createIndikator({
+          const level2 = await createIndikator({
             jenis,
             kode: s.kodeSubIndikator.trim(),
             nama: s.subIndikatorKinerja.trim(),
+            tahun: targetTahun,
             level: 2,
             parentId: level1.id,
             jenisData: s.jenisData.trim() || null,
           });
+          if (jenis === "PK") {
+            for (const l3 of (s.level3Items ?? [])) {
+              if (l3.kode.trim() && l3.nama.trim()) {
+                await createIndikator({
+                  jenis,
+                  kode: l3.kode.trim(),
+                  nama: l3.nama.trim(),
+                  tahun: targetTahun,
+                  level: 3,
+                  parentId: level2.id,
+                });
+              }
+            }
+          }
         }
       }
 
@@ -298,8 +385,27 @@ export default function TambahIndikatorForm() {
                 <input type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Target Universitas</label>
-                <input type="number" min={0} value={targetUniversitas} onChange={(e) => setTargetUniversitas(e.target.value)} placeholder="contoh: 80" style={inputStyle} />
+                <label style={labelStyle}>Target Universitas (%)</label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={targetUniversitas}
+                    onChange={(e) => {
+                      const v = Math.min(100, Math.max(0, Number(e.target.value)));
+                      setTargetUniversitas(String(v));
+                    }}
+                    placeholder="0 – 100"
+                    style={{ ...inputStyle, paddingRight: 32 }}
+                  />
+                  <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#6b7280", pointerEvents: "none" }}>%</span>
+                </div>
+                {targetUniversitas && (
+                  <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                    Nilai absolut = {targetUniversitas}% × baseline
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -374,7 +480,18 @@ export default function TambahIndikatorForm() {
                   <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelStyle}>Jenis Data (untuk baseline)</label>
-                      <input type="text" value={sub.jenisData} onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)} placeholder="contoh: mahasiswa_lulus" style={inputStyle} />
+                      <select
+                        value={sub.jenisData}
+                        onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="">-- Pilih Jenis Data --</option>
+                        {baselineOptions.map((b) => (
+                          <option key={b.id} value={b.jenisData}>
+                            {b.jenisData} {b.keterangan ? `(${b.keterangan})` : ""}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div style={{ minWidth: 140 }}>
                       <label style={labelStyle}>Baseline ({targetTahun})</label>
@@ -383,6 +500,56 @@ export default function TambahIndikatorForm() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Level 3 — hanya tampil jika PK */}
+                  {jenis === "PK" && (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #e5e7eb" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ display: "inline-block", background: "#fdf4ff", color: "#7e22ce", fontSize: 10, fontWeight: 800, padding: "2px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          Level 3 — Rincian
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => addLevel3(group.id, sub.id)}
+                          style={{ background: "none", border: "1px dashed #d8b4fe", color: "#7e22ce", borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer" }}
+                        >
+                          + Tambah Level 3
+                        </button>
+                      </div>
+                      {(sub.level3Items ?? []).map((l3, l3Idx) => (
+                        <div key={l3.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr auto", gap: 10, marginBottom: 8, alignItems: "flex-end" }}>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11, color: "#7e22ce" }}>Kode L3</label>
+                            <input
+                              type="text"
+                              value={l3.kode}
+                              onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "kode", e.target.value)}
+                              placeholder={`${sub.kodeSubIndikator || "x.x.x"}.${l3Idx + 1}`}
+                              style={{ ...inputStyle, fontSize: 12 }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, fontSize: 11, color: "#7e22ce" }}>Nama Rincian</label>
+                            <input
+                              type="text"
+                              value={l3.nama}
+                              onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "nama", e.target.value)}
+                              placeholder="contoh: Rincian detail kegiatan"
+                              style={{ ...inputStyle, fontSize: 12 }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeLevel3(group.id, sub.id, l3.id)}
+                            disabled={(sub.level3Items ?? []).length <= 1}
+                            style={{ background: "none", border: "none", color: (sub.level3Items ?? []).length <= 1 ? "#d1d5db" : "#dc2626", fontSize: 18, cursor: sub.level3Items.length <= 1 ? "default" : "pointer", paddingBottom: 6, lineHeight: 1 }}
+                          >
+                            −
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
 

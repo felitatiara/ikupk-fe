@@ -254,14 +254,15 @@ export default function MasterIndikatorContent() {
       }
       setSubmitLoading(true);
       try {
-        const level0 = await createIndikator({ jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(), level: 0, parentId: null });
+        const level0 = await createIndikator({ jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(), tahun: targetTahun, level: 0, parentId: null });
         for (const g of groups) {
-          const level1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), level: 1, parentId: level0.id });
+          const level1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), tahun: targetTahun, level: 1, parentId: level0.id });
           for (const s of g.subItems) {
             await createIndikator({
               jenis,
               kode: s.kodeSubIndikator.trim(),
               nama: s.subIndikatorKinerja.trim(),
+              tahun: targetTahun,
               level: 2,
               parentId: level1.id,
               jenisData: s.jenisData.trim() || null,
@@ -269,7 +270,7 @@ export default function MasterIndikatorContent() {
           }
         }
         // Save target universitas at level 0
-        await upsertTargetUniversitas(level0.id, 1, targetTahun, Number(targetUniversitas), tenggat);
+        await upsertTargetUniversitas(level0.id, targetTahun, Number(targetUniversitas), tenggat);
         resetForm(); setShowForm(false); refreshList();
       } catch (err) {
         alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
@@ -292,7 +293,7 @@ export default function MasterIndikatorContent() {
           if (g.existingLevel1Id !== null) {
             level1Id = g.existingLevel1Id;
           } else {
-            const newL1 = await createIndikator({ jenis: parentLevel0.jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), level: 1, parentId: parentLevel0.id });
+            const newL1 = await createIndikator({ jenis: parentLevel0.jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), tahun: targetTahun, level: 1, parentId: parentLevel0.id });
             level1Id = newL1.id;
           }
           for (const s of g.subItems) {
@@ -300,6 +301,7 @@ export default function MasterIndikatorContent() {
               jenis: parentLevel0.jenis,
               kode: s.kodeSubIndikator.trim(),
               nama: s.subIndikatorKinerja.trim(),
+              tahun: targetTahun,
               level: 2,
               parentId: level1Id,
               jenisData: s.jenisData.trim() || null,
@@ -349,7 +351,8 @@ export default function MasterIndikatorContent() {
     setEditSaving(true);
     try {
       await upsertTargetUniversitas(
-        editRow.record.id, 1, editTahun,
+        editRow.record.id,
+        editTahun,
         Number(editTargetUniversitas),
         editTenggat || undefined
       );

@@ -13,7 +13,7 @@ export default function UserLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -49,7 +49,7 @@ export default function UserLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar role="user" />
+        <Sidebar role="user" unitNama={user?.unitNama} />
         <main
           style={{
             flex: 1,

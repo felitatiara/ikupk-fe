@@ -2,88 +2,57 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { getUnits } from "@/lib/api";
 
 interface SidebarProps {
   role?: string;
   unitNama?: string;
-  unitId?: number;
-  unitJenis?: string;
+  roleLevel?: number;
   authRole?: string;
 }
 
-export default function Sidebar({ role = 'admin', unitNama, unitId, unitJenis, authRole }: SidebarProps) {
+export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole }: SidebarProps) {
   const pathname = usePathname();
-  const [resolvedUnitNama, setResolvedUnitNama] = useState<string>(unitNama ?? '');
+  const resolvedUnitNama = unitNama ?? '';
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (unitNama && unitNama.trim()) {
-      setResolvedUnitNama(unitNama);
-      return;
-    }
-
-    if (!unitId) {
-      setResolvedUnitNama('');
-      return;
-    }
-
-    getUnits()
-      .then((units) => {
-        if (cancelled) return;
-        const found = units.find((u) => u.id === unitId);
-        setResolvedUnitNama(found?.nama ?? '');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setResolvedUnitNama('');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [unitNama, unitId]);
-
-  const normalizedUnit = useMemo(
-    () => resolvedUnitNama.toLowerCase().replace(/\s+/g, ' ').trim(),
-    [resolvedUnitNama]
-  );
-
-  const isSuperAdmin = (authRole?.toLowerCase() === 'admin' || authRole?.toLowerCase() === 'superadmin') && Number(unitId) === 1;
+  const isSuperAdmin = (roleLevel ?? 99) === 0;
 
   const getMenus = () => {
+    // Pimpinan: Beranda, Monitoring, IKU, Validasi IKU PK
     if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
       return [
         { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/pimpinan/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk" },
-        { key: "SKP", label: "SKP", href: "/pimpinan/skp" }
+        { key: "validasi", label: "Validasi IKU PK", href: "/pimpinan/validasi-iku-pk" },
+        { key: "skp", label: "SKP", href: "/pimpinan/skp" },
       ];
     }
 
+    // User biasa (level 2+): Beranda, Monitoring, IKU
     if (role === 'user') {
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/user/iku-pk" },
-        { key: "SKP", label: "SKP", href: "/user/skp" }
-
+        { key: "skp", label: "SKP", href: "/user/skp" },
       ];
     }
 
-    // Admin menus
+    // Super Admin (roleLevel 0 + nama role superadmin): semua menu termasuk master
+    const resolvedAuthRole = (authRole || '').toLowerCase();
+    const isSuperAdminRole = isSuperAdmin && resolvedAuthRole === 'superadmin';
+
+    // Admin (roleLevel 0 + nama role admin) atau fallback: Beranda, Monitoring, IKU, Validasi
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-      { key: "monitoring", label: "Monitoring", href: "/admin/monitoring-unit-kerja" },
+      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
       { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
       { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
-      ...(isSuperAdmin ? [
+      ...(isSuperAdminRole ? [
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator" },
-        { key: "master_data", label: "Master Data", href: "/admin/master-data" },
         { key: "master_user", label: "Master User", href: "/admin/master-user" },
-        { key: "skp", label: "Master SKP", href: "/admin/master-skp" }
+        { key: "master_data", label: "Master Data", href: "/admin/master-data" },
+        { key: "master_skp", label: "Master SKP", href: "/admin/master-skp" },
       ] : []),
     ];
   };

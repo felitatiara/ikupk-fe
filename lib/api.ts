@@ -8,8 +8,8 @@ export interface Indikator {
   level?: number;
   jenis: string;
   kode: string;
-  isPkBerbasisIku?: boolean;
-  jenisData?: string;
+  tahun: string;
+  jenisData?: string | null;
 }
 
 export interface Kriteria {
@@ -18,24 +18,36 @@ export interface Kriteria {
   indikatorId: number;
 }
 
-export async function getIndikator(): Promise<Indikator[]> {
-  const response = await fetch(`${API_BASE_URL}/indikator`);
+export async function getIndikator(tahun?: string): Promise<Indikator[]> {
+  const url = tahun
+    ? `${API_BASE_URL}/indikator?tahun=${encodeURIComponent(tahun)}`
+    : `${API_BASE_URL}/indikator`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch indikator');
   return response.json();
 }
 
 // ambil dari atas (grouped)
+export interface IndikatorGroupedLevel3 {
+  id: number;
+  kode: string;
+  nama: string;
+  level: number;
+  tahun: string;
+  targetId: number | null;
+  nilaiTarget: number | null;
+}
+
 export interface IndikatorGroupedChild {
   id: number;
   kode: string;
   nama: string;
   level: number;
-  targetFakultas: number | null;
-  targetUniversitas: number | null;
-  targetUniversitasId: number | null;
-  tenggat: string | null;
+  tahun: string;
+  targetId: number | null;
+  nilaiTarget: number | null;
   baselineJumlah: number | null;
-  isPkBerbasisIku?: boolean;
+  children: IndikatorGroupedLevel3[];
 }
 
 export interface IndikatorGroupedSub {
@@ -43,47 +55,45 @@ export interface IndikatorGroupedSub {
   kode: string;
   nama: string;
   level: number;
+  tahun: string;
   parentId: number | null;
   targetId: number | null;
-  targetFakultas: number | null;
-  targetUniversitas: number | null;
-  targetPersentase?: number | null;
+  nilaiTarget: number | null;
   baselineJumlah: number | null;
-  isPkBerbasisIku?: boolean;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
   children: IndikatorGroupedChild[];
 }
 
-
 export interface IndikatorGrouped {
   id: number;
   kode: string;
   nama: string;
-  targetUniversitas: number | null;
+  tahun: string;
+  persentaseTarget: number | null;
+  targetAbsolut: number | null;
   tenggat: string | null;
-  targetUniversitasTahun: string;
   baselineJumlah: number | null;
   subIndikators: IndikatorGroupedSub[];
 }
 
-export async function getIndikatorGrouped(jenis: string, tahun: string, unitId?: number): Promise<IndikatorGrouped[]> {
+export async function getIndikatorGrouped(jenis: string, tahun: string, roleId?: number): Promise<IndikatorGrouped[]> {
   let url = `${API_BASE_URL}/indikator/grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}`;
-  if (unitId) url += `&unitId=${unitId}`;
+  if (roleId) url += `&roleId=${roleId}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch grouped indikator');
   return response.json();
 }
 
-export async function getIndikatorGroupedForUser(jenis: string, tahun: string, userId: number, unitId: number): Promise<IndikatorGrouped[]> {
-  const url = `${API_BASE_URL}/indikator/grouped-user?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&userId=${userId}&unitId=${unitId}`;
+export async function getIndikatorGroupedForUser(jenis: string, tahun: string, userId: number, roleId: number): Promise<IndikatorGrouped[]> {
+  const url = `${API_BASE_URL}/indikator/grouped-user?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&userId=${userId}&roleId=${roleId}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch grouped indikator for user');
   return response.json();
 }
 
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; level: number; parentId?: number | null; jenisData?: string | null; isPkBerbasisIku?: boolean }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -93,7 +103,7 @@ export async function createIndikator(data: { jenis: string; kode: string; nama:
   return response.json();
 }
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; level: number; parentId: number | null; jenisData: string | null; isPkBerbasisIku: boolean }>): Promise<Indikator> {
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; tahun: string; level: number; parentId: number | null; jenisData: string | null }>): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -108,9 +118,28 @@ export async function deleteIndikator(id: number): Promise<void> {
   if (!response.ok) throw new Error('Failed to delete indikator');
 }
 
-export async function deleteAllIndikator(): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/indikator/all`, { method: 'DELETE' });
+export async function deleteAllIndikator(tahun?: string): Promise<void> {
+  const url = tahun
+    ? `${API_BASE_URL}/indikator/all?tahun=${encodeURIComponent(tahun)}`
+    : `${API_BASE_URL}/indikator/all`;
+  const response = await fetch(url, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete all indikator');
+}
+
+export async function getAvailableYears(): Promise<string[]> {
+  const response = await fetch(`${API_BASE_URL}/indikator/years`);
+  if (!response.ok) throw new Error('Failed to fetch available years');
+  return response.json();
+}
+
+export async function copyIndikatorYear(fromTahun: string, toTahun: string): Promise<{ copied: number }> {
+  const response = await fetch(`${API_BASE_URL}/indikator/copy-year`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fromTahun, toTahun }),
+  });
+  if (!response.ok) throw new Error('Failed to copy indikator year');
+  return response.json();
 }
 
 export async function getBaselineByJenisData(jenisData: string, tahun: string): Promise<{ jumlah: number | null } | null> {
@@ -145,41 +174,32 @@ export interface TargetDetail {
 }
 export interface BaselineData {
   id: number;
-  unitId: number;
   jenisData: string;
   jumlah: number;
   tahun: string;
+  keterangan: string | null;
 }
 
-export async function getBaselineDataByJenisDataAndUnit(jenisData: string, unitId: number): Promise<BaselineData[]> {
-  const response = await fetch(`${API_BASE_URL}/baseline-data?jenisData=${encodeURIComponent(jenisData)}&unitId=${unitId}`);
-  if (!response.ok) throw new Error('Failed to fetch baseline data');
-  return response.json();
-}
-
-export async function getAllBaselineData(): Promise<BaselineData[]> {
-  const response = await fetch(`${API_BASE_URL}/baseline-data`);
+export async function getAllBaselineData(tahun?: string): Promise<BaselineData[]> {
+  const url = tahun
+    ? `${API_BASE_URL}/baseline-data?tahun=${encodeURIComponent(tahun)}`
+    : `${API_BASE_URL}/baseline-data`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch all baseline data');
   return response.json();
 }
 
-export async function getBaselineDataByUnit(unitId: number): Promise<BaselineData[]> {
-  const response = await fetch(`${API_BASE_URL}/baseline-data/unit/${unitId}`);
-  if (!response.ok) throw new Error('Failed to fetch baseline data by unit');
-  return response.json();
-}
-
-export async function createBaselineData(data: { unitId: number; jenisData: string; jumlah: number; tahun: string }): Promise<BaselineData> {
-  const response = await fetch(`${API_BASE_URL}/baseline-data`, {
+export async function upsertBaselineData(data: { jenisData: string; jumlah: number; tahun: string; keterangan?: string | null }): Promise<BaselineData> {
+  const response = await fetch(`${API_BASE_URL}/baseline-data/upsert`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!response.ok) throw new Error('Failed to create baseline data');
+  if (!response.ok) throw new Error('Failed to upsert baseline data');
   return response.json();
 }
 
-export async function updateBaselineData(id: number, data: Partial<{ unitId: number; jenisData: string; jumlah: number; tahun: string }>): Promise<BaselineData> {
+export async function updateBaselineData(id: number, data: Partial<{ jenisData: string; jumlah: number; tahun: string; keterangan: string | null }>): Promise<BaselineData> {
   const response = await fetch(`${API_BASE_URL}/baseline-data/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -194,18 +214,6 @@ export async function deleteBaselineData(id: number): Promise<void> {
   if (!response.ok) throw new Error('Failed to delete baseline data');
 }
 
-export interface Unit {
-  id: number;
-  nama: string;
-  jenis: string | null;
-  parentId: number | null;
-}
-
-export async function getUnits(): Promise<Unit[]> {
-  const response = await fetch(`${API_BASE_URL}/units`);
-  if (!response.ok) throw new Error('Failed to fetch units');
-  return response.json();
-}
 
 export interface TargetUniversitasData {
   id: number;
@@ -231,28 +239,28 @@ export async function saveTargetUniversitas(indikatorId: number, tahun: string, 
   return response.json();
 }
 
-export async function upsertTargetUniversitas(indikatorId: number, unitId: number, tahun: string, targetUniversitas: number, tenggat?: string): Promise<any> {
+export async function upsertTargetUniversitas(indikatorId: number, tahun: string, persentase: number, tenggat?: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/targets/upsert-target-universitas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, unitId, tahun, targetUniversitas, tenggat }),
+    body: JSON.stringify({ indikatorId, tahun, persentase, tenggat }),
   });
   if (!response.ok) throw new Error('Failed to upsert target universitas');
   return response.json();
 }
 
-export async function getPengajuanGrouped(jenis: string, tahun: string, unitId: number): Promise<any[]> {
-  const url = `${API_BASE_URL}/indikator/pengajuan-grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&unitId=${unitId}`;
+export async function getPengajuanGrouped(jenis: string, tahun: string, roleId: number): Promise<any[]> {
+  const url = `${API_BASE_URL}/indikator/pengajuan-grouped?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&roleId=${roleId}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch pengajuan grouped');
   return response.json();
 }
 
-export async function upsertTargetFakultas(indikatorId: number, unitId: number, tahun: string, targetFakultas: number): Promise<any> {
+export async function upsertTargetFakultas(indikatorId: number, roleId: number, tahun: string, nilaiTarget: number): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/targets/upsert-target-fakultas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, unitId, tahun, targetFakultas }),
+    body: JSON.stringify({ indikatorId, roleId, tahun, nilaiTarget }),
   });
   if (!response.ok) throw new Error('Failed to upsert target fakultas');
   return response.json();
@@ -502,6 +510,19 @@ export async function upsertDisposisi(indikatorId: number, unitId: number, tahun
   return response.json();
 }
 
+export interface RoleOption {
+  id: number;
+  name: string;
+  unitNama: string;
+  level: number;
+}
+
+export async function getAllRoles(): Promise<RoleOption[]> {
+  const response = await fetch(`${API_BASE_URL}/users/roles`);
+  if (!response.ok) throw new Error('Failed to fetch roles');
+  return response.json();
+}
+
 export async function getUsers(): Promise<UnitUser[]> {
   const response = await fetch(`${API_BASE_URL}/users`);
   if (!response.ok) throw new Error('Failed to fetch users');
@@ -526,9 +547,9 @@ export interface CreateUserPayload {
   atasanId?: number | null;
 }
 
-export async function getUsersByUnit(unitId: number): Promise<UnitUser[]> {
-  const response = await fetch(`${API_BASE_URL}/users/by-unit?unitId=${unitId}`);
-  if (!response.ok) throw new Error('Failed to fetch users by unit');
+export async function getUsersByRole(roleId: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/by-role?roleId=${roleId}`);
+  if (!response.ok) throw new Error('Failed to fetch users by role');
   return response.json();
 }
 
