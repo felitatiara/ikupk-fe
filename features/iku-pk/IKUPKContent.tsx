@@ -30,7 +30,7 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
 }
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
@@ -57,18 +57,18 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [fileRepoNama, setFileRepoNama] = useState("");
   const [fileRepoIndikatorId, setFileRepoIndikatorId] = useState<number | null>(null);
   const [fileRepoPeriode, setFileRepoPeriode] = useState("");
-  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string; previewUrl?: string }[]>([]);
+  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string; previewUrl?: string; ownerName?: string }[]>([]);
   const [fileRepoLoading, setFileRepoLoading] = useState(false);
   const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
   const [fileRepoError, setFileRepoError] = useState<string | null>(null);
+  const [fileRepoIsAtasan, setFileRepoIsAtasan] = useState(false);
 
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [jenis, setJenis] = useState("IKU");
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
-  const [fileRepoChildId, setFileRepoChildId] = useState<number> (0);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
 
   // Local realisasi: subId → fileCount (dari repository). Persisted in localStorage.
@@ -219,13 +219,18 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     `September ${tahun} - Desember ${tahun}`,
   ];
 
-  // Helper: fetch files by indikator ID (bisa parent atau child)
-  const fetchRepoFiles = (indikatorId: number) => {
+  // Dosen (level 4) hanya lihat file sendiri; atasan lihat semua file dari bawahan.
+  const isDosen = roleLevel >= 4;
+
+  const fetchRepoFiles = (indikatorId: number, asAtasan: boolean) => {
     if (!token) { setFileRepoLoading(false); setFileRepoError('Token tidak ditemukan, silakan login ulang.'); return; }
     setFileRepoLoading(true);
     setFileRepoError(null);
     setFileRepoFiles([]);
-    getRealisasiFiles(indikatorId, token)
+    const fetcher = asAtasan
+      ? getAllRealisasiFiles(indikatorId, token)
+      : getRealisasiFiles(indikatorId, token);
+    fetcher
       .then((result) => {
         const mapped = result.files.map((f, i) => ({
           no: i + 1,
@@ -233,6 +238,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
           sumber: 'Repository FIK',
           previewUrl: f.preview_url,
+          ownerName: f.ownerName || f.owner?.name,
         }));
         setFileRepoFiles(mapped);
       })
@@ -241,6 +247,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   };
 
   const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = []) => {
+    const asAtasan = !isDosen;
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
     setFileRepoPeriode(periodeOptions[0]);
@@ -250,30 +257,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setFileRepoTarget(target);
     setFileRepoError(null);
     setFileRepoChildren(children);
-    const firstChildId = children.length > 0 ? children[0].id : 0;
-    setFileRepoChildId(firstChildId);
-    prevChildIdRef.current = firstChildId; // reset agar useEffect tidak skip
+    setFileRepoIsAtasan(asAtasan);
     setFileRepoModalOpen(true);
-
-    // Jika ada children, cari file di folder anak pertama (bukan folder parent)
-    // Contoh: indikator 1.1 → cari di subfolder "1.1.1 - < 6 Bulan dan >1.2 UMP"
-    const fetchId = children.length > 0 ? firstChildId : indikatorId;
-    fetchRepoFiles(fetchId);
+    fetchRepoFiles(indikatorId, asAtasan);
   };
-
-  // useEffect dihapus — fetch dilakukan langsung di handleInputFileClick
-
-  // Re-fetch saat user ganti pilihan "Jenis File (Anakan)"
-  // Contoh: dari "1.1.1 - < 6 Bulan" ke "1.1.2 - >1.2 UMP" → cari file di folder anak berbeda
-  const prevChildIdRef = useRef<number>(0);
-  useEffect(() => {
-    if (!fileRepoModalOpen) return;
-    if (fileRepoChildId === 0) return;
-    if (fileRepoChildId === prevChildIdRef.current) return;
-    prevChildIdRef.current = fileRepoChildId;
-    fetchRepoFiles(fileRepoChildId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileRepoChildId, fileRepoModalOpen]);
 
   const handleFileRepoSubmit = async () => {
     if (!fileRepoIndikatorId || !token) return;
@@ -525,23 +512,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </select>
                   </div>
 
-                  {/* Pilih Anakan Level 2 (jika ada) */}
+                  {/* Kriteria (info saja, tidak dipakai untuk filter karena semua diambil sekaligus) */}
                   {fileRepoChildren.length > 0 && (
-                    <div style={{ marginBottom: 18 }}>
-                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jenis File (Anakan)</label>
-                      <select
-                        value={fileRepoChildId}
-                        onChange={(e) => setFileRepoChildId(Number(e.target.value))}
-                        style={{
-                          width: "100%", padding: "10px 12px", borderRadius: 6,
-                          border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                          boxSizing: "border-box", backgroundColor: "white",
-                        }}
-                      >
-                        {fileRepoChildren.map((c) => (
-                          <option key={c.id} value={c.id}>{c.kode} {c.nama}</option>
-                        ))}
-                      </select>
+                    <div style={{ marginBottom: 14, padding: "8px 12px", backgroundColor: "#f0fdf4", borderRadius: 6, border: "1px solid #bbf7d0", fontSize: 12, color: "#15803d" }}>
+                      Menampilkan semua file dari {fileRepoChildren.length} kriteria: {fileRepoChildren.map((c) => c.kode).join(', ')}
                     </div>
                   )}
 
@@ -565,8 +539,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                           <tr style={{ backgroundColor: "#f9fafb" }}>
                             <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 36 }}>No</th>
                             <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>Nama File</th>
+                            {fileRepoIsAtasan && (
+                              <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 130 }}>Dosen</th>
+                            )}
                             <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 90 }}>Tanggal</th>
-                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 100 }}>Sumber</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -578,8 +554,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                                   <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>{f.namaFile}</a>
                                 ) : f.namaFile}
                               </td>
+                              {fileRepoIsAtasan && (
+                                <td style={{ padding: "7px 10px", color: "#6b7280", fontSize: 11 }}>{f.ownerName || '—'}</td>
+                              )}
                               <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
-                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.sumber}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -588,14 +566,18 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                   ) : (
                     <div style={{ textAlign: "center", padding: "24px 0", marginBottom: 20 }}>
                       <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Belum ada file di folder ini</div>
-                      <div style={{ fontSize: 12, color: "#9ca3af" }}>
-                        Upload file di{" "}
-                        <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>
-                          Repository FIK
-                        </a>
-                        {" "}pada folder dengan nama kode indikator ini
+                      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+                        {fileRepoIsAtasan ? 'Belum ada file yang diupload oleh bawahan untuk indikator ini' : 'Belum ada file di folder ini'}
                       </div>
+                      {!fileRepoIsAtasan && (
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                          Upload file di{" "}
+                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>
+                            Repository FIK
+                          </a>
+                          {" "}pada folder dengan nama kode indikator ini
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -614,18 +596,21 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 >
                   Tutup
                 </button>
-                <button
-                  onClick={handleFileRepoSubmit}
-                  disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
-                  style={{
-                    padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
-                    color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {fileRepoSubmitting ? "Menyimpan..." : "Simpan Realisasi"}
-                </button>
+                {/* Atasan hanya melihat file bawahan — tidak perlu "Simpan Realisasi" */}
+                {!fileRepoIsAtasan && (
+                  <button
+                    onClick={handleFileRepoSubmit}
+                    disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
+                    style={{
+                      padding: "8px 24px", borderRadius: 6, border: "none",
+                      backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
+                      color: "white", fontSize: 13, fontWeight: 600,
+                      cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    {fileRepoSubmitting ? "Menyimpan..." : "Simpan Realisasi"}
+                  </button>
+                )}
               </div>
             </div>
           </div>,

@@ -812,12 +812,38 @@ export async function searchRepoFilesByFolderName(folderName: string, email: str
   } catch { return []; }
 }
 
+/**
+ * Mengambil semua file dari sub-folder (level-2) di bawah parentFolderId.
+ * Digunakan ketika user klik Input File pada sub-indikator level-1.
+ */
+export async function getRepoFilesFromChildren(parentFolderId: string, email: string): Promise<RepoFile[]> {
+  try {
+    const res = await fetch(`${REPOSITORY_API_URL}/integration/files/in-children?parentFolderId=${encodeURIComponent(parentFolderId)}&email=${encodeURIComponent(email)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }
+}
+
 // ── IKUPK-BE Integration (Auth-Token Based) ────────────────────────────────
+
+export interface RealisasiFileItem {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  created_at: string;
+  folder_id: string;
+  owner?: { name: string; email: string } | null;
+  ownerName?: string;
+  ownerEmail?: string;
+  preview_url: string;
+  download_url: string;
+}
 
 export interface RealisasiFilesResult {
   indikatorKode: string;
   indikatorNama: string;
-  files: (RepoFile & { preview_url: string; download_url: string })[];
+  files: RealisasiFileItem[];
 }
 
 /**
@@ -837,6 +863,26 @@ export async function getRealisasiFiles(
           Authorization: `Bearer ${token}`,
         },
       },
+    );
+    if (!res.ok) return { indikatorKode: '', indikatorNama: '', files: [] };
+    return res.json();
+  } catch {
+    return { indikatorKode: '', indikatorNama: '', files: [] };
+  }
+}
+
+/**
+ * Ambil SEMUA file untuk indikator dari semua dosen (untuk atasan: kaprodi, kajur, dekan).
+ * File yang dikembalikan menyertakan ownerName dan ownerEmail untuk identifikasi per dosen.
+ */
+export async function getAllRealisasiFiles(
+  indikatorId: number,
+  token: string,
+): Promise<RealisasiFilesResult> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/integration/all-realisasi-files?indikatorId=${indikatorId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) return { indikatorKode: '', indikatorNama: '', files: [] };
     return res.json();
