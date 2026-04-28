@@ -239,8 +239,8 @@ export default function TambahIndikatorForm() {
       return;
     }
     const persen = Number(targetUniversitas);
-    if (!targetUniversitas || isNaN(persen) || persen < 0 || persen > 100) {
-      alert("Target Universitas wajib diisi dengan persentase (0–100).");
+    if (!targetUniversitas || isNaN(persen) || persen < 0) {
+      alert("Target Universitas wajib diisi dengan angka positif.");
       return;
     }
     if (!tenggat) {
@@ -385,27 +385,18 @@ export default function TambahIndikatorForm() {
                 <input type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Target Universitas (%)</label>
-                <div style={{ position: "relative" }}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={targetUniversitas}
-                    onChange={(e) => {
-                      const v = Math.min(100, Math.max(0, Number(e.target.value)));
-                      setTargetUniversitas(String(v));
-                    }}
-                    placeholder="0 – 100"
-                    style={{ ...inputStyle, paddingRight: 32 }}
-                  />
-                  <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#6b7280", pointerEvents: "none" }}>%</span>
-                </div>
-                {targetUniversitas && (
-                  <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-                    Nilai absolut = {targetUniversitas}% × baseline
-                  </p>
-                )}
+                <label style={labelStyle}>Target Universitas</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={targetUniversitas}
+                  onChange={(e) => {
+                    const v = Math.max(0, Number(e.target.value));
+                    setTargetUniversitas(String(v));
+                  }}
+                  placeholder="contoh: 100"
+                  style={inputStyle}
+                />
               </div>
             </div>
           </div>

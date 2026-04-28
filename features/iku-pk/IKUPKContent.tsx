@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 // Popup sukses custom
 function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -30,65 +30,17 @@ function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void })
 }
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getRelatedUsersFor, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi } from "../../lib/api";
-
-const MOCK_FOLDERS = [
-  { id: "folder-1", name: "Penelitian 2025" },
-  { id: "folder-2", name: "Pengabdian Masyarakat 2025" },
-  { id: "folder-3", name: "Publikasi Jurnal 2025" },
-  { id: "folder-4", name: "Bimbingan Skripsi 2025" },
-  { id: "folder-5", name: "Seminar & Konferensi 2025" },
-  { id: "folder-6", name: "Lulusan Tepat Waktu 2025" },
-  { id: "folder-7", name: "Praktisi Mengajar 2025" },
-  { id: "folder-8", name: "Sertifikasi Dosen 2025" },
-];
-
-const MOCK_FILES_BY_FOLDER: Record<string, { name: string; created_at: string }[]> = {
-  "folder-1": [
-    { name: "Proposal_Penelitian_Hibah_2025.pdf", created_at: "2025-02-10" },
-    { name: "Laporan_Kemajuan_Penelitian_Q1.pdf", created_at: "2025-04-01" },
-    { name: "Laporan_Akhir_Penelitian_2025.pdf", created_at: "2025-11-15" },
-  ],
-  "folder-2": [
-    { name: "Proposal_PKM_Desa_Binaan.pdf", created_at: "2025-03-05" },
-    { name: "Dokumentasi_Kegiatan_PKM.pdf", created_at: "2025-07-20" },
-  ],
-  "folder-3": [
-    { name: "Artikel_Jurnal_Sinta2_2025.pdf", created_at: "2025-01-22" },
-    { name: "Bukti_Acceptance_Scopus.pdf", created_at: "2025-05-11" },
-    { name: "Publikasi_Prosiding_Internasional.pdf", created_at: "2025-08-30" },
-    { name: "Artikel_Jurnal_Terakreditasi_2025.pdf", created_at: "2025-10-05" },
-  ],
-  "folder-4": [
-    { name: "Daftar_Mahasiswa_Bimbingan_TA.pdf", created_at: "2025-02-14" },
-    { name: "Berita_Acara_Sidang_Skripsi.pdf", created_at: "2025-06-18" },
-  ],
-  "folder-5": [
-    { name: "Sertifikat_Seminar_Nasional_TI.pdf", created_at: "2025-03-28" },
-    { name: "Bukti_Presentasi_Konferensi_Internasional.pdf", created_at: "2025-09-12" },
-  ],
-  "folder-6": [
-    { name: "Data_Lulusan_S1_2024.xlsx", created_at: "2025-01-08" },
-    { name: "Rekapitulasi_Kelulusan_Tepat_Waktu.pdf", created_at: "2025-04-22" },
-  ],
-  "folder-7": [
-    { name: "SK_Praktisi_Mengajar_2025.pdf", created_at: "2025-02-01" },
-    { name: "Laporan_Pelaksanaan_Kuliah_Tamu.pdf", created_at: "2025-05-30" },
-    { name: "Daftar_Hadir_Praktisi_Sem_Ganjil.pdf", created_at: "2025-08-10" },
-  ],
-  "folder-8": [
-    { name: "Sertifikat_Kompetensi_Nasional.pdf", created_at: "2025-03-15" },
-    { name: "Sertifikat_Pelatihan_AI_2025.pdf", created_at: "2025-07-04" },
-  ],
-};
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
+
+// Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan' }) {
   const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
 
   const [showSuccess, setShowSuccess] = useState(false);
-  const { user: authUser } = useAuth();
+  const { user: authUser, token } = useAuth();
   const [loading, setLoading] = useState(true);
 
   // Disposisi modal state
@@ -105,14 +57,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [fileRepoNama, setFileRepoNama] = useState("");
   const [fileRepoIndikatorId, setFileRepoIndikatorId] = useState<number | null>(null);
   const [fileRepoPeriode, setFileRepoPeriode] = useState("");
-  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string }[]>([]);
+  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string; previewUrl?: string }[]>([]);
   const [fileRepoLoading, setFileRepoLoading] = useState(false);
   const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
-  const [fileRepoFolders, setFileRepoFolders] = useState<{ id: string; name: string }[]>([]);
-  const [fileRepoViewMode, setFileRepoViewMode] = useState<'folders' | 'files'>('folders');
-  const [selectedRepoFolderId, setSelectedRepoFolderId] = useState<string | null>(null);
-  const [selectedRepoFolderName, setSelectedRepoFolderName] = useState<string | null>(null);
+  const [fileRepoError, setFileRepoError] = useState<string | null>(null);
 
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
@@ -141,36 +90,26 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
   const unitId = authUser?.roleId;
 
-  // Fetch grouped data for admin/dekan/user
+  const roleLevel = authUser?.roleLevel ?? 4;
+  // Admin dan Dekan level-1 lihat semua data; Kajur/Kaprodi/User lihat data yang didisposisikan ke mereka
+  const isTopLevel = displayRole === 'admin' || (displayRole === 'dekan' && roleLevel <= 1);
+
+  // Fetch grouped data
   useEffect(() => {
     if (!unitId) return;
     let cancelled = false;
-    const isAdminOrDekan = displayRole === 'admin' || displayRole === 'dekan';
-    
-    const fetchPromise = isAdminOrDekan
+
+    const fetchPromise = isTopLevel
       ? getIndikatorGrouped(jenis, tahun, unitId)
       : (authUser?.id)
         ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
         : Promise.resolve([]);
-        
-    console.log(`DEBUG IKUPKContent: Fetching data for jenis=${jenis}, tahun=${tahun}, userId=${authUser?.id}, unitId=${unitId}, role=${displayRole}`);
+
     fetchPromise
-      .then((d) => { 
-        if (!cancelled) { 
-          console.log("DEBUG IKUPKContent: Data received from API:", d);
-          setGroupedData(d); 
-          setLoading(false); 
-        } 
-      })
-      .catch((err) => { 
-        if (!cancelled) { 
-          console.error("DEBUG IKUPKContent: Error fetching data:", err);
-          setGroupedData([]); 
-          setLoading(false); 
-        } 
-      });
+      .then((d) => { if (!cancelled) { setGroupedData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [displayRole, jenis, tahun, unitId, authUser?.id]);
+  }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel]);
 
   const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null) => {
     setDisposisiSubId(subId);
@@ -182,18 +121,24 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
     try {
       let users: UnitUser[] = [];
-      if (displayRole === 'dekan' || displayRole === 'admin') {
-        // Pimpinan/Admin: bisa disposisi ke semua user di unit dan subunit
+      if (displayRole === 'admin') {
+        // Admin: semua user di unit
         const allUsers = await getUsersByRole(unitId);
         users = allUsers.filter((u) => u.id !== authUser?.id);
-      } else if (authUser?.id) {
-        // User biasa: disposisi ke bawahan dari user_relations
+      } else if (roleLevel <= 1) {
+        // Dekan/WD (level 1): satu kesatuan pimpinan, bisa disposisi ke semua Kajur/Kabag (level 2)
+        users = await getUsersByLevel(2);
+        users = users.filter((u) => u.id !== authUser?.id);
+      } else if (roleLevel === 2 && authUser?.id) {
+        // Kajur/Kabag: disposisi ke Kaprodi bawahannya via user_relations
         users = await getRelatedUsersFor(authUser.id);
-        // Fallback: jika tidak ada bawahan spesifik, izinkan lihat rekan satu unit (opsional)
-        if (users.length === 0) {
-          const allUsers = await getUsersByRole(unitId);
-          users = allUsers.filter((u) => u.id !== authUser?.id);
-        }
+      } else if (roleLevel === 3 && authUser?.unitNama) {
+        // Kaprodi: semua Dosen di prodinya (termasuk struktural yang juga Dosen)
+        const dosenUsers = await getDosenByUnit(authUser.unitNama);
+        users = dosenUsers.filter((u) => u.id !== authUser?.id);
+      } else if (authUser?.id) {
+        // Dosen (level 4): bawahan langsung via user_relations
+        users = await getRelatedUsersFor(authUser.id);
       }
       setUnitUsers(users);
     } catch {
@@ -201,9 +146,9 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     }
 
     // Ambil batas: berapa jumlah yang diterima disposedByUserId dari disposisi sebelumnya
-    if (disposedByUserId && unitId) {
+    if (disposedByUserId) {
       try {
-        const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, unitId, tahun);
+        const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, tahun);
         // Jika batas = 0, gunakan targetAmount (dari pimpinan tidak ada batas khusus)
         if (received > 0) setDisposisiTargetFakultas(received);
       } catch {
@@ -213,10 +158,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
     // Ambil existing disposisi
     try {
-      const existing = await getDisposisi(subId, unitId, tahun, disposedByUserId ?? null);
+      const existing = await getDisposisi(subId, tahun, disposedByUserId ?? null);
       if (existing.length > 0) {
         setDisposisiAllocations(
-          existing.map((d) => ({ userId: d.assignedTo, jumlah: String(Number(d.jumlah)) }))
+          existing.map((d) => ({ userId: d.toUserId, jumlah: String(Number(d.jumlahTarget)) }))
         );
       }
     } catch {
@@ -235,17 +180,20 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
   const totalAllocated = disposisiAllocations.reduce((sum, a) => sum + (parseFloat(a.jumlah) || 0), 0);
   const sisaTarget = disposisiTargetFakultas - totalAllocated;
+  // Ketika Dekan/WD belum ada target universitas, disposisi tetap diizinkan tanpa batas atas
+  const isUnconstrained = isTopLevel && disposisiTargetFakultas === 0;
+  const isOverLimit = !isUnconstrained && sisaTarget < 0;
 
   const handleDisposisiSubmit = async () => {
     const validItems = disposisiAllocations
       .filter((a) => a.userId > 0 && parseFloat(a.jumlah) > 0)
-      .map((a) => ({ assignedTo: a.userId, jumlah: parseFloat(a.jumlah) }));
+      .map((a) => ({ toUserId: a.userId, jumlahTarget: parseFloat(a.jumlah) }));
     if (validItems.length === 0) return;
     try {
       if (disposisiSubId && unitId) {
-        await upsertDisposisi(disposisiSubId, unitId, tahun, validItems, disposedBy);
+        await upsertDisposisi(disposisiSubId, tahun, validItems, disposedBy);
         // Refresh data
-        if (displayRole === 'user' && authUser?.id) {
+        if (!isTopLevel && authUser?.id) {
           const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
           setGroupedData(d);
         } else {
@@ -271,59 +219,82 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     `September ${tahun} - Desember ${tahun}`,
   ];
 
+  // Helper: fetch files by indikator ID (bisa parent atau child)
+  const fetchRepoFiles = (indikatorId: number) => {
+    if (!token) { setFileRepoLoading(false); setFileRepoError('Token tidak ditemukan, silakan login ulang.'); return; }
+    setFileRepoLoading(true);
+    setFileRepoError(null);
+    setFileRepoFiles([]);
+    getRealisasiFiles(indikatorId, token)
+      .then((result) => {
+        const mapped = result.files.map((f, i) => ({
+          no: i + 1,
+          namaFile: f.name,
+          tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
+          sumber: 'Repository FIK',
+          previewUrl: f.preview_url,
+        }));
+        setFileRepoFiles(mapped);
+      })
+      .catch(() => setFileRepoError('Gagal memuat file dari repository.'))
+      .finally(() => setFileRepoLoading(false));
+  };
+
   const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = []) => {
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
     setFileRepoPeriode(periodeOptions[0]);
     setFileRepoFiles([]);
-    setFileRepoLoading(false);
+    setFileRepoLoading(true);
     setFileRepoSubmitting(false);
     setFileRepoTarget(target);
+    setFileRepoError(null);
     setFileRepoChildren(children);
-    setFileRepoChildId(children.length > 0 ? children[0].id : 0);
-    setFileRepoViewMode('folders');
-    setSelectedRepoFolderId(null);
-    setSelectedRepoFolderName(null);
-    setFileRepoFolders([]);
+    const firstChildId = children.length > 0 ? children[0].id : 0;
+    setFileRepoChildId(firstChildId);
+    prevChildIdRef.current = firstChildId; // reset agar useEffect tidak skip
     setFileRepoModalOpen(true);
+
+    // Jika ada children, cari file di folder anak pertama (bukan folder parent)
+    // Contoh: indikator 1.1 → cari di subfolder "1.1.1 - < 6 Bulan dan >1.2 UMP"
+    const fetchId = children.length > 0 ? firstChildId : indikatorId;
+    fetchRepoFiles(fetchId);
   };
 
-  // Load mock folders/files for repo modal
+  // useEffect dihapus — fetch dilakukan langsung di handleInputFileClick
+
+  // Re-fetch saat user ganti pilihan "Jenis File (Anakan)"
+  // Contoh: dari "1.1.1 - < 6 Bulan" ke "1.1.2 - >1.2 UMP" → cari file di folder anak berbeda
+  const prevChildIdRef = useRef<number>(0);
   useEffect(() => {
     if (!fileRepoModalOpen) return;
-
-    if (fileRepoViewMode === 'folders') {
-      setFileRepoLoading(true);
-      setTimeout(() => {
-        setFileRepoFolders(MOCK_FOLDERS);
-        setFileRepoLoading(false);
-      }, 300);
-    } else if (fileRepoViewMode === 'files' && selectedRepoFolderId) {
-      setFileRepoLoading(true);
-      setTimeout(() => {
-        const rawFiles = MOCK_FILES_BY_FOLDER[selectedRepoFolderId] ?? [];
-        const mapped = rawFiles.map((f, i) => ({
-          no: i + 1,
-          namaFile: f.name,
-          tanggal: new Date(f.created_at).toLocaleDateString("id-ID"),
-          sumber: "Repository FIK",
-        }));
-        setFileRepoFiles(mapped);
-        setFileRepoLoading(false);
-      }, 300);
-    }
-  }, [fileRepoModalOpen, fileRepoViewMode, selectedRepoFolderId, authUser?.email]);
+    if (fileRepoChildId === 0) return;
+    if (fileRepoChildId === prevChildIdRef.current) return;
+    prevChildIdRef.current = fileRepoChildId;
+    fetchRepoFiles(fileRepoChildId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileRepoChildId, fileRepoModalOpen]);
 
   const handleFileRepoSubmit = async () => {
-    if (!fileRepoIndikatorId || !unitId || !authUser?.id) return;
+    if (!fileRepoIndikatorId || !token) return;
     setFileRepoSubmitting(true);
     try {
-      // Simpan realisasi ke localStorage (jumlah file ditemukan = capaian)
+      // Simpan ke database IKUPK-BE via JWT-authenticated endpoint
+      await submitFileRealisasiWithAuth(
+        {
+          indikatorId: fileRepoIndikatorId,
+          tahun,
+          periode: fileRepoPeriode,
+          fileCount: fileRepoFiles.length,
+        },
+        token,
+      );
+      // Juga simpan ke localStorage agar capaian langsung tampil di tabel
       saveRealisasi(fileRepoIndikatorId, fileRepoFiles.length);
       setFileRepoModalOpen(false);
       setShowSuccess(true);
     } catch {
-      alert("Gagal menyimpan realisasi");
+      alert('Gagal menyimpan realisasi. Pastikan Anda terhubung ke sistem.');
     } finally {
       setFileRepoSubmitting(false);
     }
@@ -359,27 +330,38 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             >
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
               <p style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
-                {displayRole === 'dekan' ? 'Disposisikan target kepada user di unit Anda' : 'Disposisikan ulang target kepada bawahan Anda'}
+                {isTopLevel ? 'Disposisikan target kepada bawahan Anda' : 'Disposisikan ulang target yang Anda terima kepada bawahan Anda'}
               </p>
 
               {/* Info bar */}
               <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{displayRole === 'dekan' ? 'Target Universitas' : 'Jumlah Diterima'}: </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{disposisiTargetFakultas}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{isTopLevel ? 'Target Universitas' : 'Jumlah Diterima'}: </span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
+                    {isUnconstrained ? '—' : disposisiTargetFakultas}
+                  </span>
                 </div>
                 <div>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sudah dialokasikan: </span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{totalAllocated}</span>
                 </div>
-                <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sisa: </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: sisaTarget < 0 ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
-                </div>
+                {!isUnconstrained && (
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sisa: </span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: isOverLimit ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
+                  </div>
+                )}
               </div>
 
+              {/* Info: target belum diset tapi tetap bisa disposisi */}
+              {isUnconstrained && (
+                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#eff6ff", borderRadius: 6, border: "1px solid #93c5fd", fontSize: 12, color: "#1d4ed8" }}>
+                  ℹ️ Target universitas belum diset. Anda tetap dapat mendisposisikan tanpa batas atas.
+                </div>
+              )}
+
               {/* Warning: total melebihi batas */}
-              {sisaTarget < 0 && (
+              {isOverLimit && (
                 <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#fef2f2", borderRadius: 6, border: "1px solid #fca5a5", fontSize: 12, color: "#dc2626" }}>
                   ⚠️ Total disposisi melebihi jumlah yang tersedia. Harap kurangi jumlah.
                 </div>
@@ -452,12 +434,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </button>
                 <button
                   onClick={handleDisposisiSubmit}
-                  disabled={disposisiAllocations.length === 0 || sisaTarget < 0 || unitUsers.length === 0}
+                  disabled={disposisiAllocations.length === 0 || isOverLimit || unitUsers.length === 0}
                   style={{
                     padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: disposisiAllocations.length > 0 && sisaTarget >= 0 && unitUsers.length > 0 ? "#16a34a" : "#9ca3af",
+                    backgroundColor: disposisiAllocations.length > 0 && !isOverLimit && unitUsers.length > 0 ? "#16a34a" : "#9ca3af",
                     color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: disposisiAllocations.length > 0 && sisaTarget >= 0 && unitUsers.length > 0 ? "pointer" : "not-allowed",
+                    cursor: disposisiAllocations.length > 0 && !isOverLimit && unitUsers.length > 0 ? "pointer" : "not-allowed",
                   }}
                 >
                   Simpan Disposisi
@@ -479,7 +461,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             }}
             onClick={() => setFileRepoModalOpen(false)}
           >
-
             <div
               style={{
                 backgroundColor: "white", borderRadius: 12, padding: 28,
@@ -488,73 +469,38 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, color: "#1f2937", textAlign: "center" }}>
-                {fileRepoViewMode === 'folders' ? 'Pilih Folder Repository' : `Pilih File: ${selectedRepoFolderName}`}
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: "#1f2937", textAlign: "center" }}>
+                File Repository — {fileRepoNama}
               </h3>
+              <p style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
+                File di bawah diambil otomatis dari folder repository yang sesuai dengan indikator ini.
+              </p>
 
-              {fileRepoViewMode === 'folders' ? (
-                /* FOLDER LIST VIEW */
-                <>
-                  <div style={{ marginBottom: 18 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Folder Tersedia</label>
-                    {fileRepoLoading ? (
-                      <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat daftar folder...</div>
-                    ) : fileRepoFolders.length > 0 ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxHeight: 300, overflowY: 'auto', padding: 4 }}>
-                        {fileRepoFolders.map((folder) => (
-                          <div
-                            key={folder.id}
-                            onClick={() => {
-                              setSelectedRepoFolderId(folder.id);
-                              setSelectedRepoFolderName(folder.name);
-                              setFileRepoViewMode('files');
-                            }}
-                            style={{
-                              padding: '12px 16px',
-                              borderRadius: 8,
-                              border: '1px solid #e5e7eb',
-                              backgroundColor: '#f9fafb',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 10,
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseOver={(e) => {
-                              e.currentTarget.style.borderColor = '#93c5fd';
-                              e.currentTarget.style.backgroundColor = '#eff6ff';
-                            }}
-                            onMouseOut={(e) => {
-                              e.currentTarget.style.borderColor = '#e5e7eb';
-                              e.currentTarget.style.backgroundColor = '#f9fafb';
-                            }}
-                          >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                            </svg>
-                            <span style={{ fontSize: 13, fontWeight: 500, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {folder.name}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13 }}>Tidak ada folder ditemukan</div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                /* FILE LIST VIEW */
+              {/* Error state */}
+              {fileRepoError && (
+                <div style={{ marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef2f2", borderRadius: 8, border: "1px solid #fca5a5", fontSize: 13, color: "#dc2626", textAlign: "center" }}>
+                  ⚠️ {fileRepoError}
+                </div>
+              )}
+              {/* Loading state */}
+              {fileRepoLoading && (
+                <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 14 }}>
+                  <div style={{ marginBottom: 8 }}>🔄 Memuat file dari repository...</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>Mengambil file berdasarkan kode indikator ini</div>
+                </div>
+              )}
+
+              {!fileRepoLoading && !fileRepoError && (
                 <>
                   {/* Warning if files < target */}
-                  {!fileRepoLoading && fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
+                  {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
                     <div style={{
                       marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef3c7",
                       borderRadius: 8, border: "1px solid #fcd34d", fontSize: 13, color: "#92400e",
                       textAlign: "center", lineHeight: 1.5,
                     }}>
                       Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
-                      Mohon untuk memenuhi target melalui{" "}
+                      Mohon tambahkan file melalui{" "}
                       <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#b45309", fontWeight: 700, textDecoration: "underline" }}>
                         Repository.fik.upnvj.ac.id
                       </a>
@@ -579,20 +525,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </select>
                   </div>
 
-                  {/* Nama Target */}
-                  <div style={{ marginBottom: 18 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Nama Target</label>
-                    <div
-                      style={{
-                        width: "100%", padding: "10px 12px", borderRadius: 6,
-                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                        backgroundColor: "#f9fafb", boxSizing: "border-box",
-                      }}
-                    >
-                      {fileRepoNama}
-                    </div>
-                  </div>
-
                   {/* Pilih Anakan Level 2 (jika ada) */}
                   {fileRepoChildren.length > 0 && (
                     <div style={{ marginBottom: 18 }}>
@@ -613,24 +545,20 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </div>
                   )}
 
-                  {/* Jumlah File Ditemukan */}
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Jumlah File Ditemukan</label>
-                    <div
-                      style={{
-                        width: "100%", padding: "10px 12px", borderRadius: 6,
-                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                        backgroundColor: "#f9fafb", boxSizing: "border-box",
-                      }}
-                    >
-                      {fileRepoLoading ? "Mencari..." : fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "-"}
-                    </div>
+                  {/* Info jumlah file */}
+                  <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>File Ditemukan</span>
+                    <span style={{
+                      fontSize: 14, fontWeight: 700,
+                      color: fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? "#16a34a" : fileRepoFiles.length > 0 ? "#d97706" : "#6b7280"
+                    }}>
+                      {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
+                      {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
+                    </span>
                   </div>
 
                   {/* File Table */}
-                  {fileRepoLoading ? (
-                    <div style={{ textAlign: "center", padding: "20px 0", color: "#6b7280", fontSize: 13 }}>Memuat data file...</div>
-                  ) : fileRepoFiles.length > 0 ? (
+                  {fileRepoFiles.length > 0 ? (
                     <div style={{ marginBottom: 20, maxHeight: 260, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead>
@@ -645,7 +573,11 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                           {fileRepoFiles.map((f) => (
                             <tr key={f.no} style={{ borderBottom: "1px solid #f3f4f6" }}>
                               <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.no}</td>
-                              <td style={{ padding: "7px 10px", color: "#1f2937" }}>{f.namaFile}</td>
+                              <td style={{ padding: "7px 10px", color: "#1f2937" }}>
+                                {f.previewUrl ? (
+                                  <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>{f.namaFile}</a>
+                                ) : f.namaFile}
+                              </td>
                               <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
                               <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.sumber}</td>
                             </tr>
@@ -654,40 +586,45 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                       </table>
                     </div>
                   ) : (
-                    <div style={{ textAlign: "center", padding: "20px 0", color: "#9ca3af", fontSize: 13, marginBottom: 20 }}>Tidak ada file ditemukan</div>
+                    <div style={{ textAlign: "center", padding: "24px 0", marginBottom: 20 }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Belum ada file di folder ini</div>
+                      <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                        Upload file di{" "}
+                        <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>
+                          Repository FIK
+                        </a>
+                        {" "}pada folder dengan nama kode indikator ini
+                      </div>
+                    </div>
                   )}
                 </>
               )}
 
+
               {/* Buttons */}
               <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                 <button
-                  onClick={() => {
-                    if (fileRepoViewMode === 'files') {
-                      setFileRepoViewMode('folders');
-                    } else {
-                      setFileRepoModalOpen(false);
-                    }
-                  }}
+                  onClick={() => setFileRepoModalOpen(false)}
                   style={{
                     padding: "8px 24px", borderRadius: 6,
                     border: "1px solid #d1d5db", backgroundColor: "white",
                     fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151",
                   }}
                 >
-                  Kembali
+                  Tutup
                 </button>
                 <button
                   onClick={handleFileRepoSubmit}
-                  disabled={fileRepoViewMode === 'folders' || fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
+                  disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
                   style={{
                     padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: fileRepoViewMode === 'files' && !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
+                    backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
                     color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: fileRepoViewMode === 'files' && !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
+                    cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
                   }}
                 >
-                  {fileRepoSubmitting ? "Menyimpan..." : "Simpan"}
+                  {fileRepoSubmitting ? "Menyimpan..." : "Simpan Realisasi"}
                 </button>
               </div>
             </div>
@@ -701,7 +638,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
             Indikator Kinerja Utama & Perjanjian Kerja
           </h3>
 
-          {(displayRole === 'admin' || displayRole === 'dekan') ? (
+          {isTopLevel ? (
             <>
               <div className="filter" style={{ marginBottom: 20 }}>
                 <div className="filter-content">
@@ -926,7 +863,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                                       className="btn-small"
                                       style={{ border: "1px solid #93c5fd", backgroundColor: "#eff6ff", color: "#2563eb", width: 100 }}
                                     >
-                                      Redisposisi
+                                      {displayRole === 'dekan' ? 'Disposisi' : 'Redisposisi'}
                                     </button>
                                   </div>
                                 </td>

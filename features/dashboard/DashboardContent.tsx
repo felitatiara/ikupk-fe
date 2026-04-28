@@ -221,15 +221,15 @@ export default function DashboardContent() {
       }
       setUnitUsers(users);
     } catch { setUnitUsers([]); }
-    if (disposedByUserId && unitId) {
+    if (disposedByUserId) {
       try {
-        const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, unitId, tahun);
+        const received = await getReceivedDisposisiJumlah(disposedByUserId, subId, tahun);
         if (received > 0) setDisposisiTargetFakultas(received);
       } catch { /* ignore */ }
     }
     try {
-      const existing = await getDisposisi(subId, unitId, tahun, disposedByUserId ?? null);
-      if (existing.length > 0) setDisposisiAllocations(existing.map((d) => ({ userId: d.assignedTo, jumlah: String(Number(d.jumlah)) })));
+      const existing = await getDisposisi(subId, tahun, disposedByUserId ?? null);
+      if (existing.length > 0) setDisposisiAllocations(existing.map((d) => ({ userId: d.toUserId, jumlah: String(Number(d.jumlahTarget)) })));
     } catch { /* ignore */ }
     setDisposisiModalOpen(true);
   };
@@ -238,11 +238,11 @@ export default function DashboardContent() {
   const sisaTarget = disposisiTargetFakultas - totalAllocated;
 
   const handleDisposisiSubmit = async () => {
-    const validItems = disposisiAllocations.filter((a) => a.userId > 0 && parseFloat(a.jumlah) > 0).map((a) => ({ assignedTo: a.userId, jumlah: parseFloat(a.jumlah) }));
+    const validItems = disposisiAllocations.filter((a) => a.userId > 0 && parseFloat(a.jumlah) > 0).map((a) => ({ toUserId: a.userId, jumlahTarget: parseFloat(a.jumlah) }));
     if (validItems.length === 0) return;
     try {
       if (disposisiSubId && unitId) {
-        await upsertDisposisi(disposisiSubId, unitId, tahun, validItems, disposedBy);
+        await upsertDisposisi(disposisiSubId, tahun, validItems, disposedBy);
         if (authUser?.id) {
           const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
           setGroupedData(d);

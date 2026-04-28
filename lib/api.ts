@@ -477,34 +477,35 @@ export async function updateTargetStatus(id: number, status: string, assignedTo?
 
 export interface DisposisiItem {
   id?: number;
-  assignedTo: number;
-  assignedUser?: { id: number; nama: string };
-  jumlah: number;
+  toUserId: number;
+  jumlahTarget: number;
+  fromUserId?: number | null;
+  toUser?: { id: number; nama: string; role: string };
 }
 
-export async function getDisposisi(indikatorId: number, unitId: number, tahun: string, disposedBy?: number | null): Promise<DisposisiItem[]> {
-  let url = `${API_BASE_URL}/disposisi?indikatorId=${indikatorId}&unitId=${unitId}&tahun=${encodeURIComponent(tahun)}`;
-  if (disposedBy !== undefined) {
-    url += `&disposedBy=${disposedBy === null ? 'null' : disposedBy}`;
+export async function getDisposisi(indikatorId: number, tahun: string, fromUserId?: number | null): Promise<DisposisiItem[]> {
+  let url = `${API_BASE_URL}/disposisi?indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`;
+  if (fromUserId !== undefined) {
+    url += `&fromUserId=${fromUserId === null ? 'null' : fromUserId}`;
   }
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch disposisi');
   return response.json();
 }
 
-export async function getReceivedDisposisiJumlah(assignedTo: number, indikatorId: number, unitId: number, tahun: string): Promise<number> {
-  const url = `${API_BASE_URL}/disposisi/received-jumlah?assignedTo=${assignedTo}&indikatorId=${indikatorId}&unitId=${unitId}&tahun=${encodeURIComponent(tahun)}`;
+export async function getReceivedDisposisiJumlah(toUserId: number, indikatorId: number, tahun: string): Promise<number> {
+  const url = `${API_BASE_URL}/disposisi/received-jumlah?toUserId=${toUserId}&indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`;
   const response = await fetch(url);
   if (!response.ok) return 0;
   const data = await response.json();
   return Number(data.jumlah) || 0;
 }
 
-export async function upsertDisposisi(indikatorId: number, unitId: number, tahun: string, items: { assignedTo: number; jumlah: number }[], disposedBy?: number | null): Promise<any> {
+export async function upsertDisposisi(indikatorId: number, tahun: string, items: { toUserId: number; jumlahTarget: number }[], fromUserId?: number | null): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/disposisi`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, unitId, tahun, items, disposedBy: disposedBy ?? null }),
+    body: JSON.stringify({ indikatorId, tahun, items, fromUserId: fromUserId ?? null }),
   });
   if (!response.ok) throw new Error('Failed to upsert disposisi');
   return response.json();
@@ -566,6 +567,20 @@ export async function hasRelatedUsers(userId: number): Promise<boolean> {
   if (!response.ok) return false;
   const data = await response.json();
   return data.hasRelated === true;
+}
+
+/** Mengambil semua user yang primary role-nya memiliki level tertentu */
+export async function getUsersByLevel(level: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/by-level?level=${level}`);
+  if (!response.ok) throw new Error('Failed to fetch users by level');
+  return response.json();
+}
+
+/** Mengambil semua Dosen (termasuk struktural yang juga Dosen) dalam satu unitNama */
+export async function getDosenByUnit(unitNama: string): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/dosen-by-unit?unitNama=${encodeURIComponent(unitNama)}`);
+  if (!response.ok) throw new Error('Failed to fetch dosen by unit');
+  return response.json();
 }
 
 /** (legacy) Mengambil user yang berelasi dengan userId - aitu parent dari userId */
@@ -754,3 +769,103 @@ export async function updateUserSKPStatus(
   if (!response.ok) throw new Error('Failed to update SKP status');
 }
 
+// ── Repository Integration ─────────────────────────────────────────────────
+
+export interface RepoFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  created_at: string;
+}
+
+export interface RepoFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  created_at: string;
+  folder_id: string;
+  owner?: { name: string; email: string } | null;
+}
+
+export async function getRepoFolders(email: string): Promise<RepoFolder[]> {
+  try {
+    const res = await fetch(`${REPOSITORY_API_URL}/integration/folders?email=${encodeURIComponent(email)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }
+}
+
+export async function getRepoFiles(folderId: string, email: string): Promise<RepoFile[]> {
+  try {
+    const res = await fetch(`${REPOSITORY_API_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }
+}
+
+export async function searchRepoFilesByFolderName(folderName: string, email: string): Promise<RepoFile[]> {
+  try {
+    const res = await fetch(`${REPOSITORY_API_URL}/integration/files/search?name=${encodeURIComponent(folderName)}&email=${encodeURIComponent(email)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch { return []; }
+}
+
+// ── IKUPK-BE Integration (Auth-Token Based) ────────────────────────────────
+
+export interface RealisasiFilesResult {
+  indikatorKode: string;
+  indikatorNama: string;
+  files: (RepoFile & { preview_url: string; download_url: string })[];
+}
+
+/**
+ * Ambil file dari IKUPK-BE yang sudah terautentikasi.
+ * IKUPK-BE akan otomatis ekstrak email dari JWT token dan query ke repository-nest.
+ * File yang dikembalikan hanya milik user yang sedang login, di folder bernama = kode indikator.
+ */
+export async function getRealisasiFiles(
+  indikatorId: number,
+  token: string,
+): Promise<RealisasiFilesResult> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/integration/realisasi-files?indikatorId=${indikatorId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!res.ok) return { indikatorKode: '', indikatorNama: '', files: [] };
+    return res.json();
+  } catch {
+    return { indikatorKode: '', indikatorNama: '', files: [] };
+  }
+}
+
+/**
+ * Submit realisasi (jumlah file) ke IKUPK-BE dengan JWT token.
+ * userId dan roleId diekstrak otomatis dari token di backend.
+ */
+export async function submitFileRealisasiWithAuth(
+  data: {
+    indikatorId: number;
+    tahun: string;
+    periode: string;
+    fileCount: number;
+  },
+  token: string,
+): Promise<FileRealisasiResult> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/from-file`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to submit file realisasi');
+  return res.json();
+}
