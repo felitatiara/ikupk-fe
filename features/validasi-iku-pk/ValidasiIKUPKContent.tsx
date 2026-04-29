@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import PageTransition from "@/components/layout/PageTransition";
 import { getRealisasiForValidasi, updateRealisasiStatus, ValidasiRow } from "@/lib/api";
 
@@ -76,6 +77,21 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
     setFilterTarget("semua");
     setFilterPeriode("semua");
     setFilterStatus("semua");
+  };
+
+  const exportToExcel = () => {
+    const rows = filteredData.map((item, i) => ({
+      No: i + 1,
+      Tahun: item.tenggat,
+      Target: item.target,
+      "Sasaran Strategis": item.sasaranStrategis,
+      "Capaian (%)": item.capaian,
+      Status: item.status === "validated" ? "Tervalidasi" : "Menunggu Validasi",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Validasi IKU PK");
+    XLSX.writeFile(wb, `Validasi_IKU_PK_${new Date().getFullYear()}.xlsx`);
   };
 
   const filteredData = data.filter((item) => {
@@ -166,6 +182,12 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
                 style={{ background: "#10b759", color: "white", border: "none", borderRadius: 6, padding: "8px 22px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
               >
                 Cari
+              </button>
+              <button
+                onClick={exportToExcel}
+                style={{ background: "#10b759", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >
+                Export Excel
               </button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
 import { getPendingFakultas, submitTargetFakultas, getTargetItems, getKriteria } from "@/lib/api";
 import type { PendingFakultasRow, Kriteria, TargetItem } from "@/lib/api";
@@ -88,7 +89,7 @@ export default function UserTargetContent() {
     if (!selectedRow) return;
     const itemsToSubmit = targetItems.filter(it => it.inputValue !== "");
     if (itemsToSubmit.length === 0) {
-      alert("Masukkan minimal satu Target Fakultas");
+      toast.warning("Masukkan minimal satu Target Fakultas");
       return;
     }
     setSubmitting(true);
@@ -98,11 +99,11 @@ export default function UserTargetContent() {
         targetAngka: Number(it.inputValue),
       }));
       await submitTargetFakultas(items);
-      alert("Target berhasil diajukan");
+      toast.success("Target berhasil diajukan");
       handleBack();
       await fetchData();
     } catch {
-      alert("Gagal mengajukan target");
+      toast.error("Gagal mengajukan target");
     } finally {
       setSubmitting(false);
     }

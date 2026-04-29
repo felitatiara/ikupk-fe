@@ -1,40 +1,39 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
+import PageTransition from "@/components/layout/PageTransition";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
+import { useAuth } from "@/hooks/useAuth";
+
 // Popup sukses custom
 function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.25)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <div style={{ background: 'white', borderRadius: 16, padding: 32, minWidth: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.12)', textAlign: 'center' }}>
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
-            <div style={{ background: '#E6F9ED', borderRadius: '50%', width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+    <div className="success-overlay">
+      <div className="success-box">
+        <div className="success-icon-wrapper">
+          <div className="success-icon-center">
+            <div className="success-icon-circle">
               <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="27" cy="27" r="27" fill="#4ADE80" />
                 <path d="M16 28.5L24 36.5L38 20.5" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <svg width="24" height="24" style={{ position: 'absolute', top: 8, right: -8 }}><circle cx="12" cy="12" r="12" fill="#FDE68A" /></svg>
-              <svg width="16" height="16" style={{ position: 'absolute', bottom: 8, left: -8 }}><circle cx="8" cy="8" r="8" fill="#FDE68A" /></svg>
+              <svg className="success-sparkle-top" width="24" height="24"><circle cx="12" cy="12" r="12" fill="#FDE68A" /></svg>
+              <svg className="success-sparkle-bottom" width="16" height="16"><circle cx="8" cy="8" r="8" fill="#FDE68A" /></svg>
             </div>
           </div>
-          <div style={{ fontWeight: 700, fontSize: 20, color: '#22292f', marginBottom: 6 }}>Data berhasil disimpan!</div>
+          <div className="success-text">Data berhasil disimpan!</div>
         </div>
-        <button onClick={onClose} style={{ background: '#4ADE80', color: 'white', border: 'none', borderRadius: 8, padding: '10px 0', width: '100%', fontWeight: 700, fontSize: 18, cursor: 'pointer' }}>Ya</button>
+        <button onClick={onClose} className="success-btn">Ya</button>
       </div>
     </div>
   );
 }
-import { createPortal } from "react-dom";
-import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
-import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 
 export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan' }) {
   const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
@@ -203,7 +202,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
         setShowSuccess(true);
       }
     } catch {
-      alert("Gagal menyimpan disposisi");
+      toast.error("Gagal menyimpan disposisi");
     } finally {
       setDisposisiModalOpen(false);
       setDisposisiRow(null);
@@ -262,26 +261,21 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     fetchRepoFiles(indikatorId, asAtasan);
   };
 
+
   const handleFileRepoSubmit = async () => {
     if (!fileRepoIndikatorId || !token) return;
     setFileRepoSubmitting(true);
     try {
-      // Simpan ke database IKUPK-BE via JWT-authenticated endpoint
-      await submitFileRealisasiWithAuth(
-        {
-          indikatorId: fileRepoIndikatorId,
-          tahun,
-          periode: fileRepoPeriode,
-          fileCount: fileRepoFiles.length,
-        },
-        token,
-      );
-      // Juga simpan ke localStorage agar capaian langsung tampil di tabel
-      saveRealisasi(fileRepoIndikatorId, fileRepoFiles.length);
+      await submitFileRealisasiWithAuth({
+        indikatorId: fileRepoIndikatorId!,
+        tahun,
+        periode: fileRepoPeriode,
+        fileCount: fileRepoFiles.length,
+      }, token);
       setFileRepoModalOpen(false);
       setShowSuccess(true);
     } catch {
-      alert('Gagal menyimpan realisasi. Pastikan Anda terhubung ke sistem.');
+      toast.error("Gagal menyimpan realisasi");
     } finally {
       setFileRepoSubmitting(false);
     }
@@ -292,85 +286,70 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     <div>
       <SuccessPopup open={showSuccess} onClose={() => setShowSuccess(false)} />
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+        <p className="ikupk-header-text">
           Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
 
         {/* DISPOSISI MODAL */}
         {disposisiModalOpen && (disposisiRow || disposisiSubId) && createPortal(
-          <div
-            style={{
-              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              zIndex: 9999,
-            }}
-            onClick={() => setDisposisiModalOpen(false)}
-          >
-            <div
-              style={{
-                backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 560, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-                maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#1f2937", textAlign: "center" }}>Disposisi Target</h3>
-              <p style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
+          <div className="modal-overlay" onClick={() => setDisposisiModalOpen(false)}>
+            <div className="modal-content modal-content--sm" onClick={(e) => e.stopPropagation()}>
+              <h3 className="modal-title">Disposisi Target</h3>
+              <p className="modal-subtitle">
                 {isTopLevel ? 'Disposisikan target kepada bawahan Anda' : 'Disposisikan ulang target yang Anda terima kepada bawahan Anda'}
               </p>
 
               {/* Info bar */}
-              <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "#f0fdf4", borderRadius: 8, border: "1px solid #bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="info-bar-green">
                 <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{isTopLevel ? 'Target Universitas' : 'Jumlah Diterima'}: </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
+                  <span className="info-label">{isTopLevel ? 'Target Universitas' : 'Jumlah Diterima'}: </span>
+                  <span className="info-value">
                     {isUnconstrained ? '—' : disposisiTargetFakultas}
                   </span>
                 </div>
                 <div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sudah dialokasikan: </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>{totalAllocated}</span>
+                  <span className="info-label">Sudah dialokasikan: </span>
+                  <span className="info-value info-value--muted">{totalAllocated}</span>
                 </div>
                 {!isUnconstrained && (
                   <div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Sisa: </span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: isOverLimit ? "#dc2626" : "#16a34a" }}>{sisaTarget}</span>
+                    <span className="info-label">Sisa: </span>
+                    <span className={`info-value ${isOverLimit ? 'text-danger' : 'text-success'}`}>{sisaTarget}</span>
                   </div>
                 )}
               </div>
 
               {/* Info: target belum diset tapi tetap bisa disposisi */}
               {isUnconstrained && (
-                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#eff6ff", borderRadius: 6, border: "1px solid #93c5fd", fontSize: 12, color: "#1d4ed8" }}>
+                <div className="alert-banner alert-banner--info">
                   ℹ️ Target universitas belum diset. Anda tetap dapat mendisposisikan tanpa batas atas.
                 </div>
               )}
 
               {/* Warning: total melebihi batas */}
               {isOverLimit && (
-                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#fef2f2", borderRadius: 6, border: "1px solid #fca5a5", fontSize: 12, color: "#dc2626" }}>
+                <div className="alert-banner alert-banner--error">
                   ⚠️ Total disposisi melebihi jumlah yang tersedia. Harap kurangi jumlah.
                 </div>
               )}
 
               {/* Warning: tidak ada user bawahan */}
               {unitUsers.length === 0 && (
-                <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "#fef3c7", borderRadius: 6, border: "1px solid #fcd34d", fontSize: 12, color: "#92400e" }}>
+                <div className="alert-banner alert-banner--warning">
                   ℹ️ Tidak ada user yang dapat menerima disposisi. Pastikan relasi user sudah dikonfigurasi di Master User.
                 </div>
               )}
 
               {/* Allocation rows */}
               {disposisiAllocations.map((alloc, idx) => (
-                <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", width: "100%" }}>
+                <div key={idx} className="alloc-row">
                   <select
                     value={alloc.userId}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       setDisposisiAllocations((prev) => prev.map((a, i) => i === idx ? { ...a, userId: val } : a));
                     }}
-                    style={{ flex: 2, minWidth: 0, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, color: "#374151", boxSizing: "border-box" }}
+                    className="alloc-select"
                   >
                     <option value={0} disabled>Pilih nama...</option>
                     {unitUsers.map((u) => (
@@ -387,12 +366,9 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                       const val = e.target.value;
                       setDisposisiAllocations((prev) => prev.map((a, i) => i === idx ? { ...a, jumlah: val } : a));
                     }}
-                    style={{ width: 80, flexShrink: 0, padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13, textAlign: "center", color: "#374151", boxSizing: "border-box" }}
+                    className="alloc-input"
                   />
-                  <button
-                    onClick={() => removeAllocation(idx)}
-                    style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 6, border: "1px solid #fca5a5", backgroundColor: "#fef2f2", color: "#dc2626", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                  >
+                  <button onClick={() => removeAllocation(idx)} className="alloc-remove-btn">
                     ✕
                   </button>
                 </div>
@@ -401,33 +377,19 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               <button
                 onClick={addAllocation}
                 disabled={unitUsers.length === 0}
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 6,
-                  border: "1px dashed #d1d5db", backgroundColor: unitUsers.length === 0 ? "#f3f4f6" : "#f9fafb",
-                  color: unitUsers.length === 0 ? "#9ca3af" : "#374151", fontSize: 13, fontWeight: 600,
-                  cursor: unitUsers.length === 0 ? "not-allowed" : "pointer",
-                  marginBottom: 20,
-                }}
+                className="btn-add-penerima"
               >
                 + Tambah Penerima
               </button>
 
-              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <button
-                  onClick={() => setDisposisiModalOpen(false)}
-                  style={{ padding: "8px 24px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
-                >
+              <div className="modal-footer">
+                <button onClick={() => setDisposisiModalOpen(false)} className="btn-secondary">
                   Kembali
                 </button>
                 <button
                   onClick={handleDisposisiSubmit}
                   disabled={disposisiAllocations.length === 0 || isOverLimit || unitUsers.length === 0}
-                  style={{
-                    padding: "8px 24px", borderRadius: 6, border: "none",
-                    backgroundColor: disposisiAllocations.length > 0 && !isOverLimit && unitUsers.length > 0 ? "#16a34a" : "#9ca3af",
-                    color: "white", fontSize: 13, fontWeight: 600,
-                    cursor: disposisiAllocations.length > 0 && !isOverLimit && unitUsers.length > 0 ? "pointer" : "not-allowed",
-                  }}
+                  className="btn-green"
                 >
                   Simpan Disposisi
                 </button>
@@ -439,41 +401,26 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
         {/* FILE REPOSITORY MODAL */}
         {fileRepoModalOpen && createPortal(
-          <div
-            style={{
-              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              zIndex: 9999,
-            }}
-            onClick={() => setFileRepoModalOpen(false)}
-          >
-            <div
-              style={{
-                backgroundColor: "white", borderRadius: 12, padding: 28,
-                width: 640, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-                maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: "#1f2937", textAlign: "center" }}>
+          <div className="modal-overlay" onClick={() => setFileRepoModalOpen(false)}>
+            <div className="modal-content modal-content--md" onClick={(e) => e.stopPropagation()}>
+              <h3 className="modal-title modal-title--mb8">
                 File Repository — {fileRepoNama}
               </h3>
-              <p style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
+              <p className="modal-subtitle">
                 File di bawah diambil otomatis dari folder repository yang sesuai dengan indikator ini.
               </p>
 
               {/* Error state */}
               {fileRepoError && (
-                <div style={{ marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef2f2", borderRadius: 8, border: "1px solid #fca5a5", fontSize: 13, color: "#dc2626", textAlign: "center" }}>
+                <div className="alert-banner--error-lg">
                   ⚠️ {fileRepoError}
                 </div>
               )}
               {/* Loading state */}
               {fileRepoLoading && (
-                <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 14 }}>
-                  <div style={{ marginBottom: 8 }}>🔄 Memuat file dari repository...</div>
-                  <div style={{ fontSize: 12, color: "#9ca3af" }}>Mengambil file berdasarkan kode indikator ini</div>
+                <div className="file-loading">
+                  <div className="mb-8">🔄 Memuat file dari repository...</div>
+                  <div className="file-loading-sub">Mengambil file berdasarkan kode indikator ini</div>
                 </div>
               )}
 
@@ -481,30 +428,22 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 <>
                   {/* Warning if files < target */}
                   {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
-                    <div style={{
-                      marginBottom: 16, padding: "10px 14px", backgroundColor: "#fef3c7",
-                      borderRadius: 8, border: "1px solid #fcd34d", fontSize: 13, color: "#92400e",
-                      textAlign: "center", lineHeight: 1.5,
-                    }}>
+                    <div className="alert-banner--warning-lg">
                       Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
                       Mohon tambahkan file melalui{" "}
-                      <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#b45309", fontWeight: 700, textDecoration: "underline" }}>
+                      <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">
                         Repository.fik.upnvj.ac.id
                       </a>
                     </div>
                   )}
 
                   {/* Pilih Periode */}
-                  <div style={{ marginBottom: 18 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Pilih Periode</label>
+                  <div className="periode-group">
+                    <label className="periode-label">Pilih Periode</label>
                     <select
                       value={fileRepoPeriode}
                       onChange={(e) => setFileRepoPeriode(e.target.value)}
-                      style={{
-                        width: "100%", padding: "10px 12px", borderRadius: 6,
-                        border: "1px solid #d1d5db", fontSize: 13, color: "#374151",
-                        boxSizing: "border-box", backgroundColor: "white",
-                      }}
+                      className="periode-select"
                     >
                       {periodeOptions.map((p) => (
                         <option key={p} value={p}>{p}</option>
@@ -512,20 +451,19 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                     </select>
                   </div>
 
-                  {/* Kriteria (info saja, tidak dipakai untuk filter karena semua diambil sekaligus) */}
+                  {/* Kriteria */}
                   {fileRepoChildren.length > 0 && (
-                    <div style={{ marginBottom: 14, padding: "8px 12px", backgroundColor: "#f0fdf4", borderRadius: 6, border: "1px solid #bbf7d0", fontSize: 12, color: "#15803d" }}>
+                    <div className="alert-banner--success">
                       Menampilkan semua file dari {fileRepoChildren.length} kriteria: {fileRepoChildren.map((c) => c.kode).join(', ')}
                     </div>
                   )}
 
                   {/* Info jumlah file */}
-                  <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>File Ditemukan</span>
-                    <span style={{
-                      fontSize: 14, fontWeight: 700,
-                      color: fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? "#16a34a" : fileRepoFiles.length > 0 ? "#d97706" : "#6b7280"
-                    }}>
+                  <div className="file-info-row">
+                    <span className="file-info-label">File Ditemukan</span>
+                    <span className={
+                      fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'
+                    }>
                       {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
                       {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
                     </span>
@@ -533,46 +471,46 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                   {/* File Table */}
                   {fileRepoFiles.length > 0 ? (
-                    <div style={{ marginBottom: 20, maxHeight: 260, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <div className="file-table-wrapper">
+                      <table className="file-table">
                         <thead>
-                          <tr style={{ backgroundColor: "#f9fafb" }}>
-                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 36 }}>No</th>
-                            <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>Nama File</th>
+                          <tr>
+                            <th className="col-no">No</th>
+                            <th className="text-left">Nama File</th>
                             {fileRepoIsAtasan && (
-                              <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 130 }}>Dosen</th>
+                              <th className="col-dosen">Dosen</th>
                             )}
-                            <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 90 }}>Tanggal</th>
+                            <th className="col-tanggal">Tanggal</th>
                           </tr>
                         </thead>
                         <tbody>
                           {fileRepoFiles.map((f) => (
-                            <tr key={f.no} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.no}</td>
-                              <td style={{ padding: "7px 10px", color: "#1f2937" }}>
+                            <tr key={f.no}>
+                              <td className="text-center">{f.no}</td>
+                              <td>
                                 {f.previewUrl ? (
-                                  <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>{f.namaFile}</a>
+                                  <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a>
                                 ) : f.namaFile}
                               </td>
                               {fileRepoIsAtasan && (
-                                <td style={{ padding: "7px 10px", color: "#6b7280", fontSize: 11 }}>{f.ownerName || '—'}</td>
+                                <td className="text-owner">{f.ownerName || '—'}</td>
                               )}
-                              <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280" }}>{f.tanggal}</td>
+                              <td className="text-center">{f.tanggal}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   ) : (
-                    <div style={{ textAlign: "center", padding: "24px 0", marginBottom: 20 }}>
-                      <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
-                      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>
+                    <div className="file-empty">
+                      <div className="file-empty-icon">📂</div>
+                      <div className="file-empty-text">
                         {fileRepoIsAtasan ? 'Belum ada file yang diupload oleh bawahan untuk indikator ini' : 'Belum ada file di folder ini'}
                       </div>
                       {!fileRepoIsAtasan && (
-                        <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                        <div className="file-empty-hint">
                           Upload file di{" "}
-                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>
+                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">
                             Repository FIK
                           </a>
                           {" "}pada folder dengan nama kode indikator ini
@@ -585,15 +523,8 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
 
               {/* Buttons */}
-              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-                <button
-                  onClick={() => setFileRepoModalOpen(false)}
-                  style={{
-                    padding: "8px 24px", borderRadius: 6,
-                    border: "1px solid #d1d5db", backgroundColor: "white",
-                    fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151",
-                  }}
-                >
+              <div className="modal-footer">
+                <button onClick={() => setFileRepoModalOpen(false)} className="btn-secondary">
                   Tutup
                 </button>
                 {/* Atasan hanya melihat file bawahan — tidak perlu "Simpan Realisasi" */}
@@ -601,12 +532,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                   <button
                     onClick={handleFileRepoSubmit}
                     disabled={fileRepoLoading || fileRepoFiles.length === 0 || fileRepoSubmitting}
-                    style={{
-                      padding: "8px 24px", borderRadius: 6, border: "none",
-                      backgroundColor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "#16a34a" : "#9ca3af",
-                      color: "white", fontSize: 13, fontWeight: 600,
-                      cursor: !fileRepoLoading && fileRepoFiles.length > 0 && !fileRepoSubmitting ? "pointer" : "not-allowed",
-                    }}
+                    className="btn-green"
                   >
                     {fileRepoSubmitting ? "Menyimpan..." : "Simpan Realisasi"}
                   </button>
@@ -619,13 +545,13 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
 
         <div className="page-card">
-          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937" }}>
+          <h3 className="ikupk-card-title">
             Indikator Kinerja Utama & Perjanjian Kerja
           </h3>
 
           {isTopLevel ? (
             <>
-              <div className="filter" style={{ marginBottom: 20 }}>
+              <div className="filter filter--mb20">
                 <div className="filter-content">
                   <label className="filter-content-label">Target</label>
                   <select
@@ -651,22 +577,22 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </div>
               </div>
 
-              {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
+              {loading && <p className="text-loading">Loading...</p>}
 
               {!loading && groupedData.length > 0 && (
                 <div className="table-wrapper">
                   <table className="table-universal">
                     <thead>
                       <tr>
-                        <th rowSpan={2} style={{ width: "5%", textAlign: "center" }}>Nomor</th>
-                        <th rowSpan={2} style={{ width: "20%" }}>Sasaran Strategis</th>
-                        <th rowSpan={2} style={{ width: "35%" }}>Sub Indikator Kinerja Utama</th>
-                        <th colSpan={2} style={{ textAlign: "center" }}>Target Universitas</th>
-                        <th rowSpan={2} style={{ width: "10%", textAlign: "center" }}>Disposisi</th>
+                        <th rowSpan={2} className="col-w5 text-center">Nomor</th>
+                        <th rowSpan={2} className="col-w20">Sasaran Strategis</th>
+                        <th rowSpan={2} className="col-w35">Sub Indikator Kinerja Utama</th>
+                        <th colSpan={2} className="text-center">Target Universitas</th>
+                        <th rowSpan={2} className="col-w10 text-center">Disposisi</th>
                       </tr>
                       <tr>
-                        <th style={{ textAlign: "center", minWidth: 100 }}>Kuantitas</th>
-                        <th style={{ textAlign: "center", minWidth: 100 }}>Waktu</th>
+                        <th className="text-center min-w100">Kuantitas</th>
+                        <th className="text-center min-w100">Waktu</th>
                       </tr>
                     </thead>
 
@@ -691,28 +617,28 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                           const univKuantitas = group.targetAbsolut;
 
                           return (
-                            <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                            <tr key={`${group.id}-${rowIdx}`}>
                               {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center">
                                     <p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p>
                                   </td>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
-                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{group.nama}</div>
+                                  <td rowSpan={totalRowSpan} className="td-cell v-top">
+                                    <div className="fw-600 mb-4">{group.nama}</div>
                                   </td>
                                 </>
                               )}
-                              <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''}`}>
                                 {row.kode} {row.nama}
                               </td>
 
                               {/* Target Universitas — merged per group */}
                               {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#1d4ed8", fontWeight: 700 }}>
+                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
                                     {univKuantitas !== null ? `${univKuantitas} Lulusan` : "-"}
                                   </td>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#1d4ed8", fontWeight: 700 }}>
+                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
                                     {group.tenggat || "-"}
                                   </td>
                                 </>
@@ -720,11 +646,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                               {/* Disposisi — merged per Sub (Level 1) */}
                               {row.isSubFirst ? (
-                                <td rowSpan={row.subChildCount} style={{ textAlign: "center", verticalAlign: "top" }}>
+                                <td rowSpan={row.subChildCount} className="action-cell">
                                   <button
                                     onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), null)}
-                                    className="btn-small"
-                                    style={{ border: "1px solid #86efac", backgroundColor: "#ecfdf5", color: "#16a34a" }}
+                                    className="btn-small btn-small--green"
                                   >
                                     Disposisi
                                   </button>
@@ -740,12 +665,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               )}
 
               {!loading && groupedData.length === 0 && (
-                <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data indikator</p>
+                <p className="text-empty">Tidak ada data indikator</p>
               )}
             </>
           ) : (
             <>
-              <div className="filter" style={{ marginBottom: 20 }}>
+              <div className="filter filter--mb20">
                 <div className="filter-content">
                   <label className="filter-content-label">Target</label>
                   <select
@@ -771,19 +696,19 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 </div>
               </div>
 
-              {loading && <p style={{ color: "#9ca3af", padding: 12 }}>Loading...</p>}
+              {loading && <p className="text-loading">Loading...</p>}
 
               {!loading && groupedData.length > 0 && (
                 <div className="table-wrapper">
                   <table className="table-universal">
                     <thead>
                       <tr>
-                        <th style={{ width: "5%", textAlign: "center" }}>Nomor</th>
-                        <th style={{ width: "20%" }}>Sasaran Strategis</th>
+                        <th className="col-w5 text-center">Nomor</th>
+                        <th className="col-w20">Sasaran Strategis</th>
                         <th>Sub Indikator Kinerja Utama</th>
-                        <th style={{ width: "10%", textAlign: "center" }}>Target Disposisi</th>
-                        <th style={{ width: "10%", textAlign: "center" }}>Capaian</th>
-                        <th style={{ width: "20%", textAlign: "center" }}>Aksi</th>
+                        <th className="col-w10 text-center">Target Disposisi</th>
+                        <th className="col-w10 text-center">Capaian</th>
+                        <th className="col-w20 text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -804,27 +729,27 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                           const realisasiJumlah = localRealisasi[row.sub.id] ?? (row.sub.realisasiJumlah ?? 0);
 
                           return (
-                            <tr key={`${group.id}-${rowIdx}`} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                            <tr key={`${group.id}-${rowIdx}`}>
                               {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">
                                     {groupIdx + 1}
                                   </td>
-                                  <td rowSpan={totalRowSpan} style={{ padding: "10px 12px", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151" }}>
+                                  <td rowSpan={totalRowSpan} className="td-cell v-top">
                                     {group.nama}
                                   </td>
                                 </>
                               )}
-                              <td style={{ padding: "10px 12px", color: "#374151", borderRight: "1px solid #e5e7eb", paddingLeft: row.level === 2 ? 28 : 12 }}>
+                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''}`}>
                                 {row.kode} {row.nama}
                               </td>
                               {/* Target Disposisi & Capaian — merged per Sub (Level 1) */}
                               {row.isSubFirst && (
                                 <>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: "#374151", fontWeight: 600 }}>
+                                  <td rowSpan={row.subChildCount} className="td-cell td-cell--center td-cell--bold">
                                     {disposisiJumlah !== null ? disposisiJumlah : "-"}
                                   </td>
-                                  <td rowSpan={row.subChildCount} style={{ padding: "10px 12px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #e5e7eb", color: (realisasiJumlah > 0 && disposisiJumlah) ? (realisasiJumlah >= disposisiJumlah ? '#16a34a' : '#eab308') : '#374151', fontWeight: 700 }}>
+                                  <td rowSpan={row.subChildCount} className={`td-cell td-cell--center fw-700 ${(realisasiJumlah > 0 && disposisiJumlah) ? (realisasiJumlah >= disposisiJumlah ? 'text-success' : 'text-warning') : 'text-dark'}`}>
                                     {(realisasiJumlah > 0 && disposisiJumlah && disposisiJumlah > 0)
                                       ? (realisasiJumlah >= disposisiJumlah ? '100%' : `${Math.round((realisasiJumlah / disposisiJumlah) * 100)}%`)
                                       : '-'}
@@ -834,19 +759,17 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                               {/* Aksi — merged per Sub (Level 1) */}
                               {row.isSubFirst && (
-                                <td rowSpan={row.subChildCount} style={{ textAlign: 'center', verticalAlign: 'top' }}>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                                <td rowSpan={row.subChildCount} className="action-cell">
+                                  <div className="action-cell-inner">
                                     <button
                                       onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(disposisiJumlah || 0), row.sub.children)}
-                                      className="btn-small"
-                                      style={{ border: "1px solid #86efac", backgroundColor: "#ecfdf5", color: "#16a34a", width: 100 }}
+                                      className="btn-small btn-small--green btn-small--w100"
                                     >
                                       Input File
                                     </button>
                                     <button
                                       onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(disposisiJumlah || 0), authUser?.id)}
-                                      className="btn-small"
-                                      style={{ border: "1px solid #93c5fd", backgroundColor: "#eff6ff", color: "#2563eb", width: 100 }}
+                                      className="btn-small btn-small--blue btn-small--w100"
                                     >
                                       {displayRole === 'dekan' ? 'Disposisi' : 'Redisposisi'}
                                     </button>
@@ -863,7 +786,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               )}
 
               {!loading && groupedData.length === 0 && (
-                <p style={{ color: "#9ca3af", padding: 12, textAlign: "center" }}>Tidak ada data target yang didisposisikan kepada Anda</p>
+                <p className="text-empty">Tidak ada data target yang didisposisikan kepada Anda</p>
               )}
             </>
           )}

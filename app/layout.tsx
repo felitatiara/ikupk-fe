@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import type { Metadata } from "next";
 import 'bootstrap/dist/css/bootstrap.min.css';
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "IKU & PK UPN Veteran Jakarta",
@@ -29,6 +30,12 @@ export default function RootLayout({
           <div style={{ minHeight: "100vh", backgroundColor: "#f5f7fa" }}>
             {children}
           </div>
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
+            duration={4000}
+          />
         </AuthProvider>
       </body>
     </html>

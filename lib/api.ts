@@ -60,6 +60,7 @@ export interface IndikatorGroupedSub {
   targetId: number | null;
   nilaiTarget: number | null;
   baselineJumlah: number | null;
+  isPkBerbasisIku?: boolean;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
   children: IndikatorGroupedChild[];
@@ -384,8 +385,8 @@ export interface PimpinanValidasiRow {
   createdAt: string;
 }
 
-export async function getPimpinanValidasi(unitId: number): Promise<PimpinanValidasiRow[]> {
-  const response = await fetch(`${API_BASE_URL}/targets/pimpinan-validasi?unitId=${unitId}`);
+export async function getPimpinanValidasi(roleId: number): Promise<PimpinanValidasiRow[]> {
+  const response = await fetch(`${API_BASE_URL}/targets/pimpinan-validasi?roleId=${roleId}`);
   if (!response.ok) throw new Error('Failed to fetch pimpinan validasi');
   return response.json();
 }

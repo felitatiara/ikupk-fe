@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import PageTransition from "@/components/layout/PageTransition";
 import { getTargetsForValidation, updateTargetValidationStatus, TargetWithRepositoryFile } from "@/lib/api";
 
@@ -327,9 +328,33 @@ export default function AdminValidasiIKUPKContent() {
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
           }}
         >
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 20 }}>
-            Daftar Target untuk Validasi
-          </h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", margin: 0 }}>
+              Daftar Target untuk Validasi
+            </h3>
+            <button
+              onClick={() => {
+                const rows = filtered.map((r, i) => ({
+                  No: i + 1,
+                  "Unit Kerja": r.unitKerja,
+                  "Nama Indikator": r.namaIndikator,
+                  "Kode Indikator": r.kodeIndikator,
+                  "Target Kuantitas": r.targetKuantitas,
+                  Satuan: r.satuan,
+                  Periode: r.periode,
+                  "Status Validasi": r.statusValidasi === "approved" ? "Disetujui" : r.statusValidasi === "rejected" ? "Ditolak" : "Menunggu",
+                  "Catatan Admin": r.catatanAdmin ?? "",
+                }));
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Validasi Admin");
+                XLSX.writeFile(wb, `Validasi_Admin_${new Date().getFullYear()}.xlsx`);
+              }}
+              style={{ background: "#10b759", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >
+              Export Excel
+            </button>
+          </div>
 
           {loading ? (
             <p style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data…</p>

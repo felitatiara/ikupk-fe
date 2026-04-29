@@ -132,8 +132,12 @@ function loadUserFromSession(): SKPUser {
 }
 
 export default function SKPContent() {
-  const [userData] = useState<SKPUser>(loadUserFromSession);
+  const [userData, setUserData] = useState<SKPUser>(MOCK_USER);
   const [rows, setRows] = useState<SKPRow[]>([]);
+
+  useEffect(() => {
+    setUserData(loadUserFromSession());
+  }, []);
   const [loading, setLoading] = useState(true);
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
