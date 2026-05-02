@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
 import { createUserAccount, getAllRoles, getUsers, RoleOption, UnitUser, updateUserAccount, deleteUserAccount } from "@/lib/api";
+import { toast } from "sonner";
 
 // Role jabatan struktural → otomatis juga Dosen
 const STRUCTURAL_ROLES = new Set([
@@ -92,7 +93,8 @@ export default function InputUserContent() {
   };
 
   const openEdit = (user: UnitUser) => {
-    const primaryRoleId = (user as any).userRoles?.find((ur: any) => ur.isPrimary)?.roleId
+    const primaryRoleId = (user as any).roleId
+      ?? (user as any).userRoles?.find((ur: any) => ur.isPrimary)?.roleId
       ?? (user as any).userRoles?.[0]?.roleId
       ?? "";
     setFormData({
@@ -103,7 +105,7 @@ export default function InputUserContent() {
       password: "",
       roleId: primaryRoleId,
       jenis: (user as any).jenis || "Dosen",
-      atasanId: "",
+      atasanId: (user as any).atasanId ?? "",
     });
     setModalMode("edit");
     setModalOpen(true);
@@ -111,15 +113,15 @@ export default function InputUserContent() {
 
   const handleSave = async () => {
     if (!formData.nama.trim() || !formData.email.trim()) {
-      alert("Nama dan email wajib diisi.");
+      toast.error("Nama dan email wajib diisi.");
       return;
     }
     if (!formData.id && !formData.password.trim()) {
-      alert("Password wajib diisi untuk user baru.");
+      toast.error("Password wajib diisi untuk user baru.");
       return;
     }
     if (formData.roleId === "") {
-      alert("Role wajib dipilih.");
+      toast.error("Role wajib dipilih.");
       return;
     }
     setSaving(true);
@@ -138,13 +140,15 @@ export default function InputUserContent() {
 
       if (formData.id) {
         await updateUserAccount(formData.id, payload);
+        toast.success("User berhasil diperbarui.");
       } else {
         await createUserAccount(payload);
+        toast.success("User berhasil ditambahkan.");
       }
       setModalOpen(false);
       refreshData();
     } catch (err) {
-      alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -155,10 +159,11 @@ export default function InputUserContent() {
     setDeleteLoading(true);
     try {
       await deleteUserAccount(deleteTarget.id);
+      toast.success("User berhasil dihapus.");
       setDeleteTarget(null);
       refreshData();
     } catch {
-      alert("Gagal menghapus user.");
+      toast.error("Gagal menghapus user.");
     } finally {
       setDeleteLoading(false);
     }
@@ -171,8 +176,8 @@ export default function InputUserContent() {
     return matchQ && matchRole;
   });
 
-  // Nama role unik untuk filter dropdown
-  const uniqueRoleNames = Array.from(new Set(allRoles.map((r) => r.name)));
+  // Nama role unik dari user yang ada (bukan dari master roles)
+  const uniqueRoleNames = Array.from(new Set(allUsers.map((u) => u.role).filter(Boolean)));
 
   return (
     <PageTransition>
@@ -394,17 +399,25 @@ export default function InputUserContent() {
                     </tr>
                   ) : (
                     filtered.map((u, idx) => {
-                      const primaryRole = (u as any).userRoles?.find((ur: any) => ur.isPrimary) ?? (u as any).userRoles?.[0];
-                      const unitNama = primaryRole?.role?.unitNama ?? "—";
+                      const unitNama = (u as any).unitNama ?? "—";
+                      const roleName = u.role || "—";
+                      const atasanNama = (u as any).atasanNama;
                       return (
                         <tr key={u.id}>
                           <td style={{ textAlign: "center" }}>{idx + 1}</td>
                           <td style={{ color: "#6b7280", fontSize: 12 }}>{(u as any).nip || "—"}</td>
-                          <td style={{ fontWeight: 600 }}>{u.nama}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            {u.nama}
+                            {atasanNama && (
+                              <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginTop: 2 }}>
+                                Atasan: {atasanNama}
+                              </div>
+                            )}
+                          </td>
                           <td style={{ color: "#6b7280", fontSize: 12 }}>{u.email}</td>
                           <td style={{ textAlign: "center" }}>
                             <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#dbeafe", color: "#1d4ed8" }}>
-                              {u.role || "—"}
+                              {roleName}
                             </span>
                           </td>
                           <td style={{ fontSize: 12, color: "#374151" }}>{unitNama}</td>

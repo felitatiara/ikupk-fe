@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import PageTransition from "@/components/layout/PageTransition";
-import { getRealisasiForValidasi, updateRealisasiStatus, ValidasiRow } from "@/lib/api";
+import { getRealisasiForValidasi, updateRealisasiStatus, ValidasiRow, getLaporanWithRealisasi } from "@/lib/api";
+import { toast } from "sonner";
 
 export interface ValidasiData {
   id: number;
@@ -68,8 +69,10 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
           item.id === id ? { ...item, status: "validated" } : item
         )
       );
+      toast.success("Berhasil divalidasi.");
     } catch (err) {
       console.error('Failed to validate:', err);
+      toast.error("Gagal memvalidasi data.");
     }
   };
 
@@ -79,19 +82,127 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
     setFilterStatus("semua");
   };
 
-  const exportToExcel = () => {
-    const rows = filteredData.map((item, i) => ({
-      No: i + 1,
-      Tahun: item.tenggat,
-      Target: item.target,
-      "Sasaran Strategis": item.sasaranStrategis,
-      "Capaian (%)": item.capaian,
-      Status: item.status === "validated" ? "Tervalidasi" : "Menunggu Validasi",
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Validasi IKU PK");
-    XLSX.writeFile(wb, `Validasi_IKU_PK_${new Date().getFullYear()}.xlsx`);
+  const exportToExcel = async () => {
+    try {
+      const userStr = sessionStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : {};
+      const roleId: number = user.roleId ?? 0;
+      const unitName: string = user.roleName || user.nama || "Unit";
+      const tahun =
+        filterPeriode !== "semua"
+          ? filterPeriode
+          : new Date().getFullYear().toString();
+
+      const jenisList: string[] =
+        filterTarget === "semua"
+          ? ["IKU", "PK"]
+          : filterTarget === "Indikator Kinerja Utama"
+          ? ["IKU"]
+          : ["PK"];
+
+      const wb = XLSX.utils.book_new();
+
+      for (const jenis of jenisList) {
+        const grouped = await getLaporanWithRealisasi(jenis, tahun, roleId);
+        if (grouped.length === 0) continue;
+
+        type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
+        const aoa: (string | number)[][] = [];
+        const merges: MergeRange[] = [];
+
+        aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "", unitName, "", "", "", ""]);
+        aoa.push(["", "", "", tahun, "S.D", `Target ${tahun}`, "", `Realisasi s.d ${tahun}`, "", "% Capaian"]);
+        aoa.push(["", "", "", "", "TW I", "Kualitas", "Kuantitas", "Kualitas", "Kuantitas", ""]);
+
+        merges.push({ s: { r: 0, c: 0 }, e: { r: 2, c: 0 } });
+        merges.push({ s: { r: 0, c: 1 }, e: { r: 2, c: 1 } });
+        merges.push({ s: { r: 0, c: 2 }, e: { r: 2, c: 2 } });
+        merges.push({ s: { r: 0, c: 3 }, e: { r: 0, c: 4 } });
+        merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 9 } });
+        merges.push({ s: { r: 1, c: 3 }, e: { r: 2, c: 3 } });
+        merges.push({ s: { r: 1, c: 5 }, e: { r: 1, c: 6 } });
+        merges.push({ s: { r: 1, c: 7 }, e: { r: 1, c: 8 } });
+        merges.push({ s: { r: 1, c: 9 }, e: { r: 2, c: 9 } });
+
+        let sastraNo = 1;
+
+        for (const group of grouped) {
+          const groupStart = aoa.length;
+
+          aoa.push([
+            sastraNo + ".",
+            group.nama,
+            "",
+            group.persentaseTarget !== null ? group.persentaseTarget + "%" : "",
+            group.sdPersen + "%",
+            "", "", "", "", "",
+          ]);
+
+          for (const sub of group.subIndikators) {
+            aoa.push([
+              "", "",
+              sub.kode + "  " + sub.nama,
+              "", "",
+              sub.targetKualitas !== null ? sub.targetKualitas + "%" : "-",
+              sub.nilaiTarget ?? "",
+              sub.realisasiKualitas !== null ? sub.realisasiKualitas + "%" : "0%",
+              sub.realisasiKuantitas,
+              sub.persenCapaian + "%",
+            ]);
+
+            for (const child of sub.children ?? []) {
+              aoa.push([
+                "", "",
+                "    " + child.kode + "  " + child.nama,
+                "", "",
+                child.targetKualitas !== null ? child.targetKualitas + "%" : "-",
+                child.nilaiTarget ?? "",
+                child.realisasiKualitas !== null ? child.realisasiKualitas + "%" : "0%",
+                child.realisasiKuantitas,
+                child.persenCapaian + "%",
+              ]);
+
+              for (const l3 of child.children ?? []) {
+                aoa.push([
+                  "", "",
+                  "        " + l3.kode + "  " + l3.nama,
+                  "", "",
+                  l3.targetKualitas !== null ? l3.targetKualitas + "%" : "-",
+                  l3.nilaiTarget ?? "",
+                  l3.realisasiKualitas !== null ? l3.realisasiKualitas + "%" : "0%",
+                  l3.realisasiKuantitas,
+                  l3.persenCapaian + "%",
+                ]);
+              }
+            }
+          }
+
+          const groupEnd = aoa.length - 1;
+          if (groupEnd > groupStart) {
+            merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+            merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+            merges.push({ s: { r: groupStart, c: 3 }, e: { r: groupEnd, c: 3 } });
+            merges.push({ s: { r: groupStart, c: 4 }, e: { r: groupEnd, c: 4 } });
+          }
+
+          sastraNo++;
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws["!merges"] = merges;
+        ws["!cols"] = [
+          { wch: 6 }, { wch: 32 }, { wch: 44 },
+          { wch: 14 }, { wch: 10 },
+          { wch: 13 }, { wch: 13 },
+          { wch: 16 }, { wch: 16 }, { wch: 12 },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, jenis === "IKU" ? "Laporan IKU" : "Laporan PK");
+      }
+
+      XLSX.writeFile(wb, `Laporan_IKU_PK_${tahun}.xlsx`);
+    } catch (err) {
+      console.error("Failed to export Excel:", err);
+    }
   };
 
   const filteredData = data.filter((item) => {
@@ -103,37 +214,26 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
     return matchTarget && matchPeriode && matchStatus;
   });
 
-  const shownRows = filteredData.filter((item) => item.status !== "validated");
-
-  const tableHeaderStyle: React.CSSProperties = {
-    textAlign: "left",
-    padding: "12px 14px",
-    fontWeight: 700,
-    color: "#374151",
-    borderBottom: "1px solid #e5e7eb",
-    backgroundColor: "#f9fafb",
-  };
-
   return (
     <div>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Validasi Indikator Kinerja Utama & Perjanjian Kerja
+        <p className="ikupk-header-text">
+          Validasi Indikator Kinerja Utama &amp; Perjanjian Kerja
         </p>
 
-        <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "#1f2937" }}>
-            Validasi Indikator Kinerja Utama & Perjanjian Kerja
+        <div className="page-card">
+          <h3 className="ikupk-card-title">
+            Validasi Indikator Kinerja Utama &amp; Perjanjian Kerja
           </h3>
 
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 12 }}>
+          <div className="filter-section">
+            <div className="filter-grid-2">
               <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Target</label>
+                <label className="filter-label">Target</label>
                 <select
                   value={filterTarget}
                   onChange={(e) => setFilterTarget(e.target.value)}
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 14, color: "#374151" }}
+                  className="filter-isi"
                 >
                   {targetOptions.map((option) => (
                     <option key={option} value={option}>
@@ -143,11 +243,11 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
                 </select>
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Periode</label>
+                <label className="filter-label">Periode</label>
                 <select
                   value={filterPeriode}
                   onChange={(e) => setFilterPeriode(e.target.value)}
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 14, color: "#374151" }}
+                  className="filter-isi"
                 >
                   {periodeOptions.map((option) => (
                     <option key={option} value={option}>
@@ -158,12 +258,12 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
               </div>
             </div>
 
-            <div style={{ maxWidth: 420, marginBottom: 12 }}>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>Status</label>
+            <div className="filter-status-wrapper">
+              <label className="filter-label">Status</label>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 14, color: "#374151" }}
+                className="filter-isi"
               >
                 <option value="semua">Semua</option>
                 <option value="pending">Menunggu Validasi</option>
@@ -171,69 +271,56 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
               </select>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button
-                onClick={handleResetFilter}
-                style={{ background: "white", color: "#10b759", border: "1px solid #10b759", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
+            <div className="btn-row-end">
+              <button onClick={handleResetFilter} className="btn-outline-green">
                 Reset Filter
               </button>
-              <button
-                style={{ background: "#10b759", color: "white", border: "none", borderRadius: 6, padding: "8px 22px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
+              <button className="btn-green-sm">
                 Cari
               </button>
-              <button
-                onClick={exportToExcel}
-                style={{ background: "#10b759", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-              >
+              <button onClick={exportToExcel} className="btn-green-sm">
                 Export Excel
               </button>
             </div>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
-            <h4 style={{ fontSize: 18, color: "#111827", marginBottom: 12, fontWeight: 700 }}>Target IKU dan PK</h4>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+          <div className="table-wrapper">
+            <h4 className="section-heading">Target IKU dan PK</h4>
+            <table className="table-validasi">
               <thead>
                 <tr>
-                  <th style={tableHeaderStyle}>Tenggat</th>
-                  <th style={tableHeaderStyle}>Target</th>
-                  <th style={tableHeaderStyle}>Sasaran Strategis</th>
-                  <th style={{ ...tableHeaderStyle, textAlign: "center" }}>Capaian</th>
-                  <th style={{ ...tableHeaderStyle, textAlign: "center" }}>Aksi</th>
+                  <th>Tenggat</th>
+                  <th>Target</th>
+                  <th>Sasaran Strategis</th>
+                  <th className="text-center">Capaian</th>
+                  <th className="text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {shownRows.length > 0 ? (
-                  shownRows.map((item) => (
-                    <tr key={item.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                      <td style={{ padding: "12px 14px", color: "#2563eb", fontWeight: 600 }}>{item.tenggat}</td>
-                      <td style={{ padding: "12px 14px", color: "#374151" }}>{item.target}</td>
-                      <td style={{ padding: "12px 14px", color: "#4b5563" }}>{item.sasaranStrategis}</td>
-                      <td style={{ padding: "12px 14px", textAlign: "center", color: "#111827", fontWeight: 700 }}>{item.capaian}%</td>
-                      <td style={{ padding: "12px 14px", textAlign: "center" }}>
-                        <button
-                          onClick={() => handleValidate(item.id)}
-                          style={{
-                            backgroundColor: "#ecfdf5",
-                            color: "#16a34a",
-                            padding: "4px 10px",
-                            borderRadius: 4,
-                            border: "1px solid #86efac",
-                            cursor: "pointer",
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Validasi
-                        </button>
+                {filteredData.length > 0 ? (
+                  filteredData.map((item) => (
+                    <tr key={item.id}>
+                      <td className="td-year">{item.tenggat}</td>
+                      <td>{item.target}</td>
+                      <td className="td-gray">{item.sasaranStrategis}</td>
+                      <td className="td-center-bold">{item.capaian}</td>
+                      <td className="text-center">
+                        {item.status !== "validated" ? (
+                          <button
+                            onClick={() => handleValidate(item.id)}
+                            className="btn-validate-green"
+                          >
+                            Validasi
+                          </button>
+                        ) : (
+                          <span className="status-validated">Tervalidasi</span>
+                        )}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "#9ca3af" }}>
+                    <td colSpan={5} className="td-empty-row">
                       Tidak ada data untuk divalidasi
                     </td>
                   </tr>

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { getIndikator, createIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, Indikator } from "../../lib/api";
+import { toast } from "sonner";
 
 
 // Type/interface definitions
@@ -232,10 +233,11 @@ export default function MasterIndikatorContent() {
     setDeleteLoading(true);
     try {
       await deleteAllIndikator();
+      toast.success("Semua data indikator berhasil dihapus.");
       setConfirmDeleteOpen(false);
       refreshList();
     } catch (err) {
-      alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setDeleteLoading(false);
     }
@@ -243,13 +245,13 @@ export default function MasterIndikatorContent() {
 
   const handleSubmit = async () => {
     if (formMode === "baru") {
-      if (!nomor.trim() || !sasaranStrategis.trim()) { alert("Nomor dan Sasaran Strategis wajib diisi."); return; }
-      if (!targetUniversitas || isNaN(Number(targetUniversitas))) { alert("Target Universitas wajib diisi dengan angka."); return; }
-      if (!tenggat) { alert("Pilih Tenggat (Triwulan) terlebih dahulu."); return; }
+      if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Strategis wajib diisi."); return; }
+      if (!targetUniversitas || isNaN(Number(targetUniversitas))) { toast.error("Target Universitas wajib diisi dengan angka."); return; }
+      if (!tenggat) { toast.error("Pilih Tenggat (Triwulan) terlebih dahulu."); return; }
       for (const g of groups) {
-        if (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim()) { alert("Kode dan nama Indikator Kinerja Kegiatan wajib diisi."); return; }
+        if (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim()) { toast.error("Kode dan nama Indikator Kinerja Kegiatan wajib diisi."); return; }
         for (const s of g.subItems) {
-          if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { alert("Kode dan nama Sub Indikator wajib diisi."); return; }
+          if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { toast.error("Kode dan nama Sub Indikator wajib diisi."); return; }
         }
       }
       setSubmitLoading(true);
@@ -269,21 +271,21 @@ export default function MasterIndikatorContent() {
             });
           }
         }
-        // Save target universitas at level 0
         await upsertTargetUniversitas(level0.id, targetTahun, Number(targetUniversitas), tenggat);
+        toast.success("Indikator berhasil disimpan.");
         resetForm(); setShowForm(false); refreshList();
       } catch (err) {
-        alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+        toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
       } finally { setSubmitLoading(false); }
 
     } else {
-      if (selectedLevel0Id === "") { alert("Pilih Sasaran Strategis terlebih dahulu."); return; }
+      if (selectedLevel0Id === "") { toast.error("Pilih Sasaran Strategis terlebih dahulu."); return; }
       const parentLevel0 = indikatorList.find((i) => i.id === selectedLevel0Id);
       if (!parentLevel0) return;
       for (const g of groups) {
-        if (g.existingLevel1Id === null && (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim())) { alert("Kode dan nama Indikator Kinerja Kegiatan baru wajib diisi."); return; }
+        if (g.existingLevel1Id === null && (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim())) { toast.error("Kode dan nama Indikator Kinerja Kegiatan baru wajib diisi."); return; }
         for (const s of g.subItems) {
-          if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { alert("Kode dan nama Sub Indikator wajib diisi."); return; }
+          if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { toast.error("Kode dan nama Sub Indikator wajib diisi."); return; }
         }
       }
       setSubmitLoading(true);
@@ -308,9 +310,10 @@ export default function MasterIndikatorContent() {
             });
           }
         }
+        toast.success("Indikator berhasil ditambahkan.");
         resetForm(); setShowForm(false); refreshList();
       } catch (err) {
-        alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+        toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
       } finally { setSubmitLoading(false); }
     }
   };
@@ -346,7 +349,7 @@ export default function MasterIndikatorContent() {
   const handleEditSave = async () => {
     if (!editRow) return;
     if (!editTargetUniversitas || isNaN(Number(editTargetUniversitas))) {
-      alert("Target Universitas wajib diisi dengan angka."); return;
+      toast.error("Target Universitas wajib diisi dengan angka."); return;
     }
     setEditSaving(true);
     try {
@@ -356,10 +359,11 @@ export default function MasterIndikatorContent() {
         Number(editTargetUniversitas),
         editTenggat || undefined
       );
+      toast.success("Target berhasil diperbarui.");
       setEditModalOpen(false);
       setEditRow(null);
     } catch (err) {
-      alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setEditSaving(false);
     }

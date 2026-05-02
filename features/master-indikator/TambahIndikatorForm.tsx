@@ -7,31 +7,16 @@ import {
   getAllBaselineData,
   getBaselineByJenisData,
   upsertTargetUniversitas,
+  getIndikator,
   type BaselineData,
+  type Indikator,
 } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
+import { toast } from "sonner";
 
 const TRIWULAN_OPTIONS = ["Triwulan I", "Triwulan II", "Triwulan III", "Triwulan IV"];
 const TAHUN_OPTIONS = ["2024", "2025", "2026", "2027", "2028"];
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  border: "1px solid #e5e7eb",
-  borderRadius: 6,
-  padding: "8px 12px",
-  fontSize: 13,
-  color: "#374151",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  marginBottom: 5,
-  color: "#374151",
-  fontWeight: 600,
-};
 
 let _nextId = 1;
 const nextId = () => _nextId++;
@@ -86,11 +71,24 @@ export default function TambahIndikatorForm() {
   const [baselineOptions, setBaselineOptions] = useState<BaselineData[]>([]);
   const debounceRefs = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
+  // append-to-existing mode
+  const [mode, setMode] = useState<"new" | "append">("new");
+  const [existingLevel0s, setExistingLevel0s] = useState<Indikator[]>([]);
+  const [selectedLevel0Id, setSelectedLevel0Id] = useState<number | null>(null);
+
   useEffect(() => {
     getAllBaselineData(targetTahun)
       .then(setBaselineOptions)
       .catch(() => setBaselineOptions([]));
   }, [targetTahun]);
+
+  useEffect(() => {
+    if (mode !== "append") return;
+    getIndikator(targetTahun)
+      .then((all) => setExistingLevel0s(all.filter((i) => i.level === 0 && i.jenis === jenis)))
+      .catch(() => setExistingLevel0s([]));
+    setSelectedLevel0Id(null);
+  }, [mode, targetTahun, jenis]);
 
   const addGroup = () => setGroups((prev) => [...prev, blankGroup()]);
   const removeGroup = (gid: number) =>
@@ -234,27 +232,35 @@ export default function TambahIndikatorForm() {
   };
 
   const handleSubmit = async () => {
-    if (!nomor.trim() || !sasaranStrategis.trim()) {
-      alert("Nomor dan Sasaran Strategis wajib diisi.");
-      return;
+    if (mode === "append") {
+      if (!selectedLevel0Id) {
+        toast.error("Pilih indikator yang ingin ditambahi level.");
+        return;
+      }
+    } else {
+      if (!nomor.trim() || !sasaranStrategis.trim()) {
+        toast.error("Nomor dan Sasaran Strategis wajib diisi.");
+        return;
+      }
+      const persen = Number(targetUniversitas);
+      if (!targetUniversitas || isNaN(persen) || persen < 0) {
+        toast.error("Target Universitas wajib diisi dengan angka positif.");
+        return;
+      }
+      if (!tenggat) {
+        toast.error("Pilih Tenggat (Triwulan) terlebih dahulu.");
+        return;
+      }
     }
-    const persen = Number(targetUniversitas);
-    if (!targetUniversitas || isNaN(persen) || persen < 0) {
-      alert("Target Universitas wajib diisi dengan angka positif.");
-      return;
-    }
-    if (!tenggat) {
-      alert("Pilih Tenggat (Triwulan) terlebih dahulu.");
-      return;
-    }
+
     for (const g of groups) {
       if (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim()) {
-        alert("Kode dan nama Indikator Kinerja Kegiatan wajib diisi.");
+        toast.error("Kode dan nama Indikator Kinerja Kegiatan wajib diisi.");
         return;
       }
       for (const s of g.subItems) {
         if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) {
-          alert("Kode dan nama Sub Indikator wajib diisi.");
+          toast.error("Kode dan nama Sub Indikator wajib diisi.");
           return;
         }
       }
@@ -262,25 +268,26 @@ export default function TambahIndikatorForm() {
 
     setSubmitLoading(true);
     try {
-      // 1. Buat indikator level 0 (Sasaran Strategis)
-      const level0 = await createIndikator({
-        jenis,
-        kode: nomor.trim(),
-        nama: sasaranStrategis.trim(),
-        tahun: targetTahun,
-        level: 0,
-        parentId: null,
-      });
+      let parentId: number;
 
-      // 2. Simpan target universitas + tenggat untuk level 0
-      await upsertTargetUniversitas(
-        level0.id,
-        targetTahun,
-        persen,
-        tenggat
-      );
+      if (mode === "append") {
+        parentId = selectedLevel0Id!;
+      } else {
+        // Buat indikator level 0 (Sasaran Strategis)
+        const level0 = await createIndikator({
+          jenis,
+          kode: nomor.trim(),
+          nama: sasaranStrategis.trim(),
+          tahun: targetTahun,
+          level: 0,
+          parentId: null,
+        });
+        const persen = Number(targetUniversitas);
+        await upsertTargetUniversitas(level0.id, targetTahun, persen, tenggat);
+        parentId = level0.id;
+      }
 
-      // 3. Buat indikator level 1, level 2, dan (jika PK) level 3
+      // Buat indikator level 1, level 2, dan (jika PK) level 3
       for (const g of groups) {
         const level1 = await createIndikator({
           jenis,
@@ -288,7 +295,7 @@ export default function TambahIndikatorForm() {
           nama: g.indikatorKinerja.trim(),
           tahun: targetTahun,
           level: 1,
-          parentId: level0.id,
+          parentId,
         });
         for (const s of g.subItems) {
           const level2 = await createIndikator({
@@ -317,10 +324,10 @@ export default function TambahIndikatorForm() {
         }
       }
 
-      alert("Berhasil menambah indikator!");
+      toast.success("Indikator berhasil ditambahkan!");
       router.push("/admin/master-indikator");
     } catch (err) {
-      alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSubmitLoading(false);
     }
@@ -328,240 +335,239 @@ export default function TambahIndikatorForm() {
 
   return (
     <PageTransition>
-      <div>
-    
-        <nav className="breadcrumb page" aria-label="Breadcrumb">
-          <button
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 600, fontSize: 13, color: "#FF7900" }}
-            onClick={() => router.push("/admin/master-indikator")}
-          >
+      <div className="form-page">
+
+        {/* Breadcrumb */}
+        <nav className="form-breadcrumb" aria-label="Breadcrumb">
+          <button className="form-breadcrumb__link" onClick={() => router.push("/admin/master-indikator")}>
             Master Indikator
           </button>
-          <span style={{ color: "#9ca3af", margin: "0 6px" }}>/</span>
-          <span style={{ color: "#16a34a", fontWeight: 600 }}>Form Tambah</span>
+          <span className="form-breadcrumb__sep">/</span>
+          <span className="form-breadcrumb__current">Form Tambah</span>
         </nav>
 
-            <div style={{ marginBottom: 24 }}>
-            <h3>Tambah Indikator Baru</h3>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Isi data berikut untuk membuat indikator kinerja baru.</p>
-          </div>
+        <h3 className="form-title">Tambah Indikator Baru</h3>
+        <p className="form-subtitle">Isi data berikut untuk membuat indikator kinerja baru.</p>
 
-          {/* === LEVEL 0: Sasaran Strategis === */}
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "20px 20px 20px 20px", marginBottom: 24, borderLeft: "4px solid #f59e0b" }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: "#92400e", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-              Level 0 — Sasaran Strategis
-            </p>
+        {/* Mode toggle */}
+        <div className="form-mode-toggle">
+          <button
+            type="button"
+            className={mode === "new" ? "form-mode-btn form-mode-btn--active" : "form-mode-btn"}
+            onClick={() => setMode("new")}
+          >
+            Buat Baru
+          </button>
+          <button
+            type="button"
+            className={mode === "append" ? "form-mode-btn form-mode-btn--active" : "form-mode-btn"}
+            onClick={() => setMode("append")}
+          >
+            Tambah ke Yang Ada
+          </button>
+        </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Jenis Indikator</label>
-                <select value={jenis} onChange={(e) => setJenis(e.target.value)} style={inputStyle}>
-                  <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-                  <option value="PK">Perjanjian Kerja (PK)</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Tahun Target</label>
-                <select value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)} style={inputStyle}>
-                  {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Tenggat Waktu</label>
-                <select value={tenggat} onChange={(e) => setTenggat(e.target.value)} style={inputStyle}>
+        {/* Jenis + Tahun always visible */}
+        <div className="form-section form-section--amber">
+          <p className="form-section__label form-section__label--amber">
+            {mode === "append" ? "Pilih Indikator" : "Level 0 — Sasaran Strategis"}
+          </p>
+
+          {/* Jenis + Tahun row — shown in both modes */}
+          <div className="form-row form-row--3" style={{ marginBottom: mode === "append" ? 14 : undefined }}>
+            <div className="form-field">
+              <label>Jenis Indikator</label>
+              <select className="form-input" value={jenis} onChange={(e) => setJenis(e.target.value)}>
+                <option value="IKU">Indikator Kinerja Utama (IKU)</option>
+                <option value="PK">Perjanjian Kerja (PK)</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label>Tahun Target</label>
+              <select className="form-input" value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)}>
+                {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            {mode === "new" && (
+              <div className="form-field">
+                <label>Tenggat Waktu</label>
+                <select className="form-input" value={tenggat} onChange={(e) => setTenggat(e.target.value)}>
                   <option value="">-- Pilih Tenggat --</option>
                   {TRIWULAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-            </div>
+            )}
+          </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px", gap: 14 }}>
-              <div>
-                <label style={labelStyle}>Nomor / Kode</label>
-                <input type="text" value={nomor} onChange={(e) => setNomor(e.target.value)} placeholder="contoh: 1" style={inputStyle} />
+          {/* Append mode: pick existing level-0 */}
+          {mode === "append" && (
+            <div className="form-field">
+              <label>Indikator / Sasaran Strategis yang Ada</label>
+              <select
+                className="form-input"
+                value={selectedLevel0Id ?? ""}
+                onChange={(e) => setSelectedLevel0Id(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">-- Pilih Indikator --</option>
+                {existingLevel0s.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.kode} — {i.nama}
+                  </option>
+                ))}
+              </select>
+              {existingLevel0s.length === 0 && (
+                <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 6 }}>
+                  Tidak ada indikator {jenis} untuk tahun {targetTahun}.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* New mode: full level-0 fields */}
+          {mode === "new" && (
+            <div className="form-row form-row--kode-target form-row--last">
+              <div className="form-field">
+                <label>Nomor / Kode</label>
+                <input className="form-input" type="text" value={nomor} onChange={(e) => setNomor(e.target.value)} placeholder="contoh: 1" />
               </div>
-              <div>
-                <label style={labelStyle}>Sasaran Strategis</label>
-                <input type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" style={inputStyle} />
+              <div className="form-field">
+                <label>Sasaran Strategis</label>
+                <input className="form-input" type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
               </div>
-              <div>
-                <label style={labelStyle}>Target Universitas</label>
+              <div className="form-field">
+                <label>Target Universitas</label>
                 <input
+                  className="form-input"
                   type="number"
                   min={0}
                   value={targetUniversitas}
-                  onChange={(e) => {
-                    const v = Math.max(0, Number(e.target.value));
-                    setTargetUniversitas(String(v));
-                  }}
+                  onChange={(e) => setTargetUniversitas(String(Math.max(0, Number(e.target.value))))}
                   placeholder="contoh: 100"
-                  style={inputStyle}
                 />
               </div>
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* === LEVEL 1 & 2 === */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: "#374151", margin: 0, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-              Level 1 &amp; Level 2 — Indikator Kinerja
-            </p>
-            <button
-              type="button"
-              onClick={addGroup}
-              style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 6, padding: "5px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-            >
-              + Tambah Level 1
-            </button>
-          </div>
+        {/* === LEVEL 1 & 2 === */}
+        <div className="form-section-header">
+          <p className="form-section__label" style={{ margin: 0 }}>Level 1 &amp; Level 2 — Indikator Kinerja</p>
+          <button type="button" className="form-add-btn" onClick={addGroup}>+ Tambah Level 1</button>
+        </div>
 
-          {groups.map((group, gIdx) => (
-            <div key={group.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, marginBottom: 18, background: "#fff" }}>
-              {/* Level 1 Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <span style={{ display: "inline-block", background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "3px 12px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Level 1 #{gIdx + 1} — Indikator Kinerja Kegiatan
-                </span>
-                {groups.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeGroup(group.id)}
-                    style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 6, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-                  >
-                    Hapus
-                  </button>
-                )}
+        {groups.map((group, gIdx) => (
+          <div key={group.id} className="form-section form-section--white">
+            {/* Level 1 Header */}
+            <div className="form-section-header">
+              <span className="form-badge form-badge--blue">Level 1 #{gIdx + 1} — Indikator Kinerja Kegiatan</span>
+              {groups.length > 1 && (
+                <button type="button" className="form-remove-btn" onClick={() => removeGroup(group.id)}>Hapus</button>
+              )}
+            </div>
+
+            <div className="form-row form-row--kode">
+              <div className="form-field">
+                <label>Kode</label>
+                <input className="form-input" type="text" value={group.kodeIndikator} onChange={(e) => updateGroup(group.id, "kodeIndikator", e.target.value)} placeholder={`${nomor || "1"}.${gIdx + 1}`} />
               </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 14, marginBottom: 16 }}>
-                <div>
-                  <label style={labelStyle}>Kode</label>
-                  <input type="text" value={group.kodeIndikator} onChange={(e) => updateGroup(group.id, "kodeIndikator", e.target.value)} placeholder={`${nomor || "1"}.${gIdx + 1}`} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Nama Indikator Kinerja Kegiatan</label>
-                  <input type="text" value={group.indikatorKinerja} onChange={(e) => updateGroup(group.id, "indikatorKinerja", e.target.value)} placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" style={inputStyle} />
-                </div>
-              </div>
-
-              {/* Level 2 label */}
-              <div style={{ marginBottom: 10 }}>
-                <span style={{ display: "inline-block", background: "#f0fdf4", color: "#15803d", fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Level 2 — Sub Indikator
-                </span>
-              </div>
-
-              {group.subItems.map((sub, sIdx) => (
-                <div key={sub.id} style={{ background: "#f9fafb", borderRadius: 8, padding: "12px 14px", marginBottom: 10, border: "1px solid #f3f4f6" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12, marginBottom: 10 }}>
-                    <div>
-                      <label style={labelStyle}>Kode Sub</label>
-                      <input type="text" value={sub.kodeSubIndikator} onChange={(e) => updateSubItem(group.id, sub.id, "kodeSubIndikator", e.target.value)} placeholder={`${group.kodeIndikator || `${nomor || "1"}.${gIdx + 1}`}.${sIdx + 1}`} style={inputStyle} />
-                    </div>
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <div style={{ flex: 1 }}>
-                        <label style={labelStyle}>Nama Sub Indikator</label>
-                        <input type="text" value={sub.subIndikatorKinerja} onChange={(e) => updateSubItem(group.id, sub.id, "subIndikatorKinerja", e.target.value)} placeholder="contoh: Lulusan bekerja dalam 6 bulan" style={inputStyle} />
-                      </div>
-                      {group.subItems.length > 1 && (
-                        <button type="button" onClick={() => removeSubItem(group.id, sub.id)} style={{ alignSelf: "flex-end", background: "none", border: "none", color: "#dc2626", fontSize: 18, cursor: "pointer", paddingBottom: 6, lineHeight: 1 }}>−</button>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Jenis Data (untuk baseline)</label>
-                      <select
-                        value={sub.jenisData}
-                        onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)}
-                        style={inputStyle}
-                      >
-                        <option value="">-- Pilih Jenis Data --</option>
-                        {baselineOptions.map((b) => (
-                          <option key={b.id} value={b.jenisData}>
-                            {b.jenisData} {b.keterangan ? `(${b.keterangan})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ minWidth: 140 }}>
-                      <label style={labelStyle}>Baseline ({targetTahun})</label>
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, background: "#f3f4f6", color: sub.baseline !== null ? "#1f2937" : "#9ca3af", minHeight: 36 }}>
-                        {sub.baselineLoading ? "Memuat..." : sub.baseline !== null ? (typeof sub.baseline === "number" ? sub.baseline.toLocaleString("id-ID") : sub.baseline) : "—"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Level 3 — hanya tampil jika PK */}
-                  {jenis === "PK" && (
-                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #e5e7eb" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <span style={{ display: "inline-block", background: "#fdf4ff", color: "#7e22ce", fontSize: 10, fontWeight: 800, padding: "2px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          Level 3 — Rincian
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => addLevel3(group.id, sub.id)}
-                          style={{ background: "none", border: "1px dashed #d8b4fe", color: "#7e22ce", borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer" }}
-                        >
-                          + Tambah Level 3
-                        </button>
-                      </div>
-                      {(sub.level3Items ?? []).map((l3, l3Idx) => (
-                        <div key={l3.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr auto", gap: 10, marginBottom: 8, alignItems: "flex-end" }}>
-                          <div>
-                            <label style={{ ...labelStyle, fontSize: 11, color: "#7e22ce" }}>Kode L3</label>
-                            <input
-                              type="text"
-                              value={l3.kode}
-                              onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "kode", e.target.value)}
-                              placeholder={`${sub.kodeSubIndikator || "x.x.x"}.${l3Idx + 1}`}
-                              style={{ ...inputStyle, fontSize: 12 }}
-                            />
-                          </div>
-                          <div>
-                            <label style={{ ...labelStyle, fontSize: 11, color: "#7e22ce" }}>Nama Rincian</label>
-                            <input
-                              type="text"
-                              value={l3.nama}
-                              onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "nama", e.target.value)}
-                              placeholder="contoh: Rincian detail kegiatan"
-                              style={{ ...inputStyle, fontSize: 12 }}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeLevel3(group.id, sub.id, l3.id)}
-                            disabled={(sub.level3Items ?? []).length <= 1}
-                            style={{ background: "none", border: "none", color: (sub.level3Items ?? []).length <= 1 ? "#d1d5db" : "#dc2626", fontSize: 18, cursor: sub.level3Items.length <= 1 ? "default" : "pointer", paddingBottom: 6, lineHeight: 1 }}
-                          >
-                            −
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" onClick={() => addSubItem(group.id)} style={{ background: "none", border: "1px dashed #d1d5db", color: "#6b7280", borderRadius: 6, padding: "4px 14px", fontSize: 12, cursor: "pointer" }}>
-                  + Sub Indikator
-                </button>
+              <div className="form-field">
+                <label>Nama Indikator Kinerja Kegiatan</label>
+                <input className="form-input" type="text" value={group.indikatorKinerja} onChange={(e) => updateGroup(group.id, "indikatorKinerja", e.target.value)} placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" />
               </div>
             </div>
-          ))}
 
-          {/* Action Buttons */}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 20, borderTop: "1px solid #f3f4f6", marginTop: 8 }}>
-            <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading} className="btn-outline">
-              Kembali
-            </button>
-            <button type="button" onClick={handleSubmit} disabled={submitLoading} className="btn-main" style={{ backgroundColor: submitLoading ? "#9ca3af" : undefined, cursor: submitLoading ? "not-allowed" : "pointer" }}>
-              {submitLoading ? "Menyimpan..." : "Simpan Indikator"}
-            </button>
+            {/* Level 2 label */}
+            <div style={{ marginBottom: 10 }}>
+              <span className="form-badge form-badge--green">Level 2 — Sub Indikator</span>
+            </div>
+
+            {group.subItems.map((sub, sIdx) => (
+              <div key={sub.id} className="form-sub-item">
+                <div className="form-row form-row--kode" style={{ marginBottom: 10 }}>
+                  <div className="form-field">
+                    <label>Kode Sub</label>
+                    <input className="form-input" type="text" value={sub.kodeSubIndikator} onChange={(e) => updateSubItem(group.id, sub.id, "kodeSubIndikator", e.target.value)} placeholder={`${group.kodeIndikator || `${nomor || "1"}.${gIdx + 1}`}.${sIdx + 1}`} />
+                  </div>
+                  <div className="form-sub-name-row">
+                    <div className="form-field">
+                      <label>Nama Sub Indikator</label>
+                      <input className="form-input" type="text" value={sub.subIndikatorKinerja} onChange={(e) => updateSubItem(group.id, sub.id, "subIndikatorKinerja", e.target.value)} placeholder="contoh: Lulusan bekerja dalam 6 bulan" />
+                    </div>
+                    {group.subItems.length > 1 && (
+                      <button type="button" className="form-remove-icon" onClick={() => removeSubItem(group.id, sub.id)}>−</button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-row--baseline">
+                  <div className="form-field">
+                    <label>Jenis Data (untuk baseline)</label>
+                    <select className="form-input" value={sub.jenisData} onChange={(e) => handleJenisDataChange(group.id, sub.id, e.target.value)}>
+                      <option value="">-- Pilih Jenis Data --</option>
+                      {baselineOptions.map((b) => (
+                        <option key={b.id} value={b.jenisData}>
+                          {b.jenisData} {b.keterangan ? `(${b.keterangan})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-baseline-wrapper">
+                    <label>Baseline ({targetTahun})</label>
+                    <div className="form-baseline" style={{ color: sub.baseline !== null ? "#1f2937" : "#9ca3af" }}>
+                      {sub.baselineLoading ? "Memuat..." : sub.baseline !== null ? (typeof sub.baseline === "number" ? sub.baseline.toLocaleString("id-ID") : sub.baseline) : "—"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Level 3 — hanya tampil jika PK */}
+                {jenis === "PK" && (
+                  <div className="form-level3-section">
+                    <div className="form-level3-header">
+                      <span className="form-badge form-badge--purple">Level 3 — Rincian</span>
+                      <button type="button" className="form-add-btn--l3" onClick={() => addLevel3(group.id, sub.id)}>
+                        + Tambah Level 3
+                      </button>
+                    </div>
+                    {(sub.level3Items ?? []).map((l3, l3Idx) => (
+                      <div key={l3.id} className="form-level3-row">
+                        <div className="form-field">
+                          <label className="form-label--purple">Kode L3</label>
+                          <input className="form-input form-input--sm" type="text" value={l3.kode} onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "kode", e.target.value)} placeholder={`${sub.kodeSubIndikator || "x.x.x"}.${l3Idx + 1}`} />
+                        </div>
+                        <div className="form-field">
+                          <label className="form-label--purple">Nama Rincian</label>
+                          <input className="form-input form-input--sm" type="text" value={l3.nama} onChange={(e) => updateLevel3(group.id, sub.id, l3.id, "nama", e.target.value)} placeholder="contoh: Rincian detail kegiatan" />
+                        </div>
+                        <button type="button" className="form-remove-icon" onClick={() => removeLevel3(group.id, sub.id, l3.id)} disabled={(sub.level3Items ?? []).length <= 1}>−</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="form-sub-footer">
+              <button type="button" className="form-add-btn--sub" onClick={() => addSubItem(group.id)}>+ Sub Indikator</button>
+            </div>
           </div>
+        ))}
+
+        {/* Action Buttons */}
+        <div className="form-actions">
+          <button type="button" className="btn-outline" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}>
+            Kembali
+          </button>
+          <button
+            type="button"
+            className="btn-main"
+            onClick={handleSubmit}
+            disabled={submitLoading}
+            style={{ backgroundColor: submitLoading ? "#9ca3af" : undefined, cursor: submitLoading ? "not-allowed" : "pointer" }}
+          >
+            {submitLoading ? "Menyimpan..." : "Simpan Indikator"}
+          </button>
         </div>
-      </PageTransition>
-    );
-  }
+      </div>
+    </PageTransition>
+  );
+}

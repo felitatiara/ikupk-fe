@@ -9,6 +9,7 @@ import {
   deleteBaselineData,
   BaselineData,
 } from "../../lib/api";
+import { toast } from "sonner";
 
 const JENIS_DATA_OPTIONS = ["Dosen", "Tendik", "Mahasiswa", "Alumni", "Mitra"];
 
@@ -112,7 +113,7 @@ export default function MasterDataContent() {
 
   const handleSave = async () => {
     if (!modalData.jumlah || isNaN(Number(modalData.jumlah)) || Number(modalData.jumlah) < 0) {
-      alert("Jumlah harus berupa angka positif.");
+      toast.error("Jumlah harus berupa angka positif.");
       return;
     }
     setSaving(true);
@@ -132,10 +133,11 @@ export default function MasterDataContent() {
           keterangan: modalData.keterangan || null,
         });
       }
+      toast.success(modalMode === "tambah" ? "Data berhasil ditambahkan." : "Data berhasil diperbarui.");
       setModalOpen(false);
       fetchData();
     } catch (err) {
-      alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
     }
@@ -146,10 +148,11 @@ export default function MasterDataContent() {
     setDeleteLoading(true);
     try {
       await deleteBaselineData(deleteTarget.id);
+      toast.success("Data berhasil dihapus.");
       setDeleteTarget(null);
       fetchData();
     } catch (err) {
-      alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setDeleteLoading(false);
     }

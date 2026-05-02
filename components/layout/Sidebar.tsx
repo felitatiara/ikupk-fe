@@ -24,16 +24,20 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/pimpinan/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk" },
         { key: "validasi", label: "Validasi IKU PK", href: "/pimpinan/validasi-iku-pk" },
+        { key: "validasi_realisasi", label: "Validasi Realisasi", href: "/pimpinan/validasi-realisasi" },
         { key: "skp", label: "SKP", href: "/pimpinan/skp" },
       ];
     }
 
     // User biasa (level 2+): Beranda, Monitoring, IKU
+    // roleLevel < 4 = kaprodi/kajur yang punya bawahan → tampilkan Validasi Realisasi
     if (role === 'user') {
+      const isAtasan = (roleLevel ?? 4) < 4;
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/user/iku-pk" },
+        ...(isAtasan ? [{ key: "validasi_realisasi", label: "Validasi Realisasi", href: "/user/validasi-realisasi" }] : []),
         { key: "skp", label: "SKP", href: "/user/skp" },
       ];
     }
@@ -52,7 +56,6 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator" },
         { key: "master_user", label: "Master User", href: "/admin/master-user" },
         { key: "master_data", label: "Master Data", href: "/admin/master-data" },
-        { key: "master_skp", label: "Master SKP", href: "/admin/master-skp" },
       ] : []),
     ];
   };

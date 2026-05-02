@@ -21,7 +21,7 @@ export default function Home() {
           router.push('/user/dashboard');
         }
       } else {
-        router.push('/landing');
+        router.push('/auth/login');
       }
     }
   }, [user, loading, router]);

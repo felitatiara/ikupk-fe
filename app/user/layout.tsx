@@ -49,7 +49,7 @@ export default function UserLayout({
           minHeight: "calc(100vh - 68px)",
         }}
       >
-        <Sidebar role="user" unitNama={user?.unitNama} />
+        <Sidebar role="user" unitNama={user?.unitNama} roleLevel={user?.roleLevel} />
         <main
           style={{
             flex: 1,

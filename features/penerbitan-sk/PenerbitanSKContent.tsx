@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
 import { uploadSK, publishSK } from "@/services/skService";
+import { toast } from "sonner";
 
 export default function PenerbitanSKContent() {
   const [loading, setLoading] = useState(false);
@@ -18,7 +19,7 @@ export default function PenerbitanSKContent() {
       const formData = new FormData();
       formData.append('file', file);
       await uploadSK(formData);
-      alert('File SK berhasil diunggah');
+      toast.success("File SK berhasil diunggah.");
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {

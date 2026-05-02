@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
@@ -8,37 +8,11 @@ import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, ge
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
-// Popup sukses custom
-function SuccessPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-  return (
-    <div className="success-overlay">
-      <div className="success-box">
-        <div className="success-icon-wrapper">
-          <div className="success-icon-center">
-            <div className="success-icon-circle">
-              <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="27" cy="27" r="27" fill="#4ADE80" />
-                <path d="M16 28.5L24 36.5L38 20.5" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <svg className="success-sparkle-top" width="24" height="24"><circle cx="12" cy="12" r="12" fill="#FDE68A" /></svg>
-              <svg className="success-sparkle-bottom" width="16" height="16"><circle cx="8" cy="8" r="8" fill="#FDE68A" /></svg>
-            </div>
-          </div>
-          <div className="success-text">Data berhasil disimpan!</div>
-        </div>
-        <button onClick={onClose} className="success-btn">Ya</button>
-      </div>
-    </div>
-  );
-}
-
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
 
-export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan' }) {
+export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan'; pageTitle?: string; headerSlot?: React.ReactNode }) {
   const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
 
-  const [showSuccess, setShowSuccess] = useState(false);
   const { user: authUser, token } = useAuth();
   const [loading, setLoading] = useState(true);
 
@@ -56,7 +30,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   const [fileRepoNama, setFileRepoNama] = useState("");
   const [fileRepoIndikatorId, setFileRepoIndikatorId] = useState<number | null>(null);
   const [fileRepoPeriode, setFileRepoPeriode] = useState("");
-  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string; previewUrl?: string; ownerName?: string }[]>([]);
+  const [fileRepoFiles, setFileRepoFiles] = useState<{ no: number; namaFile: string; tanggal: string; sumber: string; previewUrl?: string; ownerName?: string; ownerEmail?: string }[]>([]);
   const [fileRepoLoading, setFileRepoLoading] = useState(false);
   const [fileRepoSubmitting, setFileRepoSubmitting] = useState(false);
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
@@ -65,27 +39,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
+  // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
+  const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
   const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [jenis, setJenis] = useState("IKU");
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
-
-  // Local realisasi: subId → fileCount (dari repository). Persisted in localStorage.
-  const [localRealisasi, setLocalRealisasi] = useState<Record<number, number>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = localStorage.getItem('ikupk_realisasi');
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  });
-
-  const saveRealisasi = (subId: number, fileCount: number) => {
-    setLocalRealisasi(prev => {
-      const next = { ...prev, [subId]: fileCount };
-      try { localStorage.setItem('ikupk_realisasi', JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
 
   const unitId = authUser?.roleId;
 
@@ -97,6 +56,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   useEffect(() => {
     if (!unitId) return;
     let cancelled = false;
+    const isAdmin = displayRole === 'admin';
 
     const fetchPromise = isTopLevel
       ? getIndikatorGrouped(jenis, tahun, unitId)
@@ -107,6 +67,16 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     fetchPromise
       .then((d) => { if (!cancelled) { setGroupedData(d); setLoading(false); } })
       .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
+
+    // Dekan/WD (isTopLevel non-admin) mungkin juga menerima disposisi dari Kaprodi
+    if (isTopLevel && !isAdmin && authUser?.id) {
+      getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
+        .then((d) => { if (!cancelled) setReceivedGroupedData(d); })
+        .catch(() => { if (!cancelled) setReceivedGroupedData([]); });
+    } else if (!isTopLevel) {
+      setReceivedGroupedData([]);
+    }
+
     return () => { cancelled = true; };
   }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel]);
 
@@ -138,6 +108,16 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
       } else if (authUser?.id) {
         // Dosen (level 4): bawahan langsung via user_relations
         users = await getRelatedUsersFor(authUser.id);
+      }
+      // Non-top-level users yang menerima disposisi bisa disposisi ke diri sendiri
+      if (authUser && roleLevel >= 2 && roleLevel <= 3) {
+        const selfEntry: UnitUser = {
+          id: authUser.id,
+          nama: `${authUser.nama ?? authUser.email} (Saya sendiri)`,
+          email: authUser.email ?? '',
+          role: authUser.role ?? '',
+        };
+        users = [selfEntry, ...users];
       }
       setUnitUsers(users);
     } catch {
@@ -199,7 +179,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           const d = await getIndikatorGrouped(jenis, tahun, unitId);
           setGroupedData(d);
         }
-        setShowSuccess(true);
+        toast.success("Disposisi berhasil disimpan.");
       }
     } catch {
       toast.error("Gagal menyimpan disposisi");
@@ -218,7 +198,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     `September ${tahun} - Desember ${tahun}`,
   ];
 
-  // Dosen (level 4) hanya lihat file sendiri; atasan lihat semua file dari bawahan.
   const isDosen = roleLevel >= 4;
 
   const fetchRepoFiles = (indikatorId: number, asAtasan: boolean) => {
@@ -226,9 +205,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setFileRepoLoading(true);
     setFileRepoError(null);
     setFileRepoFiles([]);
-    const fetcher = asAtasan
-      ? getAllRealisasiFiles(indikatorId, token)
-      : getRealisasiFiles(indikatorId, token);
+    const fetcher = asAtasan ? getAllRealisasiFiles(indikatorId, token) : getRealisasiFiles(indikatorId, token);
     fetcher
       .then((result) => {
         const mapped = result.files.map((f, i) => ({
@@ -238,6 +215,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           sumber: 'Repository FIK',
           previewUrl: f.preview_url,
           ownerName: f.ownerName || f.owner?.name,
+          ownerEmail: f.ownerEmail || f.owner?.email,
         }));
         setFileRepoFiles(mapped);
       })
@@ -245,8 +223,10 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
       .finally(() => setFileRepoLoading(false));
   };
 
-  const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = []) => {
-    const asAtasan = !isDosen;
+  // showAtasanView=false → tampilkan file milik sendiri (seperti dosen)
+  // showAtasanView=true  → tampilkan semua file bawahan (mode lihat progress)
+  const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = [], showAtasanView = false) => {
+    setFileRepoIsAtasan(showAtasanView);
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
     setFileRepoPeriode(periodeOptions[0]);
@@ -256,24 +236,27 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
     setFileRepoTarget(target);
     setFileRepoError(null);
     setFileRepoChildren(children);
-    setFileRepoIsAtasan(asAtasan);
     setFileRepoModalOpen(true);
-    fetchRepoFiles(indikatorId, asAtasan);
+    fetchRepoFiles(indikatorId, showAtasanView);
   };
 
-
   const handleFileRepoSubmit = async () => {
-    if (!fileRepoIndikatorId || !token) return;
+    if (!fileRepoIndikatorId || !token || !unitId) return;
     setFileRepoSubmitting(true);
     try {
       await submitFileRealisasiWithAuth({
-        indikatorId: fileRepoIndikatorId!,
+        indikatorId: fileRepoIndikatorId,
         tahun,
         periode: fileRepoPeriode,
         fileCount: fileRepoFiles.length,
       }, token);
       setFileRepoModalOpen(false);
-      setShowSuccess(true);
+      toast.success("Realisasi berhasil disimpan.");
+      // Re-fetch agar capaian (termasuk bawahan) langsung ter-update
+      if (authUser?.id) {
+        const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
+        setGroupedData(d);
+      }
     } catch {
       toast.error("Gagal menyimpan realisasi");
     } finally {
@@ -282,13 +265,119 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
   };
 
 
+  // Helper: render the "Input File" table — handles PK level 3
+  const renderInputFileTable = (data: IndikatorGrouped[], keyPrefix: string) => {
+    type FR = {
+      id: number; kode: string; nama: string; level: number;
+      sub: IndikatorGroupedSub;
+      isSubFirst: boolean; subTotalRows: number;
+      hasPkL3: boolean; showAction: boolean;
+      actionId: number; actionNama: string;
+    };
+    return (
+      <div className="table-wrapper">
+        <table className="table-universal">
+          <thead>
+            <tr>
+              <th className="col-w5 text-center">No</th>
+              <th className="col-w20">Sasaran Strategis</th>
+              <th>Sub Indikator Kinerja</th>
+              <th className="col-w10 text-center">Target Diterima</th>
+              <th className="col-w10 text-center">Capaian</th>
+              <th className="col-w15 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((group, groupIdx) => {
+              const flatRows: FR[] = [];
+              for (const sub of group.subIndikators) {
+                const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                let subTotal = 1;
+                if (hasPkL3) {
+                  for (const child of sub.children) subTotal += 1 + (child.children ?? []).length;
+                } else {
+                  subTotal += sub.children.length;
+                }
+                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: sub.id, actionNama: sub.nama });
+                for (const child of sub.children) {
+                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: false, actionId: child.id, actionNama: child.nama });
+                  if (hasPkL3) {
+                    for (const l3 of (child.children ?? [])) {
+                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama });
+                    }
+                  }
+                }
+              }
+              const totalRowSpan = flatRows.length;
+              return flatRows.map((row, rowIdx) => {
+                const disposisiJumlah = row.sub.disposisiJumlah ?? null;
+                const capaianBase = row.sub.realisasiJumlah ?? 0;
+                const capaianPct = (capaianBase > 0 && disposisiJumlah && disposisiJumlah > 0)
+                  ? (capaianBase >= disposisiJumlah ? '100%' : `${Math.round((capaianBase / disposisiJumlah) * 100)}%`)
+                  : '-';
+                const capaianClass = (capaianBase > 0 && disposisiJumlah)
+                  ? (capaianBase >= disposisiJumlah ? 'text-success' : 'text-warning')
+                  : 'text-dark';
+                return (
+                  <tr key={`${keyPrefix}-${group.id}-${rowIdx}`}>
+                    {rowIdx === 0 && (
+                      <>
+                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                        <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                      </>
+                    )}
+                    <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
+                      {row.kode} {row.nama}
+                    </td>
+                    {row.isSubFirst && (
+                      <>
+                        <td rowSpan={row.subTotalRows} className="td-cell td-cell--center td-cell--bold">
+                          {disposisiJumlah !== null ? disposisiJumlah : "-"}
+                        </td>
+                        <td rowSpan={row.subTotalRows} className={`td-cell td-cell--center fw-700 ${capaianClass}`}>
+                          {capaianPct}
+                        </td>
+                        {!row.hasPkL3 ? (
+                          <td rowSpan={row.subTotalRows} className="action-cell">
+                            <button
+                              onClick={() => handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), row.sub.children)}
+                              className="btn-small btn-small--green"
+                            >
+                              Input File
+                            </button>
+                          </td>
+                        ) : <td className="action-cell" />}
+                      </>
+                    )}
+                    {!row.isSubFirst && row.hasPkL3 && (
+                      <td className="action-cell">
+                        {row.showAction && (
+                          <button
+                            onClick={() => handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
+                            className="btn-small btn-small--green"
+                          >
+                            Input File
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              });
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div>
-      <SuccessPopup open={showSuccess} onClose={() => setShowSuccess(false)} />
       <PageTransition>
         <p className="ikupk-header-text">
-          Indikator Kinerja Utama &amp; Perjanjian Kerja
+          {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kerja'}
         </p>
+        {headerSlot}
 
         {/* DISPOSISI MODAL */}
         {disposisiModalOpen && (disposisiRow || disposisiSubId) && createPortal(
@@ -404,10 +493,12 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
           <div className="modal-overlay" onClick={() => setFileRepoModalOpen(false)}>
             <div className="modal-content modal-content--md" onClick={(e) => e.stopPropagation()}>
               <h3 className="modal-title modal-title--mb8">
-                File Repository — {fileRepoNama}
+                {fileRepoIsAtasan ? 'Progress Bawahan' : 'File Repository'} — {fileRepoNama}
               </h3>
               <p className="modal-subtitle">
-                File di bawah diambil otomatis dari folder repository yang sesuai dengan indikator ini.
+                {fileRepoIsAtasan
+                  ? 'Menampilkan semua file yang telah diunggah oleh bawahan untuk indikator ini.'
+                  : 'File di bawah diambil otomatis dari folder repository yang sesuai dengan indikator ini.'}
               </p>
 
               {/* Error state */}
@@ -426,97 +517,119 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
               {!fileRepoLoading && !fileRepoError && (
                 <>
-                  {/* Warning if files < target */}
-                  {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
-                    <div className="alert-banner--warning-lg">
-                      Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}).
-                      Mohon tambahkan file melalui{" "}
-                      <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">
-                        Repository.fik.upnvj.ac.id
-                      </a>
-                    </div>
-                  )}
-
-                  {/* Pilih Periode */}
-                  <div className="periode-group">
-                    <label className="periode-label">Pilih Periode</label>
-                    <select
-                      value={fileRepoPeriode}
-                      onChange={(e) => setFileRepoPeriode(e.target.value)}
-                      className="periode-select"
-                    >
-                      {periodeOptions.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Kriteria */}
                   {fileRepoChildren.length > 0 && (
                     <div className="alert-banner--success">
                       Menampilkan semua file dari {fileRepoChildren.length} kriteria: {fileRepoChildren.map((c) => c.kode).join(', ')}
                     </div>
                   )}
 
-                  {/* Info jumlah file */}
-                  <div className="file-info-row">
-                    <span className="file-info-label">File Ditemukan</span>
-                    <span className={
-                      fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'
-                    }>
-                      {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
-                      {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
-                    </span>
-                  </div>
-
-                  {/* File Table */}
-                  {fileRepoFiles.length > 0 ? (
-                    <div className="file-table-wrapper">
-                      <table className="file-table">
-                        <thead>
-                          <tr>
-                            <th className="col-no">No</th>
-                            <th className="text-left">Nama File</th>
-                            {fileRepoIsAtasan && (
-                              <th className="col-dosen">Dosen</th>
-                            )}
-                            <th className="col-tanggal">Tanggal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {fileRepoFiles.map((f) => (
-                            <tr key={f.no}>
-                              <td className="text-center">{f.no}</td>
-                              <td>
-                                {f.previewUrl ? (
-                                  <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a>
-                                ) : f.namaFile}
-                              </td>
-                              {fileRepoIsAtasan && (
-                                <td className="text-owner">{f.ownerName || '—'}</td>
-                              )}
-                              <td className="text-center">{f.tanggal}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="file-empty">
-                      <div className="file-empty-icon">📂</div>
-                      <div className="file-empty-text">
-                        {fileRepoIsAtasan ? 'Belum ada file yang diupload oleh bawahan untuk indikator ini' : 'Belum ada file di folder ini'}
+                  {/* ── ATASAN: semua file bawahan, dikelompokkan per dosen ── */}
+                  {fileRepoIsAtasan ? (
+                    <>
+                      <div className="file-info-row">
+                        <span className="file-info-label">Total File Bawahan</span>
+                        <span className={fileRepoFiles.length > 0 ? 'file-count--green' : 'file-count--muted'}>
+                          {fileRepoFiles.length} File dari {new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName)).size} dosen
+                          {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
+                        </span>
                       </div>
-                      {!fileRepoIsAtasan && (
-                        <div className="file-empty-hint">
-                          Upload file di{" "}
-                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">
-                            Repository FIK
-                          </a>
-                          {" "}pada folder dengan nama kode indikator ini
+
+                      {fileRepoFiles.length > 0 ? (
+                        <>
+                          {Array.from(new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName || 'Tidak diketahui'))).map((ownerKey) => {
+                            const ownerFiles = fileRepoFiles.filter(f => (f.ownerEmail || f.ownerName || 'Tidak diketahui') === ownerKey);
+                            const ownerName = ownerFiles[0]?.ownerName || ownerKey;
+                            return (
+                              <div key={ownerKey} className="owner-group">
+                                <div className="owner-group-header">
+                                  {ownerName} — {ownerFiles.length} file
+                                </div>
+                                <div className="file-table-wrapper" style={{ padding: 0 }}>
+                                  <table className="file-table" style={{ margin: 0 }}>
+                                    <tbody>
+                                      {ownerFiles.map((f, idx) => (
+                                        <tr key={idx}>
+                                          <td className="atasan-file-no">{idx + 1}</td>
+                                          <td className="atasan-file-name">
+                                            {f.previewUrl
+                                              ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a>
+                                              : f.namaFile}
+                                          </td>
+                                          <td className="atasan-file-date">{f.tanggal}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <div className="file-empty">
+                          <div className="file-empty-icon">📂</div>
+                          <div className="file-empty-text">Belum ada file yang diupload bawahan untuk indikator ini</div>
                         </div>
                       )}
+                    </>
+                  ) : (
+                  /* ── DOSEN: file sendiri ── */
+                  <>
+                    {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
+                      <div className="alert-banner--warning-lg">
+                        Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}). Mohon tambahkan file melalui{" "}
+                        <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">Repository.fik.upnvj.ac.id</a>
+                      </div>
+                    )}
+
+                    <div className="periode-group">
+                      <label className="periode-label">Pilih Periode</label>
+                      <select value={fileRepoPeriode} onChange={(e) => setFileRepoPeriode(e.target.value)} className="periode-select">
+                        {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
                     </div>
+
+                    <div className="file-info-row">
+                      <span className="file-info-label">File Ditemukan</span>
+                      <span className={fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'}>
+                        {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
+                        {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
+                      </span>
+                    </div>
+
+                    {fileRepoFiles.length > 0 ? (
+                      <div className="file-table-wrapper">
+                        <table className="file-table">
+                          <thead>
+                            <tr>
+                              <th className="col-no">No</th>
+                              <th className="text-left">Nama File</th>
+                              <th className="col-tanggal">Tanggal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fileRepoFiles.map((f) => (
+                              <tr key={f.no}>
+                                <td className="text-center">{f.no}</td>
+                                <td>{f.previewUrl ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a> : f.namaFile}</td>
+                                <td className="text-center">{f.tanggal}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="file-empty">
+                        <div className="file-empty-icon">📂</div>
+                        <div className="file-empty-text">Belum ada file di folder ini</div>
+                        <div className="file-empty-hint">
+                          Upload file di{" "}
+                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">Repository FIK</a>
+                          {" "}pada folder dengan nama kode indikator ini
+                        </div>
+                      </div>
+                    )}
+                  </>
                   )}
                 </>
               )}
@@ -527,7 +640,6 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                 <button onClick={() => setFileRepoModalOpen(false)} className="btn-secondary">
                   Tutup
                 </button>
-                {/* Atasan hanya melihat file bawahan — tidak perlu "Simpan Realisasi" */}
                 {!fileRepoIsAtasan && (
                   <button
                     onClick={handleFileRepoSubmit}
@@ -603,12 +715,24 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                         if (filteredSubs.length === 0) return [];
 
-                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; nilaiTarget: number | null }[] = [];
+                        type TF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subTotalRows: number };
+                        const flatRows: TF[] = [];
                         for (const sub of filteredSubs) {
-                          const childCount = 1 + sub.children.length;
-                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, nilaiTarget: sub.nilaiTarget });
+                          const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                          let subTotal = 1;
+                          if (hasPkL3) {
+                            for (const child of sub.children) subTotal += 1 + (child.children ?? []).length;
+                          } else {
+                            subTotal += sub.children.length;
+                          }
+                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal });
                           for (const child of sub.children) {
-                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, nilaiTarget: child.nilaiTarget });
+                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal });
+                            if (hasPkL3) {
+                              for (const l3 of (child.children ?? [])) {
+                                flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal });
+                              }
+                            }
                           }
                         }
                         const totalRowSpan = flatRows.length;
@@ -628,7 +752,7 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
                                   </td>
                                 </>
                               )}
-                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''}`}>
+                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
                                 {row.kode} {row.nama}
                               </td>
 
@@ -646,13 +770,23 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
                               {/* Disposisi — merged per Sub (Level 1) */}
                               {row.isSubFirst ? (
-                                <td rowSpan={row.subChildCount} className="action-cell">
-                                  <button
-                                    onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), null)}
-                                    className="btn-small btn-small--green"
-                                  >
-                                    Disposisi
-                                  </button>
+                                <td rowSpan={row.subTotalRows} className="action-cell">
+                                  <div className="action-cell-inner">
+                                    <button
+                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), null)}
+                                      className="btn-small btn-small--green btn-small--w100"
+                                    >
+                                      Disposisi
+                                    </button>
+                                    {displayRole !== 'admin' && (
+                                      <button
+                                        onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(group.targetAbsolut || 0), row.sub.children, true)}
+                                        className="btn-small btn-small--outline btn-small--w100"
+                                      >
+                                        Lihat Progress
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               ) : null}
                             </tr>
@@ -666,6 +800,15 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
 
               {!loading && groupedData.length === 0 && (
                 <p className="text-empty">Tidak ada data indikator</p>
+              )}
+
+              {/* Tabel Input File untuk Dekan/WD yang juga menerima disposisi dari Kaprodi */}
+              {!loading && receivedGroupedData.length > 0 && (
+                <>
+                  <div className="ikupk-section-divider" />
+                  <h4 className="ikupk-section-title">Target yang Didisposisikan kepada Anda</h4>
+                  {renderInputFileTable(receivedGroupedData, 'received')}
+                </>
               )}
             </>
           ) : (
@@ -699,90 +842,97 @@ export default function IKUPKContent({ role = 'user' }: { role?: 'admin' | 'user
               {loading && <p className="text-loading">Loading...</p>}
 
               {!loading && groupedData.length > 0 && (
-                <div className="table-wrapper">
-                  <table className="table-universal">
-                    <thead>
-                      <tr>
-                        <th className="col-w5 text-center">Nomor</th>
-                        <th className="col-w20">Sasaran Strategis</th>
-                        <th>Sub Indikator Kinerja Utama</th>
-                        <th className="col-w10 text-center">Target Disposisi</th>
-                        <th className="col-w10 text-center">Capaian</th>
-                        <th className="col-w20 text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groupedData.map((group, groupIdx) => {
-                        const flatRows: { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subChildCount: number; baselineJumlah: number | null; nilaiTarget: number | null; disposisiJumlah?: number | null; realisasiJumlah?: number | null }[] = [];
-                        for (const sub of group.subIndikators) {
-                          const childCount = 1 + sub.children.length;
-                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subChildCount: childCount, baselineJumlah: sub.baselineJumlah, nilaiTarget: sub.nilaiTarget });
-                          for (const child of sub.children) {
-                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subChildCount: childCount, baselineJumlah: child.baselineJumlah, nilaiTarget: child.nilaiTarget, disposisiJumlah: (child as IndikatorGroupedChild & { disposisiJumlah?: number | null }).disposisiJumlah ?? null });
-                          }
-                        }
-                        const totalRowSpan = flatRows.length;
+                <>
+                  {/* ── Tabel 1: Target untuk Input File ── */}
+                  <h4 className="ikupk-section-title">Target IKU dan PK</h4>
+                  {renderInputFileTable(groupedData, 'input')}
 
-                        return flatRows.map((row, rowIdx) => {
-                          const disposisiJumlah = row.sub.disposisiJumlah ?? null;
-                          // Capaian dari repository file count (localStorage), fallback ke API
-                          const realisasiJumlah = localRealisasi[row.sub.id] ?? (row.sub.realisasiJumlah ?? 0);
-
-                          return (
-                            <tr key={`${group.id}-${rowIdx}`}>
-                              {rowIdx === 0 && (
-                                <>
-                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">
-                                    {groupIdx + 1}
-                                  </td>
-                                  <td rowSpan={totalRowSpan} className="td-cell v-top">
-                                    {group.nama}
-                                  </td>
-                                </>
-                              )}
-                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''}`}>
-                                {row.kode} {row.nama}
-                              </td>
-                              {/* Target Disposisi & Capaian — merged per Sub (Level 1) */}
-                              {row.isSubFirst && (
-                                <>
-                                  <td rowSpan={row.subChildCount} className="td-cell td-cell--center td-cell--bold">
-                                    {disposisiJumlah !== null ? disposisiJumlah : "-"}
-                                  </td>
-                                  <td rowSpan={row.subChildCount} className={`td-cell td-cell--center fw-700 ${(realisasiJumlah > 0 && disposisiJumlah) ? (realisasiJumlah >= disposisiJumlah ? 'text-success' : 'text-warning') : 'text-dark'}`}>
-                                    {(realisasiJumlah > 0 && disposisiJumlah && disposisiJumlah > 0)
-                                      ? (realisasiJumlah >= disposisiJumlah ? '100%' : `${Math.round((realisasiJumlah / disposisiJumlah) * 100)}%`)
-                                      : '-'}
-                                  </td>
-                                </>
-                              )}
-
-                              {/* Aksi — merged per Sub (Level 1) */}
-                              {row.isSubFirst && (
-                                <td rowSpan={row.subChildCount} className="action-cell">
-                                  <div className="action-cell-inner">
-                                    <button
-                                      onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(disposisiJumlah || 0), row.sub.children)}
-                                      className="btn-small btn-small--green btn-small--w100"
-                                    >
-                                      Input File
-                                    </button>
-                                    <button
-                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(disposisiJumlah || 0), authUser?.id)}
-                                      className="btn-small btn-small--blue btn-small--w100"
-                                    >
-                                      {displayRole === 'dekan' ? 'Disposisi' : 'Redisposisi'}
-                                    </button>
-                                  </div>
-                                </td>
-                              )}
+                  {/* ── Tabel 2: Disposisi ke Bawahan (hanya untuk non-dosen) ── */}
+                  {!isDosen && (
+                    <>
+                      <div className="ikupk-section-divider" />
+                      <h4 className="ikupk-section-title">Disposisi Target IKU dan PK</h4>
+                      <div className="table-wrapper">
+                        <table className="table-universal">
+                          <thead>
+                            <tr>
+                              <th className="col-w5 text-center">No</th>
+                              <th className="col-w20">Sasaran Strategis</th>
+                              <th>Sub Indikator Kinerja</th>
+                              <th className="col-w10 text-center">Target Diterima</th>
+                              <th className="col-w15 text-center">Aksi</th>
                             </tr>
-                          );
-                        });
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                          </thead>
+                          <tbody>
+                            {groupedData.map((group, groupIdx) => {
+                              type DF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subTotalRows: number };
+                              const flatRows: DF[] = [];
+                              for (const sub of group.subIndikators) {
+                                const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                                let subTotal = 1;
+                                if (hasPkL3) {
+                                  for (const child of sub.children) subTotal += 1 + (child.children ?? []).length;
+                                } else {
+                                  subTotal += sub.children.length;
+                                }
+                                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal });
+                                for (const child of sub.children) {
+                                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal });
+                                  if (hasPkL3) {
+                                    for (const l3 of (child.children ?? [])) {
+                                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal });
+                                    }
+                                  }
+                                }
+                              }
+                              const totalRowSpan = flatRows.length;
+                              return flatRows.map((row, rowIdx) => {
+                                const hasPkL3 = row.sub.children.some((c: any) => (c.children ?? []).length > 0);
+                                const disposisiJumlah = row.sub.disposisiJumlah ?? null;
+                                return (
+                                  <tr key={`disp-${group.id}-${rowIdx}`}>
+                                    {rowIdx === 0 && (
+                                      <>
+                                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                                        <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                                      </>
+                                    )}
+                                    <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
+                                      {row.kode} {row.nama}
+                                    </td>
+                                    {row.isSubFirst && (
+                                      <>
+                                        <td rowSpan={row.subTotalRows} className="td-cell td-cell--center td-cell--bold">
+                                          {disposisiJumlah !== null ? disposisiJumlah : "-"}
+                                        </td>
+                                        <td rowSpan={row.subTotalRows} className="action-cell">
+                                          <div className="action-cell-inner">
+                                            <button
+                                              onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(disposisiJumlah || 0), authUser?.id)}
+                                              className="btn-small btn-small--blue btn-small--w100"
+                                            >
+                                              Redisposisi
+                                            </button>
+                                            <button
+                                              onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(disposisiJumlah || 0), hasPkL3 ? [] : row.sub.children, true)}
+                                              className="btn-small btn-small--outline btn-small--w100"
+                                            >
+                                              Lihat Progress
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </>
+                                    )}
+                                  </tr>
+                                );
+                              });
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </>
               )}
 
               {!loading && groupedData.length === 0 && (

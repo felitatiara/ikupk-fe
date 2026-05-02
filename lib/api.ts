@@ -36,6 +36,9 @@ export interface IndikatorGroupedLevel3 {
   tahun: string;
   targetId: number | null;
   nilaiTarget: number | null;
+  disposisiJumlah?: number | null;
+  realisasiJumlah?: number | null;
+  validRealisasiJumlah?: number | null;
 }
 
 export interface IndikatorGroupedChild {
@@ -63,6 +66,7 @@ export interface IndikatorGroupedSub {
   isPkBerbasisIku?: boolean;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
+  validRealisasiJumlah?: number | null;
   children: IndikatorGroupedChild[];
 }
 
@@ -76,6 +80,51 @@ export interface IndikatorGrouped {
   tenggat: string | null;
   baselineJumlah: number | null;
   subIndikators: IndikatorGroupedSub[];
+}
+
+// ── Laporan hierarki dengan realisasi (untuk export Excel) ─────────────────
+
+export interface LaporanChildNode {
+  id: number;
+  kode: string;
+  nama: string;
+  level: number;
+  nilaiTarget: number | null;
+  targetKualitas: number | null;
+  realisasiKuantitas: number;
+  realisasiKualitas: number | null;
+  persenCapaian: number;
+  baselineJumlah: number | null;
+  children: LaporanChildNode[];
+}
+
+export interface LaporanGroup {
+  id: number;
+  kode: string;
+  nama: string;
+  tahun: string;
+  persentaseTarget: number | null;
+  targetAbsolut: number | null;
+  baselineJumlah: number | null;
+  sdPersen: number;
+  subIndikators: LaporanChildNode[];
+}
+
+export async function getLaporanWithRealisasi(
+  jenis: string,
+  tahun: string,
+  roleId: number,
+  periode?: string,
+): Promise<LaporanGroup[]> {
+  let url = `${API_BASE_URL}/indikator/laporan?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&roleId=${roleId}`;
+  if (periode) url += `&periode=${encodeURIComponent(periode)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 export async function getIndikatorGrouped(jenis: string, tahun: string, roleId?: number): Promise<IndikatorGrouped[]> {
@@ -619,10 +668,10 @@ export async function deleteUserAccount(id: number): Promise<void> {
 }
 
 export interface FileRealisasiResult {
+  userRealisasi: { id: number; realisasiAngka: number; status: string };
   totalRealisasi: number;
-  targetFakultas: number | null;
-  targetUniversitas: number | null;
-  disposisiUsers: { userId: number; nama: string; jumlah: number; realisasi: number }[];
+  nilaiTarget: number | null;
+  disposisiUsers: { userId: number; nama: string; jumlahTarget: number; realisasi: number }[];
 }
 
 export async function submitFileRealisasi(data: {
@@ -915,4 +964,140 @@ export async function submitFileRealisasiWithAuth(
   });
   if (!res.ok) throw new Error('Failed to submit file realisasi');
   return res.json();
+}
+
+// ── Validasi Atasan ──────────────────────────────────────────────────────────
+
+export interface RealisasiSubmission {
+  id: number;
+  dosenId: number;
+  dosenNama: string;
+  dosenEmail: string;
+  fileCount: number;
+  validFileCount: number | null;
+  targetDosen: number | null;
+  status: string;
+  tahun: string | null;
+  periode: string | null;
+}
+
+/** Semua submission realisasi dosen untuk indikator tertentu (dipakai atasan untuk validasi) */
+export async function getRealisasiSubmissions(
+  indikatorId: number,
+  tahun: string,
+): Promise<RealisasiSubmission[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/submissions?indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/** Atasan menetapkan jumlah file valid pada submission dosen */
+export async function validateRealisasiAtasan(
+  id: number,
+  validFileCount: number,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/${id}/validate-atasan`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ validFileCount }),
+  });
+  if (!res.ok) throw new Error('Failed to validate submission');
+}
+
+export interface SubmissionPerIndikator {
+  indikator: { id: number; kode: string; nama: string; jenis: string; level: number };
+  submissions: RealisasiSubmission[];
+}
+
+/** Semua submission realisasi dari bawahan langsung seorang atasan, dikelompokkan per indikator */
+export async function getSubmissionsForAtasan(
+  userId: number,
+  tahun: string,
+): Promise<SubmissionPerIndikator[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/submissions-for-atasan?userId=${userId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+// ── SKP Bawahan (Atasan) ──────────────────────────────────────────────────────
+
+export interface SkpBawahanRealisasiRow {
+  id: number;
+  indikatorId: number;
+  kodeIndikator: string;
+  namaIndikator: string;
+  realisasiAngka: number;
+  validFileCount: number | null;
+  status: string;
+  tahun: string;
+  periode: string;
+}
+
+export interface SkpBawahanRow {
+  userId: number;
+  nama: string;
+  email: string;
+  totalIndikator: number;
+  validatedCount: number;
+  avgCapaian: number | null;
+  skpStatus: 'approved' | 'rejected' | 'pending';
+  realisasi: SkpBawahanRealisasiRow[];
+}
+
+/** SKP summary per-bawahan untuk atasan */
+export async function getSkpBawahan(atasanId: number, tahun: string): Promise<SkpBawahanRow[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/skp-bawahan?atasanId=${atasanId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export interface MySkpStatus {
+  status: 'approved' | 'rejected' | 'pending';
+  realisasi: SkpBawahanRealisasiRow[];
+  atasan: { nama: string; nip: string | null } | null;
+}
+
+/** Status SKP milik sendiri: status aggregate + daftar realisasi + info atasan */
+export async function getMySkpStatus(userId: number, tahun: string): Promise<MySkpStatus> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/my-skp?userId=${userId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return { status: 'pending', realisasi: [], atasan: null };
+    return res.json();
+  } catch {
+    return { status: 'pending', realisasi: [], atasan: null };
+  }
+}
+
+/** Approve atau reject semua realisasi bawahan untuk tahun tertentu */
+export async function approveBawahanSkp(
+  userId: number,
+  action: 'approved' | 'rejected',
+  tahun: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/skp-bawahan/${userId}/approve`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, tahun }),
+  });
+  if (!res.ok) throw new Error('Failed to approve/reject SKP bawahan');
 }
