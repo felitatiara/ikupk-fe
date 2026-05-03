@@ -8,6 +8,7 @@ import {
   getSkpBawahan,
   approveBawahanSkp,
   getMySkpStatus,
+  getAllRealisasiFiles,
   type SkpBawahanRow,
   type MySkpStatus,
 } from "@/lib/api";
@@ -25,6 +26,12 @@ interface SKPRow {
   targetKuantitas: number | null;
   realisasiKuantitas: number | null;
   capaianPersen: number | null;
+}
+
+interface FileEntry {
+  name: string;
+  preview_url: string;
+  download_url: string;
 }
 
 // ─────────────────────────────────────────────
@@ -67,9 +74,10 @@ function skpStatusBadge(status: 'approved' | 'rejected' | 'pending') {
 //  Component
 // ─────────────────────────────────────────────
 export default function SKPContent() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const roleLevel = user?.roleLevel ?? 4;
   const isDosen = roleLevel >= 4;
+  const isDekan = user?.role?.toLowerCase() === 'dekan' && roleLevel <= 1;
   const tahun = new Date().getFullYear().toString();
 
   // Own SKP
@@ -79,15 +87,28 @@ export default function SKPContent() {
   // Dosen: own SKP approval status
   const [mySkpStatus, setMySkpStatus] = useState<MySkpStatus | null>(null);
 
-  // Atasan: bawahan list
+  // Dekan: bawahan list
   const [bawahanList, setBawahanList] = useState<SkpBawahanRow[]>([]);
   const [bawahanLoading, setBawahanLoading] = useState(false);
 
-  // Atasan: approval modal
+  // Dekan: single approval modal
   const [selectedBawahan, setSelectedBawahan] = useState<SkpBawahanRow | null>(null);
   const [approving, setApproving] = useState(false);
 
-  // Signature pad
+  // Dekan: bulk selection
+  const [selectedForBulk, setSelectedForBulk] = useState<Set<number>>(new Set());
+  const [bulkSigOpen, setBulkSigOpen] = useState(false);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const bulkSigCanvasRef = useRef<HTMLCanvasElement>(null);
+  const bulkSigIsDrawing = useRef(false);
+  const [bulkSigHasDrawn, setBulkSigHasDrawn] = useState(false);
+
+  // File view in detail modal
+  const [viewingFilesForId, setViewingFilesForId] = useState<number | null>(null);
+  const [viewFiles, setViewFiles] = useState<FileEntry[]>([]);
+  const [viewFilesLoading, setViewFilesLoading] = useState(false);
+
+  // Signature pad (single approval)
   const [sigStep, setSigStep] = useState<'review' | 'sign'>('review');
   const [sigHasDrawn, setSigHasDrawn] = useState(false);
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,7 +120,7 @@ export default function SKPContent() {
     if (!user) return;
     fetchOwnSKP();
     if (isDosen) fetchMySkpStatus();
-    else fetchBawahanSKP();
+    if (isDekan) fetchBawahanSKP();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchOwnSKP() {
@@ -153,7 +174,7 @@ export default function SKPContent() {
   async function fetchBawahanSKP() {
     setBawahanLoading(true);
     try {
-      const data = await getSkpBawahan(user!.id, tahun);
+      const data = await getSkpBawahan(user!.id, tahun, true);
       setBawahanList(data);
     } catch (err) {
       console.error("Failed to fetch bawahan SKP:", err);
@@ -162,7 +183,7 @@ export default function SKPContent() {
     }
   }
 
-  // ── Signature pad helpers ──
+  // ── Signature pad helpers (single) ──
   useEffect(() => {
     if (sigStep !== 'sign') return;
     const canvas = sigCanvasRef.current;
@@ -177,6 +198,22 @@ export default function SKPContent() {
     ctx.lineJoin = 'round';
     setSigHasDrawn(false);
   }, [sigStep]);
+
+  // ── Signature pad helpers (bulk) ──
+  useEffect(() => {
+    if (!bulkSigOpen) return;
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    setBulkSigHasDrawn(false);
+  }, [bulkSigOpen]);
 
   function getSigPos(canvas: HTMLCanvasElement, clientX: number, clientY: number) {
     const rect = canvas.getBoundingClientRect();
@@ -245,10 +282,80 @@ export default function SKPContent() {
     setSigHasDrawn(false);
   }
 
+  // Bulk sig draw handlers
+  function bulkSigMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    bulkSigIsDrawing.current = true;
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getSigPos(canvas, e.clientX, e.clientY);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+
+  function bulkSigMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!bulkSigIsDrawing.current) return;
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getSigPos(canvas, e.clientX, e.clientY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setBulkSigHasDrawn(true);
+  }
+
+  function bulkSigMouseUp() { bulkSigIsDrawing.current = false; }
+
+  function bulkSigTouchStart(e: React.TouchEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const touch = e.touches[0];
+    const { x, y } = getSigPos(canvas, touch.clientX, touch.clientY);
+    bulkSigIsDrawing.current = true;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+
+  function bulkSigTouchMove(e: React.TouchEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    if (!bulkSigIsDrawing.current) return;
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const touch = e.touches[0];
+    const { x, y } = getSigPos(canvas, touch.clientX, touch.clientY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setBulkSigHasDrawn(true);
+  }
+
+  function clearBulkSig() {
+    const canvas = bulkSigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setBulkSigHasDrawn(false);
+  }
+
   function closeModal() {
     setSelectedBawahan(null);
     setSigStep('review');
     setSigHasDrawn(false);
+    setViewingFilesForId(null);
+    setViewFiles([]);
+  }
+
+  function closeBulkSig() {
+    setBulkSigOpen(false);
+    setBulkSigHasDrawn(false);
   }
 
   async function confirmApprove() {
@@ -257,102 +364,165 @@ export default function SKPContent() {
     await handleApprove("approved", sigDataUrl);
   }
 
-  function openSuratSKP(opts: {
+  async function confirmBulkApprove() {
+    if (!bulkSigCanvasRef.current) return;
+    const sigDataUrl = bulkSigHasDrawn ? bulkSigCanvasRef.current.toDataURL('image/png') : undefined;
+    setBulkApproving(true);
+    try {
+      const targets = bawahanList.filter(b => selectedForBulk.has(b.userId));
+      await Promise.all(targets.map(b => approveBawahanSkp(b.userId, 'approved', tahun)));
+      toast.success(`${targets.length} SKP berhasil disetujui.`);
+      generateBulkSuratSKP(targets, sigDataUrl);
+      setSelectedForBulk(new Set());
+      closeBulkSig();
+      fetchBawahanSKP();
+    } catch {
+      toast.error("Gagal memproses persetujuan massal.");
+    } finally {
+      setBulkApproving(false);
+    }
+  }
+
+  async function loadFilesForIndikator(indikatorId: number, bawahanEmail: string) {
+    if (!token) return;
+    setViewingFilesForId(indikatorId);
+    setViewFilesLoading(true);
+    setViewFiles([]);
+    try {
+      const result = await getAllRealisasiFiles(indikatorId, token);
+      const filtered = result.files.filter(f => {
+        const email = f.ownerEmail || f.owner?.email || '';
+        return email === bawahanEmail;
+      });
+      setViewFiles(filtered.map(f => ({ name: f.name, preview_url: f.preview_url, download_url: f.download_url })));
+    } catch {
+      setViewFiles([]);
+    } finally {
+      setViewFilesLoading(false);
+    }
+  }
+
+  const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+  function buildLetterBody(opts: {
     subjekNama: string;
     realisasiItems: { namaIndikator: string; realisasiAngka: number }[];
     signerNama: string;
     signerNip: string | null;
     sigDataUrl?: string;
-  }) {
-    const win = window.open("", "_blank", "width=800,height=900");
-    if (!win) return;
-    const tanggal = new Date().toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+    isLast?: boolean;
+  }): string {
     const indikatorLines = opts.realisasiItems
-      .map(
-        (r) =>
-          `<p style="margin:0 0 6px;line-height:1.8;color:#1a237e;">Dinyatakan bahwa <em>${r.namaIndikator}</em> dengan target <strong>${r.realisasiAngka}</strong> terpenuhi</p>`,
-      )
+      .map((r) => `<p style="margin:0 0 6px;line-height:1.8;color:#1a237e;">Dinyatakan bahwa <em>${r.namaIndikator}</em> dengan target <strong>${r.realisasiAngka}</strong> terpenuhi</p>`)
       .join("");
-
     const sigImg = opts.sigDataUrl
       ? `<img src="${opts.sigDataUrl}" style="max-height:56pt;max-width:180pt;display:block;margin:4pt auto;" />`
       : `<div style="height:56pt;"></div>`;
-
-    const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Surat SKP — ${opts.subjekNama}</title>
-  <style>
-    @page { size: A4; margin: 40mm 30mm 30mm 30mm; }
-    body { font-family: 'Times New Roman', serif; font-size: 12pt; color: #000; margin: 0; }
-    .wrap { padding: 0; }
-    .recipient { margin-bottom: 36pt; }
-    .recipient p { margin: 0; line-height: 1.7; color: #1a237e; font-weight: bold; }
-    .body { margin-bottom: 36pt; }
-    .body p { margin: 0 0 8pt; line-height: 1.8; text-align: justify; }
-    .closing { color: #000; line-height: 1.8; }
-    .signature-area { display: flex; justify-content: flex-end; margin-top: 48pt; }
-    .sig-box { text-align: center; min-width: 200pt; }
-    .sig-date { margin: 0 0 4pt; font-style: italic; color: #555; }
-    .sig-name { margin: 0; font-weight: bold; }
-    .sig-nip { margin: 0; font-size: 11pt; }
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-  </style>
-</head>
-<body>
+    const pageBreak = opts.isLast ? "" : `<div style="page-break-after:always;"></div>`;
+    return `
   <div class="wrap">
+    <p style="margin:0 0 8pt;font-size:11pt;color:#555;font-style:italic;">SKP — ${opts.subjekNama}</p>
     <div class="recipient">
       <p>Yth. Dekan</p>
       <p>Fakultas Ilmu Komputer</p>
       <p>Universitas Pembangunan Nasional &ldquo;Veteran&rdquo; Jakarta</p>
     </div>
-
     <div class="body">
       ${indikatorLines}
       <p class="closing" style="margin-top:12pt;">Demikian permohonan ini disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih.</p>
     </div>
-
     <div class="signature-area">
       <div class="sig-box">
-        <p class="sig-date">Jakarta, ${tanggal}</p>
+        <p class="sig-date">Jakarta, ${tanggalCetak}</p>
         ${sigImg}
         <p class="sig-name">${opts.signerNama}</p>
         <p class="sig-nip">NIP. ${opts.signerNip ?? "—"}</p>
       </div>
     </div>
   </div>
-  <script>window.onload = function(){ window.print(); }<\/script>
-</body>
+  ${pageBreak}`;
+  }
+
+  function downloadHtml(html: string, filename: string) {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function wrapLetters(bodies: string[], title: string): string {
+    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${title}</title>
+  <style>
+    @page { size: A4; margin: 40mm 30mm 30mm 30mm; }
+    body { font-family: 'Times New Roman', serif; font-size: 12pt; color: #000; margin: 0; }
+    .wrap { padding: 0 0 32pt; }
+    .recipient { margin-bottom: 36pt; }
+    .recipient p { margin: 0; line-height: 1.7; color: #1a237e; font-weight: bold; }
+    .body { margin-bottom: 36pt; }
+    .body p { margin: 0 0 8pt; line-height: 1.8; text-align: justify; }
+    .signature-area { display: flex; justify-content: flex-end; margin-top: 48pt; }
+    .sig-box { text-align: center; min-width: 200pt; }
+    .sig-date { margin: 0 0 4pt; font-style: italic; color: #555; }
+    .sig-name { margin: 0; font-weight: bold; }
+    .sig-nip { margin: 0; font-size: 11pt; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>${bodies.join("")}</body>
 </html>`;
-    win.document.write(html);
-    win.document.close();
   }
 
   function generateSuratSKP(bawahan: SkpBawahanRow, sigDataUrl?: string) {
-    openSuratSKP({
+    const body = buildLetterBody({
       subjekNama: bawahan.nama,
       realisasiItems: bawahan.realisasi,
       signerNama: user?.nama ?? "—",
       signerNip: user?.nip ?? null,
       sigDataUrl,
+      isLast: true,
     });
+    const html = wrapLetters([body], `SKP — ${bawahan.nama}`);
+    const safeName = bawahan.nama.replace(/[^a-zA-Z0-9]/g, "_");
+    downloadHtml(html, `SKP_${safeName}_${tahun}.html`);
   }
 
   function generateSuratSKPDosen() {
     if (!mySkpStatus) return;
-    openSuratSKP({
-      subjekNama: user?.nama ?? "—",
+    const nama = user?.nama ?? "—";
+    const body = buildLetterBody({
+      subjekNama: nama,
       realisasiItems: mySkpStatus.realisasi,
       signerNama: mySkpStatus.atasan?.nama ?? "—",
       signerNip: mySkpStatus.atasan?.nip ?? null,
+      isLast: true,
     });
+    const html = wrapLetters([body], `SKP — ${nama}`);
+    const safeName = nama.replace(/[^a-zA-Z0-9]/g, "_");
+    downloadHtml(html, `SKP_${safeName}_${tahun}.html`);
+  }
+
+  function generateBulkSuratSKP(targets: SkpBawahanRow[], sigDataUrl?: string) {
+    const bodies = targets.map((b, i) =>
+      buildLetterBody({
+        subjekNama: b.nama,
+        realisasiItems: b.realisasi,
+        signerNama: user?.nama ?? "—",
+        signerNip: user?.nip ?? null,
+        sigDataUrl,
+        isLast: i === targets.length - 1,
+      })
+    );
+    const html = wrapLetters(bodies, `SKP Massal — ${tahun}`);
+    downloadHtml(html, `SKP_Massal_${tahun}.html`);
   }
 
   async function handleApprove(action: "approved" | "rejected", sigDataUrl?: string) {
@@ -369,6 +539,24 @@ export default function SKPContent() {
       toast.error("Gagal memproses persetujuan.");
     } finally {
       setApproving(false);
+    }
+  }
+
+  function toggleBulkSelect(userId: number) {
+    setSelectedForBulk(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const approvable = bawahanList.filter(b => b.validatedCount >= b.totalIndikator && b.totalIndikator > 0);
+    if (selectedForBulk.size === approvable.length) {
+      setSelectedForBulk(new Set());
+    } else {
+      setSelectedForBulk(new Set(approvable.map(b => b.userId)));
     }
   }
 
@@ -424,6 +612,8 @@ export default function SKPContent() {
     selectedBawahan.validatedCount >= selectedBawahan.totalIndikator &&
     selectedBawahan.totalIndikator > 0;
 
+  const approvableCount = bawahanList.filter(b => b.validatedCount >= b.totalIndikator && b.totalIndikator > 0).length;
+
   // ─────────────── Render ───────────────
   return (
     <div>
@@ -470,7 +660,6 @@ export default function SKPContent() {
               ))}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-              {/* Tombol Cetak Surat SKP — hanya muncul jika disetujui atasan (dosen) */}
               {isDosen && mySkpStatus?.status === "approved" && (
                 <button
                   onClick={generateSuratSKPDosen}
@@ -488,7 +677,7 @@ export default function SKPContent() {
                     gap: 6,
                   }}
                 >
-                  🖨️ Cetak Surat SKP
+                  ⬇️ Unduh Surat SKP
                 </button>
               )}
               {isDosen && mySkpStatus?.status === "approved" && (
@@ -506,7 +695,6 @@ export default function SKPContent() {
                   Menunggu persetujuan atasan
                 </span>
               )}
-              {/* Tombol cetak tabel SKP biasa (non-dosen atau internal) */}
               {!isDosen && (
                 <>
                   <button
@@ -605,8 +793,8 @@ export default function SKPContent() {
           )}
         </div>
 
-        {/* ── Seksi Persetujuan SKP Bawahan (hanya untuk atasan) ── */}
-        {!isDosen && (
+        {/* ── Seksi Persetujuan SKP Bawahan (hanya untuk dekan) ── */}
+        {isDekan && (
           <div
             style={{
               backgroundColor: "white",
@@ -615,24 +803,70 @@ export default function SKPContent() {
               boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
             }}
           >
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>
-              Persetujuan SKP Bawahan
-            </h3>
-            <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 20, margin: "0 0 20px" }}>
-              Tinjau dan setujui SKP bawahan langsung Anda. Pastikan validasi realisasi sudah dilakukan sebelum memberikan persetujuan.
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 0 }}>
+                  Persetujuan SKP
+                </h3>
+                <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                  Tinjau dan tanda tangani SKP seluruh pegawai. Hanya tersedia setelah realisasi divalidasi oleh atasan masing-masing.
+                </p>
+              </div>
+              {selectedForBulk.size > 0 && (
+                <button
+                  onClick={() => setBulkSigOpen(true)}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: 8,
+                    border: "none",
+                    backgroundColor: "#FF7900",
+                    color: "white",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexShrink: 0,
+                  }}
+                >
+                  ✍️ Tanda Tangani Terpilih ({selectedForBulk.size})
+                </button>
+              )}
+            </div>
+
+            <div style={{ marginBottom: 16, marginTop: 16 }}>
+              {approvableCount > 0 && (
+                <button
+                  onClick={toggleSelectAll}
+                  style={{
+                    fontSize: 12,
+                    color: "#FF7900",
+                    background: "none",
+                    border: "1px solid #FF7900",
+                    borderRadius: 6,
+                    padding: "4px 12px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  {selectedForBulk.size === approvableCount ? "Batal Pilih Semua" : `Pilih Semua yang Siap (${approvableCount})`}
+                </button>
+              )}
+            </div>
 
             {bawahanLoading ? (
-              <p style={{ textAlign: "center", color: "#6b7280", padding: 32 }}>Memuat data bawahan…</p>
+              <p style={{ textAlign: "center", color: "#6b7280", padding: 32 }}>Memuat data…</p>
             ) : bawahanList.length === 0 ? (
               <p style={{ textAlign: "center", color: "#6b7280", padding: 32 }}>
-                Tidak ada bawahan langsung yang terdaftar.
+                Belum ada pegawai yang mengajukan realisasi untuk tahun {tahun}.
               </p>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
                   <thead>
                     <tr>
+                      <th style={{ ...thStyle, width: 40, textAlign: "center" }}>✓</th>
                       {["No", "Nama", "Total Indikator", "Tervalidasi", "Rata-rata Capaian", "Status SKP", "Aksi"].map(
                         (h) => <th key={h} style={thStyle}>{h}</th>
                       )}
@@ -641,8 +875,20 @@ export default function SKPContent() {
                   <tbody>
                     {bawahanList.map((b, i) => {
                       const cap = nilaiCapaian(b.avgCapaian);
+                      const isReady = b.validatedCount >= b.totalIndikator && b.totalIndikator > 0;
+                      const isChecked = selectedForBulk.has(b.userId);
                       return (
-                        <tr key={b.userId}>
+                        <tr key={b.userId} style={{ backgroundColor: isChecked ? "#fff7ed" : undefined }}>
+                          <td style={{ ...tdStyle, textAlign: "center" }}>
+                            {isReady && (
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleBulkSelect(b.userId)}
+                                style={{ cursor: "pointer", width: 16, height: 16 }}
+                              />
+                            )}
+                          </td>
                           <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
                           <td style={tdStyle}>
                             <p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p>
@@ -650,7 +896,7 @@ export default function SKPContent() {
                           </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>{b.totalIndikator}</td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
-                            <span style={{ color: b.validatedCount >= b.totalIndikator && b.totalIndikator > 0 ? "#16a34a" : "#d97706", fontWeight: 600 }}>
+                            <span style={{ color: isReady ? "#16a34a" : "#d97706", fontWeight: 600 }}>
                               {b.validatedCount} / {b.totalIndikator}
                             </span>
                           </td>
@@ -688,7 +934,7 @@ export default function SKPContent() {
                                   cursor: "pointer",
                                 }}
                               >
-                                🖨️ Cetak Surat
+                                ⬇️ Unduh Surat
                               </button>
                             )}
                           </td>
@@ -722,8 +968,8 @@ export default function SKPContent() {
                 backgroundColor: "white",
                 borderRadius: 14,
                 width: "100%",
-                maxWidth: 760,
-                maxHeight: "85vh",
+                maxWidth: 800,
+                maxHeight: "90vh",
                 display: "flex",
                 flexDirection: "column",
                 boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
@@ -776,25 +1022,90 @@ export default function SKPContent() {
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse" }}>
                         <thead>
-                          <tr>{["No", "Kode", "Nama Indikator", "Realisasi File", "File Valid", "Capaian"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                          <tr>{["No", "Kode", "Nama Indikator", "Realisasi File", "File Valid", "Capaian", "File"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
                         </thead>
                         <tbody>
                           {selectedBawahan.realisasi.map((r, i) => {
                             const capaian = r.validFileCount !== null && r.realisasiAngka > 0 ? Math.min((r.validFileCount / r.realisasiAngka) * 100, 100) : null;
                             const cap = nilaiCapaian(capaian);
+                            const isExpanded = viewingFilesForId === r.indikatorId;
                             return (
-                              <tr key={r.id}>
-                                <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
-                                <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, width: 80 }}>{r.kodeIndikator}</td>
-                                <td style={tdStyle}>{r.namaIndikator}</td>
-                                <td style={{ ...tdStyle, textAlign: "center" }}>{r.realisasiAngka}</td>
-                                <td style={{ ...tdStyle, textAlign: "center" }}>
-                                  {r.validFileCount !== null ? r.validFileCount : <span style={{ color: "#9ca3af" }}>Belum divalidasi</span>}
-                                </td>
-                                <td style={{ ...tdStyle, textAlign: "center", fontWeight: 700, color: cap.color }}>
-                                  {cap.nilai}{capaian !== null ? "%" : ""}
-                                </td>
-                              </tr>
+                              <React.Fragment key={r.id}>
+                                <tr>
+                                  <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
+                                  <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, width: 80 }}>{r.kodeIndikator}</td>
+                                  <td style={tdStyle}>{r.namaIndikator}</td>
+                                  <td style={{ ...tdStyle, textAlign: "center" }}>{r.realisasiAngka}</td>
+                                  <td style={{ ...tdStyle, textAlign: "center" }}>
+                                    {r.validFileCount !== null ? r.validFileCount : <span style={{ color: "#9ca3af" }}>Belum divalidasi</span>}
+                                  </td>
+                                  <td style={{ ...tdStyle, textAlign: "center", fontWeight: 700, color: cap.color }}>
+                                    {cap.nilai}{capaian !== null ? "%" : ""}
+                                  </td>
+                                  <td style={{ ...tdStyle, textAlign: "center" }}>
+                                    <button
+                                      onClick={() => {
+                                        if (isExpanded) {
+                                          setViewingFilesForId(null);
+                                          setViewFiles([]);
+                                        } else {
+                                          loadFilesForIndikator(r.indikatorId, selectedBawahan.email);
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "4px 10px",
+                                        borderRadius: 6,
+                                        border: "1px solid #6366f1",
+                                        backgroundColor: isExpanded ? "#6366f1" : "white",
+                                        color: isExpanded ? "white" : "#6366f1",
+                                        fontWeight: 600,
+                                        fontSize: 11,
+                                        cursor: "pointer",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {isExpanded ? "Tutup" : "Lihat File"}
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr>
+                                    <td colSpan={7} style={{ padding: "8px 16px", backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb" }}>
+                                      {viewFilesLoading ? (
+                                        <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>Memuat file…</p>
+                                      ) : viewFiles.length === 0 ? (
+                                        <p style={{ margin: 0, fontSize: 12, color: "#9ca3af" }}>Tidak ada file ditemukan untuk indikator ini.</p>
+                                      ) : (
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                          {viewFiles.map((f, fi) => (
+                                            <a
+                                              key={fi}
+                                              href={f.download_url || f.preview_url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 6,
+                                                padding: "6px 12px",
+                                                borderRadius: 6,
+                                                border: "1px solid #e5e7eb",
+                                                backgroundColor: "white",
+                                                color: "#1f2937",
+                                                fontSize: 12,
+                                                textDecoration: "none",
+                                                fontWeight: 500,
+                                              }}
+                                            >
+                                              📄 {f.name}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             );
                           })}
                         </tbody>
@@ -878,6 +1189,110 @@ export default function SKPContent() {
                     </button>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Modal Bulk Signature ── */}
+        {bulkSigOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 1100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 16,
+            }}
+            onClick={(e) => { if (e.target === e.currentTarget) closeBulkSig(); }}
+          >
+            <div
+              style={{
+                backgroundColor: "white",
+                borderRadius: 14,
+                width: "100%",
+                maxWidth: 640,
+                boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {/* Header */}
+              <div style={{ padding: "18px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>
+                    Tanda Tangan Massal SKP
+                  </h3>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
+                    {selectedForBulk.size} pegawai akan disetujui sekaligus
+                  </p>
+                </div>
+                <button onClick={closeBulkSig} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: "16px 24px" }}>
+                {/* Selected names */}
+                <div style={{ marginBottom: 16, padding: "10px 14px", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                  <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: "#166534" }}>Pegawai yang akan disetujui:</p>
+                  {bawahanList
+                    .filter(b => selectedForBulk.has(b.userId))
+                    .map(b => (
+                      <p key={b.userId} style={{ margin: "2px 0", fontSize: 12, color: "#166534" }}>• {b.nama}</p>
+                    ))
+                  }
+                </div>
+
+                {/* Signature pad */}
+                <p style={{ fontSize: 13, color: "#374151", marginBottom: 8 }}>
+                  Tanda tangan di bawah untuk menyetujui semua SKP yang dipilih:
+                </p>
+                <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
+                  <canvas
+                    ref={bulkSigCanvasRef}
+                    width={600}
+                    height={150}
+                    style={{ display: "block", width: "100%", touchAction: "none" }}
+                    onMouseDown={bulkSigMouseDown}
+                    onMouseMove={bulkSigMouseMove}
+                    onMouseUp={bulkSigMouseUp}
+                    onMouseLeave={bulkSigMouseUp}
+                    onTouchStart={bulkSigTouchStart}
+                    onTouchMove={bulkSigTouchMove}
+                    onTouchEnd={() => { bulkSigIsDrawing.current = false; }}
+                  />
+                  {!bulkSigHasDrawn && (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
+                      Tanda tangan di sini
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={clearBulkSig}
+                  style={{ marginTop: 8, fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                >
+                  ✕ Hapus tanda tangan
+                </button>
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: "16px 24px", borderTop: "1px solid #f3f4f6", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  onClick={closeBulkSig}
+                  style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", backgroundColor: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={confirmBulkApprove}
+                  disabled={bulkApproving}
+                  style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: "#FF7900", color: "white", fontWeight: 700, fontSize: 13, cursor: bulkApproving ? "not-allowed" : "pointer" }}
+                >
+                  {bulkApproving ? "Memproses…" : `Setujui ${selectedForBulk.size} SKP`}
+                </button>
               </div>
             </div>
           </div>

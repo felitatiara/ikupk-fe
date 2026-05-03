@@ -1056,12 +1056,11 @@ export interface SkpBawahanRow {
   realisasi: SkpBawahanRealisasiRow[];
 }
 
-/** SKP summary per-bawahan untuk atasan */
-export async function getSkpBawahan(atasanId: number, tahun: string): Promise<SkpBawahanRow[]> {
+/** SKP summary per-bawahan untuk atasan; forDekan=true → semua user di sistem */
+export async function getSkpBawahan(atasanId: number, tahun: string, forDekan = false): Promise<SkpBawahanRow[]> {
   try {
-    const res = await fetch(
-      `${API_BASE_URL}/realisasi/skp-bawahan?atasanId=${atasanId}&tahun=${encodeURIComponent(tahun)}`,
-    );
+    const url = `${API_BASE_URL}/realisasi/skp-bawahan?atasanId=${atasanId}&tahun=${encodeURIComponent(tahun)}${forDekan ? '&forDekan=true' : ''}`;
+    const res = await fetch(url);
     if (!res.ok) return [];
     return res.json();
   } catch {

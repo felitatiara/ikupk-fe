@@ -21,7 +21,7 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
     if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
       return [
         { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/pimpinan/monitoring-unit-kerja" },
+        { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/pimpinan/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk" },
         { key: "validasi", label: "Validasi IKU PK", href: "/pimpinan/validasi-iku-pk" },
         { key: "validasi_realisasi", label: "Validasi Realisasi", href: "/pimpinan/validasi-realisasi" },
@@ -35,7 +35,7 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
       const isAtasan = (roleLevel ?? 4) < 4;
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/user/monitoring-unit-kerja" },
+        { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/user/monitoring-unit-kerja" },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/user/iku-pk" },
         ...(isAtasan ? [{ key: "validasi_realisasi", label: "Validasi Realisasi", href: "/user/validasi-realisasi" }] : []),
         { key: "skp", label: "SKP", href: "/user/skp" },
@@ -49,7 +49,7 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
     // Admin (roleLevel 0 + nama role admin) atau fallback: Beranda, Monitoring, IKU, Validasi
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-      { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
+      { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/admin/monitoring-unit-kerja" },
       { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
       { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
       ...(isSuperAdminRole ? [

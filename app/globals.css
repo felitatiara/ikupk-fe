@@ -1515,23 +1515,24 @@ h3 {
 .icon-lg { font-size: 18px; }
 
 /* ===== TAMBAH INDIKATOR FORM ===== */
-.form-page { max-width: 900px; margin: 0 auto; padding: 24px 0 40px; }
-.form-breadcrumb { display: flex; align-items: center; margin-bottom: 16px; }
-.form-breadcrumb__link { background: none; border: none; cursor: pointer; padding: 0; font-weight: 600; font-size: 13px; color: #FF7900; }
-.form-breadcrumb__sep { color: #9ca3af; margin: 0 6px; font-size: 13px; }
-.form-breadcrumb__current { color: #16a34a; font-weight: 600; font-size: 13px; }
-.form-title { font-size: 17px; font-weight: 700; color: #111827; margin: 0 0 4px; }
-.form-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 20px; }
-.form-section { border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-.form-section--amber { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; }
-.form-section--white { background: #fff; border: 1px solid #e5e7eb; }
-.form-section__label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; margin: 0 0 14px; }
-.form-section__label--amber { color: #92400e; }
+.form-page { max-width: 900px; margin: 0 auto; padding: 24px 0 48px; }
+.form-breadcrumb { display: flex; align-items: center; margin-bottom: 20px; }
+.form-breadcrumb__link { background: none; border: none; cursor: pointer; padding: 0; font-weight: 500; font-size: 13px; color: #9ca3af; transition: color 0.15s; }
+.form-breadcrumb__link:hover { color: #374151; }
+.form-breadcrumb__sep { color: #e5e7eb; margin: 0 8px; font-size: 13px; }
+.form-breadcrumb__current { color: #111827; font-weight: 600; font-size: 13px; }
+.form-title { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 4px; }
+.form-subtitle { font-size: 13px; color: #9ca3af; margin: 0 0 28px; }
+.form-section { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 22px 24px; margin-bottom: 14px; }
+.form-section--amber { }
+.form-section--white { }
+.form-section__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 16px; color: #9ca3af; }
+.form-section__label--amber { color: #9ca3af; }
 .form-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.form-badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.06em; }
-.form-badge--blue { background: #dbeafe; color: #1d4ed8; }
-.form-badge--green { background: #f0fdf4; color: #15803d; font-size: 11px; padding: 2px 10px; }
-.form-badge--purple { background: #fdf4ff; color: #7e22ce; font-size: 10px; padding: 2px 10px; }
+.form-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 0; border-radius: 0; background: none; text-transform: none; letter-spacing: 0; color: #374151; }
+.form-badge--blue { color: #2563eb; }
+.form-badge--green { color: #059669; }
+.form-badge--purple { color: #7c3aed; }
 .form-row { display: grid; gap: 14px; margin-bottom: 14px; }
 .form-row--3 { grid-template-columns: 1fr 1fr 1fr; }
 .form-row--kode { grid-template-columns: 120px 1fr; }
@@ -1540,30 +1541,32 @@ h3 {
 .form-row--baseline { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 0; }
 .form-row--baseline .form-field { flex: 1; }
 .form-baseline-wrapper { min-width: 140px; }
-.form-baseline-wrapper label { display: block; font-size: 12px; margin-bottom: 5px; color: #374151; font-weight: 600; }
-.form-field label { display: block; font-size: 12px; margin-bottom: 5px; color: #374151; font-weight: 600; }
-.form-label--purple { font-size: 11px !important; color: #7e22ce !important; }
-.form-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #374151; outline: none; box-sizing: border-box; background: #fff; }
-.form-input:focus { border-color: #93c5fd; box-shadow: 0 0 0 2px rgba(147,197,253,0.25); }
-.form-input--sm { font-size: 12px; }
-.form-baseline { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f3f4f6; min-height: 36px; box-sizing: border-box; }
-.form-sub-item { background: #f9fafb; border-radius: 8px; padding: 14px; margin-bottom: 10px; border: 1px solid #f3f4f6; }
+.form-baseline-wrapper label { display: block; font-size: 12px; margin-bottom: 5px; color: #6b7280; font-weight: 500; }
+.form-field label { display: block; font-size: 12px; margin-bottom: 5px; color: #6b7280; font-weight: 500; }
+.form-label--purple { font-size: 11px !important; color: #7c3aed !important; }
+.form-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 9px 12px; font-size: 13px; color: #111827; outline: none; box-sizing: border-box; background: #fff; transition: border-color 0.15s; }
+.form-input:focus { border-color: #9ca3af; box-shadow: none; }
+.form-input--sm { font-size: 12px; padding: 7px 10px; }
+.form-baseline { border: 1px solid #e5e7eb; border-radius: 6px; padding: 9px 12px; font-size: 13px; background: #f9fafb; min-height: 38px; box-sizing: border-box; color: #9ca3af; }
+.form-sub-item { background: #fafafa; border-radius: 8px; padding: 16px; margin-bottom: 10px; border: 1px solid #f3f4f6; }
 .form-sub-name-row { display: flex; gap: 10px; align-items: flex-end; }
 .form-sub-name-row .form-field { flex: 1; }
-.form-level3-section { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e5e7eb; }
-.form-level3-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.form-level3-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid #f3f4f6; }
+.form-level3-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .form-level3-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; margin-bottom: 8px; align-items: flex-end; }
-.form-sub-footer { display: flex; justify-content: flex-end; margin-top: 6px; }
-.form-add-btn { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 6px; padding: 5px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
-.form-add-btn:hover { background: #dbeafe; }
-.form-add-btn--sub { background: none; border: 1px dashed #d1d5db; color: #6b7280; border-radius: 6px; padding: 4px 14px; font-size: 12px; cursor: pointer; }
-.form-add-btn--sub:hover { border-color: #9ca3af; color: #374151; }
-.form-add-btn--l3 { background: none; border: 1px dashed #d8b4fe; color: #7e22ce; border-radius: 6px; padding: 2px 10px; font-size: 11px; cursor: pointer; }
-.form-remove-btn { background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
-.form-remove-icon { background: none; border: none; color: #dc2626; font-size: 18px; cursor: pointer; line-height: 1; padding: 0 0 6px; flex-shrink: 0; }
-.form-remove-icon:disabled { color: #d1d5db; cursor: default; }
-.form-actions { display: flex; justify-content: flex-end; gap: 12px; padding-top: 20px; border-top: 1px solid #f3f4f6; margin-top: 8px; }
-.form-mode-toggle { display: flex; gap: 0; margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; width: fit-content; }
-.form-mode-btn { padding: 8px 20px; font-size: 13px; font-weight: 500; background: #f9fafb; border: none; cursor: pointer; color: #6b7280; transition: background 0.15s, color 0.15s; }
+.form-sub-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
+.form-add-btn { background: #fff; border: 1px solid #e5e7eb; color: #374151; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; transition: border-color 0.15s; }
+.form-add-btn:hover { border-color: #9ca3af; }
+.form-add-btn--sub { background: none; border: 1px dashed #d1d5db; color: #9ca3af; border-radius: 6px; padding: 5px 14px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.form-add-btn--sub:hover { border-color: #6b7280; color: #6b7280; }
+.form-add-btn--l3 { background: none; border: 1px dashed #ddd6fe; color: #7c3aed; border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+.form-remove-btn { background: #fff; border: 1px solid #e5e7eb; color: #9ca3af; border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.form-remove-btn:hover { border-color: #fca5a5; color: #dc2626; }
+.form-remove-icon { background: none; border: none; color: #d1d5db; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 0 6px; flex-shrink: 0; transition: color 0.15s; }
+.form-remove-icon:hover { color: #ef4444; }
+.form-remove-icon:disabled { color: #f3f4f6; cursor: default; }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 24px; border-top: 1px solid #f3f4f6; margin-top: 8px; }
+.form-mode-toggle { display: flex; margin-bottom: 24px; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb; width: fit-content; }
+.form-mode-btn { padding: 8px 22px; font-size: 13px; font-weight: 500; background: #fff; border: none; cursor: pointer; color: #9ca3af; transition: background 0.15s, color 0.15s; }
 .form-mode-btn:first-child { border-right: 1px solid #e5e7eb; }
-.form-mode-btn--active { background: #1d4ed8; color: #fff; font-weight: 600; }
+.form-mode-btn--active { background: #111827; color: #fff; font-weight: 600; }

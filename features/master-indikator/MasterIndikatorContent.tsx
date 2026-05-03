@@ -565,95 +565,71 @@ export default function MasterIndikatorContent() {
         ) : hierarchy.length === 0 ? (
           <p className="text-gray">Belum ada data indikator.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-  <thead>
-    <tr style={{ backgroundColor: "#f9fafb" }}>
-      <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 80 }}>
-        Nomor
-      </th>
-      <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>
-        Sasaran Strategis
-      </th>
-      <th style={{ padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700 }}>
-        {filterJenis === "IKU" ? "Sub Indikator Kinerja Utama" : "Sub Indikator Perjanjian Kerja"}
-      </th>
-      <th style={{ padding: "8px 10px", textAlign: "center", borderBottom: "1px solid #e5e7eb", color: "#374151", fontWeight: 700, width: 80 }}>
-        Aksi
-      </th>
-    </tr>
-  </thead>
-
-  <tbody>
-    {rowsPerLevel0.map((row) => {
-      const level0Group = hierarchy.find((h) => h.record.id === row.parent.id) ?? null;
-
-      return row.entries.map((entry, idx) => (
-        <tr key={`${row.parent.id}-${entry.key}`} style={{ borderBottom: "1px solid #f3f4f6" }}>
-          
-          {idx === 0 && (
-            <td
-              rowSpan={row.entries.length}
-              style={{ padding: "7px 10px", textAlign: "center", verticalAlign: "top", fontWeight: 600, color: "#374151" }}
-            >
-              {row.parent.kode}
-            </td>
-          )}
-
-          {idx === 0 && (
-            <td
-              rowSpan={row.entries.length}
-              style={{ padding: "7px 10px", verticalAlign: "top", color: "#1f2937" }}
-            >
-              {row.parent.nama}
-            </td>
-          )}
-
-          <td
-            style={{
-              padding: "7px 10px",
-              background: entry.isLevel1 ? "#f9fafb" : "white",
-              fontWeight: entry.isLevel1 ? 600 : 400,
-              color: "#1f2937"
-            }}
-          >
-            {entry.text}
-          </td>
-
-          {idx === 0 && level0Group && (
-            <td
-              rowSpan={row.entries.length}
-              style={{ padding: "7px 10px", textAlign: "center", verticalAlign: "top" }}
-            >
-              <button
-                onClick={() => handleEditClick(level0Group)}
-                style={{
-                  padding: "4px 12px",
-                  borderRadius: 4,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  border: "1px solid #93c5fd",
-                  backgroundColor: "#eff6ff",
-                  color: "#2563eb",
-                }}
-              >
-                Edit
-              </button>
-            </td>
-          )}
-        </tr>
-      ));
-    })}
-  </tbody>
-
-  <tfoot>
-    <tr>
-      <td colSpan={4} style={{ padding: "8px 10px", fontSize: 12, color: "#6b7280" }}>
-        Menampilkan {rowsPerLevel0.length} dari {rowsPerLevel0.length}
-      </td>
-    </tr>
-  </tfoot>
-</table>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ backgroundColor: "#f9fafb" }}>
+                <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e5e7eb", color: "#6b7280", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.07em", width: 70 }}>Kode</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e5e7eb", color: "#6b7280", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.07em", width: "28%" }}>Sasaran Strategis</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e5e7eb", color: "#6b7280", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.07em" }}>{filterJenis === "IKU" ? "Indikator Kinerja" : "Indikator Perjanjian Kerja"}</th>
+                <th style={{ padding: "10px 14px", textAlign: "center", borderBottom: "2px solid #e5e7eb", color: "#6b7280", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.07em", width: 70 }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rowsPerLevel0.map((row, rowGroupIdx) => {
+                const level0Group = hierarchy.find((h) => h.record.id === row.parent.id) ?? null;
+                const isLastGroup = rowGroupIdx === rowsPerLevel0.length - 1;
+                return row.entries.map((entry, idx) => {
+                  const isLastEntry = idx === row.entries.length - 1;
+                  return (
+                    <tr key={`${row.parent.id}-${entry.key}`} style={{ borderBottom: isLastEntry && !isLastGroup ? "2px solid #f3f4f6" : "1px solid #f3f4f6" }}>
+                      {idx === 0 && (
+                        <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", fontWeight: 700, color: "#374151", fontSize: 13, fontFamily: "monospace", borderRight: "1px solid #f3f4f6" }}>
+                          {row.parent.kode}
+                        </td>
+                      )}
+                      {idx === 0 && (
+                        <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", borderRight: "1px solid #f3f4f6" }}>
+                          <p style={{ margin: 0, fontWeight: 600, color: "#111827", fontSize: 13, lineHeight: 1.5 }}>{row.parent.nama}</p>
+                        </td>
+                      )}
+                      <td style={{ padding: 0 }}>
+                        {entry.isLevel1 ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", backgroundColor: entry.text === "-" ? "transparent" : "#fff" }}>
+                            <span style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: filterJenis === "IKU" ? "#FF7900" : "#7c3aed", flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 14px 8px 27px" }}>
+                            <span style={{ color: "#d1d5db", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
+                            <span style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.6 }}>{entry.text}</span>
+                          </div>
+                        )}
+                      </td>
+                      {idx === 0 && level0Group && (
+                        <td rowSpan={row.entries.length} style={{ padding: "14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f3f4f6" }}>
+                          <button
+                            onClick={() => handleEditClick(level0Group)}
+                            style={{ padding: "5px 14px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", border: "1px solid #e5e7eb", backgroundColor: "#fff", color: "#374151", transition: "all 0.15s" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#9ca3af"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; }}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} style={{ padding: "10px 14px", fontSize: 12, color: "#9ca3af", borderTop: "1px solid #f3f4f6" }}>
+                  {rowsPerLevel0.length} sasaran strategis
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         )}
     </div>
     </div>
