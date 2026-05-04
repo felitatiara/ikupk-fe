@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
@@ -223,21 +223,20 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                      {["Kode", "Indikator", "Target Univ", "Target Fak", "Realisasi", "Tenggat", "Status"].map(h => (
+                      {["Kode", "Indikator", "Target Univ", "Realisasi", "Tenggat", "Status"].map(h => (
                         <th key={h} style={{ textAlign: h === "Kode" || h === "Indikator" ? "left" : "center", padding: "12px 10px", fontWeight: 600, color: "#374151" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
+                      <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
                     ) : chartData.length > 0 ? (
                       chartData.map((item, i) => (
                         <tr key={i} style={{ borderBottom: "1px solid #e5e7eb" }}>
                           <td style={{ padding: "14px 10px", color: "#0284c7", fontWeight: 600 }}>{item.kode}</td>
                           <td style={{ padding: "14px 10px", color: "#374151" }}>{item.nama}</td>
                           <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>{item.targetUniversitas}</td>
-                          <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>{item.targetFakultas}</td>
                           <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>{item.realisasi}</td>
                           <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>{item.tenggat}</td>
                           <td style={{ padding: "14px 10px", textAlign: "center" }}>
@@ -256,7 +255,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         </tr>
                       ))
                     ) : (
-                      <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
+                      <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
                     )}
                   </tbody>
                 </table>
