@@ -49,9 +49,6 @@ export default function Sidebar({ role = 'admin', unitNama, roleLevel, authRole 
     // Admin (roleLevel 0 + nama role admin) atau fallback: Beranda, Monitoring, IKU, Validasi
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-      { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/admin/monitoring-unit-kerja" },
-      { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
-      { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
       ...(isSuperAdminRole ? [
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator" },
         { key: "master_user", label: "Master User", href: "/admin/master-user" },

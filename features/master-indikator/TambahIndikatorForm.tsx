@@ -7,6 +7,7 @@ import {
   getAllBaselineData,
   getBaselineByJenisData,
   upsertTargetUniversitas,
+  getTargetUniversitas,
   getIndikator,
   type BaselineData,
   type Indikator,
@@ -24,15 +25,14 @@ type NavEntry = { id: number | null; nama: string; kode: string };
 type Level3Item = { id: number; kode: string; nama: string };
 type SubItem = {
   id: number; kodeSubIndikator: string; subIndikatorKinerja: string;
-  jenisData: string; baseline: number | null | string;
-  baselineLoading: boolean; level3Items: Level3Item[];
+  level3Items: Level3Item[];
 };
 type Group = { id: number; kodeIndikator: string; indikatorKinerja: string; subItems: SubItem[] };
 
 const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "" });
 const blankSub = (): SubItem => ({
   id: nextId(), kodeSubIndikator: "", subIndikatorKinerja: "",
-  jenisData: "", baseline: null, baselineLoading: false, level3Items: [blankL3()],
+  level3Items: [blankL3()],
 });
 const blankGroup = (): Group => ({
   id: nextId(), kodeIndikator: "", indikatorKinerja: "", subItems: [blankSub()],
@@ -52,10 +52,15 @@ function ComboBox({
   disabled?: boolean;
 }) {
   const [query, setQuery] = useState(value.nama);
+  const [lastNama, setLastNama] = useState(value.nama);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setQuery(value.nama); }, [value.nama]);
+  // React-recommended derived-state pattern: detect external prop change during render
+  if (lastNama !== value.nama) {
+    setLastNama(value.nama);
+    setQuery(value.nama);
+  }
 
   const filtered = query.trim()
     ? options.filter(o => `${o.kode} ${o.nama}`.toLowerCase().includes(query.toLowerCase()))
@@ -180,7 +185,6 @@ export default function TambahIndikatorForm() {
   const [targetTahun, setTargetTahun] = useState(String(new Date().getFullYear()));
   const [submitLoading, setSubmitLoading] = useState(false);
   const [baselineOptions, setBaselineOptions] = useState<BaselineData[]>([]);
-  const debounceRefs = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
   const [mode, setMode] = useState<"new" | "append">("new");
 
@@ -189,6 +193,9 @@ export default function TambahIndikatorForm() {
   const [sasaranStrategis, setSasaranStrategis] = useState("");
   const [targetUniversitas, setTargetUniversitas] = useState("");
   const [tenggat, setTenggat] = useState("");
+  const [l0JenisData, setL0JenisData] = useState("");
+  const [l0Baseline, setL0Baseline] = useState<number | null>(null);
+  const [l0BaselineLoading, setL0BaselineLoading] = useState(false);
   const [groups, setGroups] = useState<Group[]>([blankGroup()]);
 
   // ── Append mode navigation ──
@@ -196,10 +203,12 @@ export default function TambahIndikatorForm() {
   const [appendL0Id, setAppendL0Id] = useState<number | null>(null);
   const [nav1, setNav1] = useState<NavEntry>(blankNav()); // L1
   const [nav2, setNav2] = useState<NavEntry>(blankNav()); // L2
-
-  // ── Append form data (what to create below the nav) ──
-  const [appendSubs, setAppendSubs] = useState<SubItem[]>([blankSub()]);
   const [appendL3Items, setAppendL3Items] = useState<Level3Item[]>([blankL3()]);
+
+  // ── Append mode: editable target for selected L0 ──
+  const [appendTargetUni, setAppendTargetUni] = useState("");
+  const [appendTenggat, setAppendTenggat] = useState("");
+  const [appendTargetLoading, setAppendTargetLoading] = useState(false);
 
   // Derived options for comboboxes
   const existingL0 = allIndikators.filter(i => i.level === 0 && i.jenis === jenis);
@@ -208,13 +217,8 @@ export default function TambahIndikatorForm() {
     ? allIndikators.filter(i => i.level === 2 && i.parentId === nav1.id)
     : [];
 
-  // Is nav1/nav2 "active" (has a value)
   const nav1Active = nav1.nama.trim() !== "";
   const nav2Active = nav2.nama.trim() !== "";
-
-  // Which level form to show below navigation
-  // no nav1 → show groups (L1+L2), nav1 but no nav2 → show L2 subs, nav1+nav2 → show L3
-  const appendFormLevel = !nav1Active ? "L1" : !nav2Active ? "L2" : "L3";
 
   useEffect(() => {
     getAllBaselineData(targetTahun).then(setBaselineOptions).catch(() => setBaselineOptions([]));
@@ -228,8 +232,26 @@ export default function TambahIndikatorForm() {
     setNav2(blankNav());
   }, [mode, targetTahun, jenis]);
 
-  useEffect(() => { setNav1(blankNav()); setNav2(blankNav()); }, [appendL0Id]);
-  useEffect(() => { setNav2(blankNav()); }, [nav1.id]);
+  useEffect(() => {
+    setNav1(blankNav());
+    setNav2(blankNav());
+    setAppendTargetUni("");
+    setAppendTenggat("");
+    if (!appendL0Id) return;
+    setAppendTargetLoading(true);
+    getTargetUniversitas(appendL0Id, targetTahun)
+      .then(t => {
+        setAppendTargetUni(t ? String(t.targetAngka ?? "") : "");
+        setAppendTenggat(t?.tenggat ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setAppendTargetLoading(false));
+  }, [appendL0Id, targetTahun]);
+
+  useEffect(() => {
+    setNav2(blankNav());
+    setAppendL3Items([blankL3()]);
+  }, [nav1.id]);
 
   // ── Group (L1+L2) handlers ──
   const addGroup = () => setGroups(p => [...p, blankGroup()]);
@@ -261,43 +283,21 @@ export default function TambahIndikatorForm() {
       } : s),
     } : g));
 
-  // ── AppendSubs handlers ──
-  const addAppendSub = () => setAppendSubs(p => [...p, blankSub()]);
-  const removeAppendSub = (id: number) => setAppendSubs(p => p.filter(s => s.id !== id));
-  const updateAppendSub = (id: number, field: string, val: string) =>
-    setAppendSubs(p => p.map(s => s.id === id ? { ...s, [field]: val } : s));
-  const addAppendSubL3 = (sid: number) =>
-    setAppendSubs(p => p.map(s => s.id === sid ? { ...s, level3Items: [...s.level3Items, blankL3()] } : s));
-  const removeAppendSubL3 = (sid: number, lid: number) =>
-    setAppendSubs(p => p.map(s => s.id === sid ? { ...s, level3Items: s.level3Items.filter(l => l.id !== lid) } : s));
-  const updateAppendSubL3 = (sid: number, lid: number, field: "kode" | "nama", val: string) =>
-    setAppendSubs(p => p.map(s => s.id === sid ? {
-      ...s, level3Items: s.level3Items.map(l => l.id === lid ? { ...l, [field]: val } : l),
-    } : s));
-
-  // ── Baseline helpers ──
-  function triggerBaseline(val: string, id: number, setter: React.Dispatch<React.SetStateAction<SubItem[]>>) {
-    clearTimeout(debounceRefs.current[id]);
-    debounceRefs.current[id] = setTimeout(async () => {
-      if (!val.trim()) return;
-      setter(p => p.map(s => s.id === id ? { ...s, baselineLoading: true } : s));
+  // ── L0 baseline helper ──
+  const l0BaselineDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleL0Baseline = (val: string) => {
+    setL0JenisData(val);
+    setL0Baseline(null);
+    if (l0BaselineDebounce.current) clearTimeout(l0BaselineDebounce.current);
+    if (!val.trim()) return;
+    setL0BaselineLoading(true);
+    l0BaselineDebounce.current = setTimeout(async () => {
       try {
         const result = await getBaselineByJenisData(val.trim(), targetTahun);
-        setter(p => p.map(s => s.id === id ? { ...s, baseline: result?.jumlah ?? null, baselineLoading: false } : s));
-      } catch {
-        setter(p => p.map(s => s.id === id ? { ...s, baseline: null, baselineLoading: false } : s));
-      }
+        setL0Baseline(result?.jumlah ?? null);
+      } catch { setL0Baseline(null); }
+      finally { setL0BaselineLoading(false); }
     }, 600);
-  }
-
-  const handleGroupBaseline = (gid: number, sid: number, val: string) => {
-    updateSub(gid, sid, "jenisData", val);
-    triggerBaseline(val, sid, fn => setGroups(p => p.map(g => g.id === gid ? { ...g, subItems: fn(g.subItems) } : g)));
-  };
-
-  const handleAppendSubBaseline = (sid: number, val: string) => {
-    updateAppendSub(sid, "jenisData", val);
-    triggerBaseline(val, sid, setAppendSubs);
   };
 
   // ── Submit ──
@@ -314,71 +314,61 @@ export default function TambahIndikatorForm() {
       }
     } else {
       if (!appendL0Id) { toast.error("Pilih Sasaran Strategis terlebih dahulu."); return; }
-      if (appendFormLevel === "L2" || appendFormLevel === "L3") {
-        if (!nav1.nama.trim()) { toast.error("Isi Level 1 terlebih dahulu."); return; }
-        if (nav1.id === null && !nav1.kode.trim()) { toast.error("Isi kode untuk Level 1 baru."); return; }
-      }
-      if (appendFormLevel === "L3") {
-        if (!nav2.nama.trim()) { toast.error("Isi Level 2 terlebih dahulu."); return; }
+      if (!nav1.nama.trim()) { toast.error("Isi Level 1 terlebih dahulu."); return; }
+      if (nav1.id === null && !nav1.kode.trim()) { toast.error("Isi kode untuk Level 1 baru."); return; }
+      if (nav2.nama.trim()) {
         if (nav2.id === null && !nav2.kode.trim()) { toast.error("Isi kode untuk Level 2 baru."); return; }
-        if (jenis !== "PK") { toast.error("Level 3 hanya tersedia untuk Perjanjian Kerja (PK)."); return; }
-      }
-      if (appendFormLevel === "L2") {
-        for (const s of appendSubs) {
-          if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { toast.error("Kode dan nama Sub Indikator wajib diisi."); return; }
+        if (nav2Active && jenis === "PK" && !appendL3Items.some(l => l.kode.trim() && l.nama.trim())) {
+          toast.error("Isi minimal satu rincian Level 3."); return;
         }
-      }
-      if (appendFormLevel === "L1") {
-        for (const g of groups) {
-          if (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim()) { toast.error("Kode dan nama Level 1 wajib diisi."); return; }
-          for (const s of g.subItems) {
-            if (!s.kodeSubIndikator.trim() || !s.subIndikatorKinerja.trim()) { toast.error("Kode dan nama Sub Indikator wajib diisi."); return; }
-          }
-        }
-      }
-      if (appendFormLevel === "L3") {
-        if (!appendL3Items.some(l => l.kode.trim() && l.nama.trim())) { toast.error("Isi minimal satu rincian Level 3."); return; }
       }
     }
 
     setSubmitLoading(true);
     try {
       if (mode === "new") {
-        const l0 = await createIndikator({ jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(), tahun: targetTahun, level: 0, parentId: null });
+        const l0 = await createIndikator({
+          jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(),
+          tahun: targetTahun, level: 0, parentId: null,
+          jenisData: l0JenisData.trim() || null,
+        });
         await upsertTargetUniversitas(l0.id, targetTahun, Number(targetUniversitas), tenggat);
         await saveGroupsUnder(l0.id, groups);
       } else {
-        if (appendFormLevel === "L1") {
-          await saveGroupsUnder(appendL0Id!, groups);
-        } else if (appendFormLevel === "L2") {
-          // Resolve L1
-          let l1Id: number;
-          if (nav1.id !== null) {
-            l1Id = nav1.id;
-          } else {
-            const l1 = await createIndikator({ jenis, kode: nav1.kode.trim(), nama: nav1.nama.trim(), tahun: targetTahun, level: 1, parentId: appendL0Id! });
-            l1Id = l1.id;
-          }
-          await saveSubsUnder(l1Id, appendSubs);
-        } else if (appendFormLevel === "L3") {
-          // Resolve L1
-          let l1Id: number;
-          if (nav1.id !== null) { l1Id = nav1.id; }
-          else {
-            const l1 = await createIndikator({ jenis, kode: nav1.kode.trim(), nama: nav1.nama.trim(), tahun: targetTahun, level: 1, parentId: appendL0Id! });
-            l1Id = l1.id;
-          }
-          // Resolve L2
+        // Update target jika diisi
+        if (appendTargetUni.trim() && !isNaN(Number(appendTargetUni))) {
+          await upsertTargetUniversitas(appendL0Id!, targetTahun, Number(appendTargetUni), appendTenggat || undefined);
+        }
+        // Resolve / create L1
+        let l1Id: number;
+        if (nav1.id !== null) {
+          l1Id = nav1.id;
+        } else {
+          const l1 = await createIndikator({ jenis, kode: nav1.kode.trim(), nama: nav1.nama.trim(), tahun: targetTahun, level: 1, parentId: appendL0Id! });
+          l1Id = l1.id;
+        }
+
+        if (!nav2.nama.trim()) {
+          // Only creating / selecting L1 — done
+        } else {
+          // Resolve / create L2
           let l2Id: number;
-          if (nav2.id !== null) { l2Id = nav2.id; }
-          else {
-            const l2 = await createIndikator({ jenis, kode: nav2.kode.trim(), nama: nav2.nama.trim(), tahun: targetTahun, level: 2, parentId: l1Id });
+          if (nav2.id !== null) {
+            l2Id = nav2.id;
+          } else {
+            const l2 = await createIndikator({
+              jenis, kode: nav2.kode.trim(), nama: nav2.nama.trim(),
+              tahun: targetTahun, level: 2, parentId: l1Id,
+            });
             l2Id = l2.id;
           }
-          // Create L3
-          for (const l3 of appendL3Items) {
-            if (l3.kode.trim() && l3.nama.trim()) {
-              await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id });
+
+          // Create L3 items (PK only)
+          if (jenis === "PK") {
+            for (const l3 of appendL3Items) {
+              if (l3.kode.trim() && l3.nama.trim()) {
+                await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id });
+              }
             }
           }
         }
@@ -403,7 +393,7 @@ export default function TambahIndikatorForm() {
     for (const s of subs) {
       const l2 = await createIndikator({
         jenis, kode: s.kodeSubIndikator.trim(), nama: s.subIndikatorKinerja.trim(),
-        tahun: targetTahun, level: 2, parentId, jenisData: s.jenisData.trim() || null,
+        tahun: targetTahun, level: 2, parentId,
       });
       if (jenis === "PK") {
         for (const l3 of s.level3Items) {
@@ -415,15 +405,14 @@ export default function TambahIndikatorForm() {
     }
   }
 
-  // ── Sub item renderer (reused by groups and appendSubs) ──
+  // ── Sub item renderer (used by groups in new mode) ──
   function SubItemRow({
     sub, idx, total, parentKode,
-    onUpdateField, onBaselineChange, onRemove,
+    onUpdateField, onRemove,
     onAddL3, onRemoveL3, onUpdateL3,
   }: {
     sub: SubItem; idx: number; total: number; parentKode: string;
     onUpdateField: (f: string, v: string) => void;
-    onBaselineChange: (v: string) => void;
     onRemove: (() => void) | null;
     onAddL3: () => void; onRemoveL3: (id: number) => void;
     onUpdateL3: (id: number, f: "kode" | "nama", v: string) => void;
@@ -447,24 +436,6 @@ export default function TambahIndikatorForm() {
             {onRemove && total > 1 && (
               <button type="button" className="form-remove-icon" onClick={onRemove}>−</button>
             )}
-          </div>
-        </div>
-        <div className="form-row--baseline">
-          <div className="form-field">
-            <label>Jenis Data (baseline)</label>
-            <select className="form-input" value={sub.jenisData} onChange={e => onBaselineChange(e.target.value)}>
-              <option value="">— Pilih —</option>
-              {baselineOptions.map(b => (
-                <option key={b.id} value={b.jenisData}>{b.jenisData}{b.keterangan ? ` (${b.keterangan})` : ""}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-baseline-wrapper">
-            <label>Baseline {targetTahun}</label>
-            <div className="form-baseline">
-              {sub.baselineLoading ? "Memuat…" : sub.baseline !== null
-                ? (typeof sub.baseline === "number" ? sub.baseline.toLocaleString("id-ID") : sub.baseline) : "—"}
-            </div>
           </div>
         </div>
         {jenis === "PK" && (
@@ -556,7 +527,7 @@ export default function TambahIndikatorForm() {
                   </select>
                 </div>
               </div>
-              <div className="form-row form-row--kode-target form-row--last">
+              <div className="form-row form-row--kode-target form-row--last" style={{ marginBottom: 14 }}>
                 <div className="form-field">
                   <label>Nomor / Kode</label>
                   <input className="form-input" type="text" value={nomor} onChange={e => setNomor(e.target.value)} placeholder="1" />
@@ -566,9 +537,26 @@ export default function TambahIndikatorForm() {
                   <input className="form-input" type="text" value={sasaranStrategis} onChange={e => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
                 </div>
                 <div className="form-field">
-                  <label>Target Universitas</label>
+                  <label>Target Universitas (%)</label>
                   <input className="form-input" type="number" min={0} value={targetUniversitas}
-                    onChange={e => setTargetUniversitas(String(Math.max(0, Number(e.target.value))))} placeholder="100" />
+                    onChange={e => setTargetUniversitas(String(Math.max(0, Number(e.target.value))))} placeholder="80" />
+                </div>
+              </div>
+              <div className="form-row--baseline">
+                <div className="form-field">
+                  <label>Jenis Data (baseline)</label>
+                  <select className="form-input" value={l0JenisData} onChange={e => handleL0Baseline(e.target.value)}>
+                    <option value="">— Pilih —</option>
+                    {baselineOptions.map(b => (
+                      <option key={b.id} value={b.jenisData}>{b.jenisData}{b.keterangan ? ` (${b.keterangan})` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-baseline-wrapper">
+                  <label>Baseline {targetTahun}</label>
+                  <div className="form-baseline">
+                    {l0BaselineLoading ? "Memuat…" : l0Baseline !== null ? l0Baseline.toLocaleString("id-ID") : "—"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -607,7 +595,6 @@ export default function TambahIndikatorForm() {
                   <SubItemRow key={sub.id} sub={sub} idx={sIdx} total={group.subItems.length}
                     parentKode={group.kodeIndikator || `${nomor || "1"}.${gIdx + 1}`}
                     onUpdateField={(f, v) => updateSub(group.id, sub.id, f, v)}
-                    onBaselineChange={(v) => handleGroupBaseline(group.id, sub.id, v)}
                     onRemove={() => removeSub(group.id, sub.id)}
                     onAddL3={() => addSubL3(group.id, sub.id)}
                     onRemoveL3={(lid) => removeSubL3(group.id, sub.id, lid)}
@@ -645,12 +632,12 @@ export default function TambahIndikatorForm() {
               </div>
             </div>
 
-            {/* Navigasi hierarki */}
+            {/* Navigasi hierarki — semua inline dalam satu card */}
             <div style={card}>
-              <p style={sectionLabel()}>Pilih Posisi dalam Hierarki</p>
+              <p style={sectionLabel()}>Pilih Posisi &amp; Isi Data Baru</p>
 
               {/* Level 0 — dropdown */}
-              <div className="form-field" style={{ marginBottom: 14 }}>
+              <div className="form-field" style={{ marginBottom: 20 }}>
                 <label>Level 0 — Sasaran Strategis</label>
                 <select className="form-input" value={appendL0Id ?? ""}
                   onChange={e => setAppendL0Id(e.target.value ? Number(e.target.value) : null)}>
@@ -662,9 +649,38 @@ export default function TambahIndikatorForm() {
                 )}
               </div>
 
-              {/* Level 1 — combobox (shown when L0 selected) */}
+              {/* Target Universitas update (shown when L0 selected) */}
               {appendL0Id && (
-                <div style={{ marginBottom: nav1Active ? 14 : 0 }}>
+                <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "14px 16px", marginBottom: 20 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>
+                    Target Universitas (opsional — perbarui jika berubah)
+                  </p>
+                  {appendTargetLoading ? (
+                    <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Memuat target saat ini…</p>
+                  ) : (
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                      <div className="form-field" style={{ flex: 1, minWidth: 120 }}>
+                        <label>Target (%)</label>
+                        <input className="form-input" type="number" min={0} max={100}
+                          value={appendTargetUni}
+                          onChange={e => setAppendTargetUni(e.target.value)}
+                          placeholder="misal 80" />
+                      </div>
+                      <div className="form-field" style={{ flex: 1, minWidth: 160 }}>
+                        <label>Tenggat Waktu</label>
+                        <select className="form-input" value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
+                          <option value="">— Pilih —</option>
+                          {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Level 1 — combobox */}
+              {appendL0Id && (
+                <div style={{ marginBottom: 20 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#2563eb" }}>Level 1</span>
                     <span style={{ fontSize: 11, color: "#9ca3af" }}>— ketik untuk cari atau buat baru</span>
@@ -681,16 +697,16 @@ export default function TambahIndikatorForm() {
                 </div>
               )}
 
-              {/* Level 2 — combobox (shown when L1 has a value) */}
+              {/* Level 2 — combobox + inline extra fields when new */}
               {nav1Active && (
-                <div>
+                <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 20 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#059669" }}>Level 2</span>
                     <span style={{ fontSize: 11, color: "#9ca3af" }}>— opsional, ketik untuk cari atau buat baru</span>
                   </div>
                   <ComboBox
                     value={nav2}
-                    onSelect={(entry) => setNav2(entry)}
+                    onSelect={setNav2}
                     options={existingL2}
                     placeholder="Cari atau ketik nama sub indikator…"
                     disabled={nav1.id === null && !nav1.nama.trim()}
@@ -698,107 +714,28 @@ export default function TambahIndikatorForm() {
                   {nav2.id === null && nav2.nama.trim() && (
                     <KodeHint value={nav2.kode} onChange={v => setNav2(p => ({ ...p, kode: v }))} />
                   )}
-                </div>
-              )}
-            </div>
 
-            {/* ── What to add ── */}
-            {appendL0Id && (
-              <>
-                {/* Add L1+L2 groups below L0 */}
-                {appendFormLevel === "L1" && (
-                  <>
-                    <div className="form-section-header">
-                      <p style={{ ...sectionLabel("#374151"), margin: 0 }}>Tambahkan Level 1 baru di bawah sasaran ini</p>
-                      <button type="button" className="form-add-btn" onClick={addGroup}>+ Level 1</button>
-                    </div>
-                    {groups.map((group, gIdx) => (
-                      <div key={group.id} style={card}>
-                        <div className="form-section-header">
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#2563eb" }}>Indikator Kinerja #{gIdx + 1}</span>
-                          {groups.length > 1 && <button type="button" className="form-remove-btn" onClick={() => removeGroup(group.id)}>Hapus</button>}
-                        </div>
-                        <div className="form-row form-row--kode" style={{ marginBottom: 16 }}>
-                          <div className="form-field">
-                            <label>Kode</label>
-                            <input className="form-input" type="text" value={group.kodeIndikator}
-                              onChange={e => updateGroup(group.id, "kodeIndikator", e.target.value)} placeholder="1.1" />
-                          </div>
-                          <div className="form-field">
-                            <label>Nama Indikator Kinerja</label>
-                            <input className="form-input" type="text" value={group.indikatorKinerja}
-                              onChange={e => updateGroup(group.id, "indikatorKinerja", e.target.value)}
-                              placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" />
-                          </div>
-                        </div>
-                        <div style={{ marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "#059669", textTransform: "uppercase", letterSpacing: "0.06em" }}>Level 2 — Sub Indikator</span>
-                        </div>
-                        {group.subItems.map((sub, sIdx) => (
-                          <SubItemRow key={sub.id} sub={sub} idx={sIdx} total={group.subItems.length}
-                            parentKode={group.kodeIndikator}
-                            onUpdateField={(f, v) => updateSub(group.id, sub.id, f, v)}
-                            onBaselineChange={(v) => handleGroupBaseline(group.id, sub.id, v)}
-                            onRemove={() => removeSub(group.id, sub.id)}
-                            onAddL3={() => addSubL3(group.id, sub.id)}
-                            onRemoveL3={(lid) => removeSubL3(group.id, sub.id, lid)}
-                            onUpdateL3={(lid, f, v) => updateSubL3(group.id, sub.id, lid, f, v)}
-                          />
-                        ))}
-                        <div className="form-sub-footer">
-                          <button type="button" className="form-add-btn--sub" onClick={() => addSub(group.id)}>+ Sub Indikator</button>
-                        </div>
+                  {/* Level 3 rows — shown for PK when L2 is active */}
+                  {nav2Active && jenis === "PK" && (
+                    <div style={{ marginTop: 20, borderTop: "1px solid #f3f4f6", paddingTop: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          Level 3 — Rincian
+                        </span>
+                        <button type="button" className="form-add-btn--l3"
+                          onClick={() => setAppendL3Items(p => [...p, blankL3()])}>+ Tambah</button>
                       </div>
-                    ))}
-                  </>
-                )}
-
-                {/* Add L2 subs below selected/new L1 */}
-                {appendFormLevel === "L2" && (
-                  <>
-                    <div className="form-section-header">
-                      <p style={{ ...sectionLabel("#374151"), margin: 0 }}>
-                        Tambahkan Level 2 baru di bawah &ldquo;{nav1.nama}&rdquo;
-                      </p>
-                      <button type="button" className="form-add-btn" onClick={addAppendSub}>+ Sub Indikator</button>
-                    </div>
-                    {appendSubs.map((sub, sIdx) => (
-                      <SubItemRow key={sub.id} sub={sub} idx={sIdx} total={appendSubs.length}
-                        parentKode=""
-                        onUpdateField={(f, v) => updateAppendSub(sub.id, f, v)}
-                        onBaselineChange={(v) => handleAppendSubBaseline(sub.id, v)}
-                        onRemove={appendSubs.length > 1 ? () => removeAppendSub(sub.id) : null}
-                        onAddL3={() => addAppendSubL3(sub.id)}
-                        onRemoveL3={(lid) => removeAppendSubL3(sub.id, lid)}
-                        onUpdateL3={(lid, f, v) => updateAppendSubL3(sub.id, lid, f, v)}
-                      />
-                    ))}
-                  </>
-                )}
-
-                {/* Add L3 items below selected/new L2 (PK only) */}
-                {appendFormLevel === "L3" && jenis === "PK" && (
-                  <>
-                    <div className="form-section-header">
-                      <p style={{ ...sectionLabel("#374151"), margin: 0 }}>
-                        Tambahkan Level 3 baru di bawah &ldquo;{nav2.nama}&rdquo;
-                      </p>
-                      <button type="button" className="form-add-btn" onClick={() => setAppendL3Items(p => [...p, blankL3()])}>
-                        + Rincian
-                      </button>
-                    </div>
-                    <div style={card}>
                       {appendL3Items.map((l3, idx) => (
-                        <div key={l3.id} className="form-level3-row" style={{ marginBottom: 10 }}>
+                        <div key={l3.id} className="form-level3-row" style={{ marginBottom: 8 }}>
                           <div className="form-field">
-                            <label>Kode</label>
-                            <input className="form-input" type="text" value={l3.kode}
+                            <label style={{ color: "#7c3aed" }}>Kode</label>
+                            <input className="form-input form-input--sm" type="text" value={l3.kode}
                               onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, kode: e.target.value } : x))}
-                              placeholder={`x.x.x.${idx + 1}`} />
+                              placeholder={`x.x.${idx + 1}`} />
                           </div>
                           <div className="form-field">
-                            <label>Nama Rincian</label>
-                            <input className="form-input" type="text" value={l3.nama}
+                            <label style={{ color: "#7c3aed" }}>Nama Rincian</label>
+                            <input className="form-input form-input--sm" type="text" value={l3.nama}
                               onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, nama: e.target.value } : x))}
                               placeholder="contoh: Rincian detail kegiatan" />
                           </div>
@@ -808,16 +745,10 @@ export default function TambahIndikatorForm() {
                         </div>
                       ))}
                     </div>
-                  </>
-                )}
-
-                {appendFormLevel === "L3" && jenis !== "PK" && (
-                  <div style={{ ...card, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>
-                    Level 3 hanya tersedia untuk Perjanjian Kerja (PK).
-                  </div>
-                )}
-              </>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
 

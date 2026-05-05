@@ -12,13 +12,35 @@ export interface ProgressChartItem {
   id: number;
   kode: string;
   nama: string;
-  targetUniversitas: number;
-  targetFakultas: number;
+  targetUniversitas: number;   // % dari target_universitas (level 0)
+  targetAbsolut: number | null;
+  targetFakultas: number;      // sum target_unit (IKU: L1, PK: L3)
   realisasi: number;
+  persentaseRealisasi: number | null;
   tenggat: string;
   status: string;
   progress: number;
   chartProgress: number;
+}
+
+export interface DetailEntry {
+  realisasiId: number;
+  indikatorId: number;
+  indikatorKode: string;
+  indikatorNama: string;
+  uploaderNama: string;
+  uploaderEmail: string;
+  realisasiAngka: number;
+  status: string;
+  tahun: string | null;
+  periode: string | null;
+  createdAt: string;
+  files: { id: number; fileName: string; fileUrl: string; repositoryFileId: string | null }[];
+}
+
+export interface IndikatorDetail {
+  indikator: { id: number; kode: string; nama: string; jenis: string } | null;
+  entries: DetailEntry[];
 }
 
 export async function getMonitoringData(unitId?: number): Promise<MonitoringData> {
@@ -35,7 +57,12 @@ export async function getAggregatedProgress(tahun: string, jenis: string): Promi
   return result.data;
 }
 
-// Keeping old function just in case other parts use it, but most likely we'll use getAggregatedProgress now.
+export async function getIndikatorMonitoringDetail(indikatorId: number, tahun: string): Promise<IndikatorDetail> {
+  const response = await fetch(`${API_BASE_URL}/monitoring/indikator/${indikatorId}/detail?tahun=${tahun}`);
+  if (!response.ok) throw new Error('Failed to fetch indikator detail');
+  return response.json();
+}
+
 export async function getProgressChart(unitId: number, tahun: string): Promise<any[]> {
   const response = await fetch(`${API_BASE_URL}/monitoring/progress?unitId=${unitId}&tahun=${tahun}`);
   if (!response.ok) throw new Error('Failed to fetch progress chart');

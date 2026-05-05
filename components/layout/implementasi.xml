@@ -1,0 +1,116 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="RAD Flowchart">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- CONTAINER RAD -->
+        <mxCell id="rad" value="RAD" style="rounded=0;whiteSpace=wrap;html=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="150" y="140" width="900" height="600" as="geometry"/>
+        </mxCell>
+
+        <!-- START -->
+        <mxCell id="start" value="Mulai" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="20" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- PENGUMPULAN -->
+        <mxCell id="data" value="Pengumpulan Data" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="90" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ket1" value="1. Studi Literatur&#xa;2. Observasi&#xa;3. Wawancara" style="shape=parallelogram;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="90" width="220" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- PERENCANAAN -->
+        <mxCell id="plan" value="Perencanaan Kebutuhan" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="280" y="40" width="200" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="analisis" value="Analisis PIECES" style="shape=parallelogram;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="520" y="40" width="200" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- DESAIN -->
+        <mxCell id="desain" value="Desain Sistem" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="310" y="120" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tools" value="1. draw.io&#xa;2. Figma" style="shape=parallelogram;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="520" y="120" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- DECISION SESUAI -->
+        <mxCell id="decision1" value="Sesuai?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="320" y="200" width="120" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- IMPLEMENTASI -->
+        <mxCell id="implement" value="Implementasi" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="310" y="320" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- PENGUJIAN -->
+        <mxCell id="test" value="Pengujian" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="310" y="400" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="blackbox" value="1. Black Box Testing" style="shape=parallelogram;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="520" y="400" width="220" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- DECISION BERHASIL -->
+        <mxCell id="decision2" value="Berhasil?" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="rad">
+          <mxGeometry x="320" y="480" width="120" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- OUTPUT -->
+        <mxCell id="maintain" value="Pemeliharaan" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="760" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="doc" value="Dokumentasi" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="780" y="760" width="160" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="end" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="760" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- FLOW UTAMA -->
+        <mxCell edge="1" parent="1" source="start" target="data"/>
+        <mxCell edge="1" parent="1" source="data" target="plan"/>
+        <mxCell edge="1" parent="rad" source="plan" target="desain"/>
+        <mxCell edge="1" parent="rad" source="desain" target="decision1"/>
+        <mxCell edge="1" parent="rad" source="decision1" target="implement">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="0" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell edge="1" parent="rad" source="implement" target="test"/>
+        <mxCell edge="1" parent="rad" source="test" target="decision2"/>
+        <mxCell edge="1" parent="1" source="decision2" target="maintain"/>
+        <mxCell edge="1" parent="1" source="maintain" target="doc"/>
+        <mxCell edge="1" parent="1" source="doc" target="end"/>
+
+        <!-- LOOP TIDAK (ATAS) -->
+        <mxCell edge="1" parent="rad" source="decision1" target="desain" style="edgeStyle=orthogonalEdgeStyle;rounded=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="240" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- LOOP TIDAK (BAWAH) -->
+        <mxCell edge="1" parent="rad" source="decision2" target="implement" style="edgeStyle=orthogonalEdgeStyle;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="500" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
