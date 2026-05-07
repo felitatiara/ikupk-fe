@@ -87,121 +87,138 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
       const userStr = sessionStorage.getItem("user");
       const user = userStr ? JSON.parse(userStr) : {};
       const roleId: number = user.roleId ?? 0;
-      const unitName: string = user.roleName || user.nama || "Unit";
-      const tahun =
-        filterPeriode !== "semua"
-          ? filterPeriode
-          : new Date().getFullYear().toString();
+      const tahun = filterPeriode !== "semua" ? filterPeriode : new Date().getFullYear().toString();
 
       const jenisList: string[] =
-        filterTarget === "semua"
-          ? ["IKU", "PK"]
-          : filterTarget === "Indikator Kinerja Utama"
-          ? ["IKU"]
-          : ["PK"];
+        filterTarget === "semua" ? ["IKU", "PK"]
+        : filterTarget === "Indikator Kinerja Utama" ? ["IKU"]
+        : ["PK"];
 
       const wb = XLSX.utils.book_new();
+      type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
 
       for (const jenis of jenisList) {
         const grouped = await getLaporanWithRealisasi(jenis, tahun, roleId);
         if (grouped.length === 0) continue;
 
-        type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
         const aoa: (string | number)[][] = [];
         const merges: MergeRange[] = [];
 
-        aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "", unitName, "", "", "", ""]);
-        aoa.push(["", "", "", tahun, "S.D", `Target ${tahun}`, "", `Realisasi s.d ${tahun}`, "", "% Capaian"]);
-        aoa.push(["", "", "", "", "TW I", "Kualitas", "Kuantitas", "Kualitas", "Kuantitas", ""]);
+        if (jenis === "IKU") {
+          // Header 2 baris, 8 kolom
+          // No | Sasaran Strategis | Indikator Kinerja Kegiatan | Target Universitas | Tenggat | Realisasi(%) | Realisasi(Angka) | Data Link
+          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
+          aoa.push(["", "", "", "", "", "%", "Angka", ""]);
+          merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
+          merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
+          merges.push({ s: { r: 0, c: 2 }, e: { r: 1, c: 2 } });
+          merges.push({ s: { r: 0, c: 3 }, e: { r: 1, c: 3 } });
+          merges.push({ s: { r: 0, c: 4 }, e: { r: 1, c: 4 } });
+          merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 6 } }); // "Realisasi" span 2
+          merges.push({ s: { r: 0, c: 7 }, e: { r: 1, c: 7 } });
 
-        merges.push({ s: { r: 0, c: 0 }, e: { r: 2, c: 0 } });
-        merges.push({ s: { r: 0, c: 1 }, e: { r: 2, c: 1 } });
-        merges.push({ s: { r: 0, c: 2 }, e: { r: 2, c: 2 } });
-        merges.push({ s: { r: 0, c: 3 }, e: { r: 0, c: 4 } });
-        merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 9 } });
-        merges.push({ s: { r: 1, c: 3 }, e: { r: 2, c: 3 } });
-        merges.push({ s: { r: 1, c: 5 }, e: { r: 1, c: 6 } });
-        merges.push({ s: { r: 1, c: 7 }, e: { r: 1, c: 8 } });
-        merges.push({ s: { r: 1, c: 9 }, e: { r: 2, c: 9 } });
-
-        let sastraNo = 1;
-
-        for (const group of grouped) {
-          const groupStart = aoa.length;
-
-          aoa.push([
-            sastraNo + ".",
-            group.nama,
-            "",
-            group.persentaseTarget !== null ? group.persentaseTarget + "%" : "",
-            group.sdPersen + "%",
-            "", "", "", "", "",
-          ]);
-
-          for (const sub of group.subIndikators) {
+          let no = 1;
+          for (const group of grouped) {
+            const groupStart = aoa.length;
             aoa.push([
-              "", "",
-              sub.kode + "  " + sub.nama,
-              "", "",
-              sub.targetKualitas !== null ? sub.targetKualitas + "%" : "-",
-              sub.nilaiTarget ?? "",
-              sub.realisasiKualitas !== null ? sub.realisasiKualitas + "%" : "0%",
-              sub.realisasiKuantitas,
-              sub.persenCapaian + "%",
+              no + ".", group.nama, "",
+              group.persentaseTarget !== null ? group.persentaseTarget + "%" : "",
+              group.tenggat || "",
+              "", "", "",
             ]);
 
-            for (const child of sub.children ?? []) {
+            for (const sub of group.subIndikators) {
+              // L1
               aoa.push([
-                "", "",
-                "    " + child.kode + "  " + child.nama,
-                "", "",
-                child.targetKualitas !== null ? child.targetKualitas + "%" : "-",
-                child.nilaiTarget ?? "",
-                child.realisasiKualitas !== null ? child.realisasiKualitas + "%" : "0%",
-                child.realisasiKuantitas,
-                child.persenCapaian + "%",
+                "", "", sub.kode + "  " + sub.nama, "", "",
+                sub.realisasiKualitas !== null ? sub.realisasiKualitas + "%" : "",
+                sub.realisasiKuantitas || "",
+                "",
               ]);
-
-              for (const l3 of child.children ?? []) {
+              for (const child of sub.children ?? []) {
+                // L2
                 aoa.push([
-                  "", "",
-                  "        " + l3.kode + "  " + l3.nama,
-                  "", "",
-                  l3.targetKualitas !== null ? l3.targetKualitas + "%" : "-",
-                  l3.nilaiTarget ?? "",
-                  l3.realisasiKualitas !== null ? l3.realisasiKualitas + "%" : "0%",
-                  l3.realisasiKuantitas,
-                  l3.persenCapaian + "%",
+                  "", "", "    " + child.kode + "  " + child.nama, "", "",
+                  "",
+                  child.realisasiKuantitas || "",
+                  "",
                 ]);
               }
             }
+
+            const groupEnd = aoa.length - 1;
+            if (groupEnd > groupStart) {
+              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+              merges.push({ s: { r: groupStart, c: 3 }, e: { r: groupEnd, c: 3 } });
+              merges.push({ s: { r: groupStart, c: 4 }, e: { r: groupEnd, c: 4 } });
+            }
+            no++;
           }
 
-          const groupEnd = aoa.length - 1;
-          if (groupEnd > groupStart) {
-            merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
-            merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
-            merges.push({ s: { r: groupStart, c: 3 }, e: { r: groupEnd, c: 3 } });
-            merges.push({ s: { r: groupStart, c: 4 }, e: { r: groupEnd, c: 4 } });
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!merges"] = merges;
+          ws["!cols"] = [
+            { wch: 6 }, { wch: 30 }, { wch: 44 },
+            { wch: 16 }, { wch: 14 },
+            { wch: 12 }, { wch: 12 }, { wch: 30 },
+          ];
+          XLSX.utils.book_append_sheet(wb, ws, "Laporan IKU");
+
+        } else {
+          // PK — Header 1 baris, 8 kolom
+          // No | Sasaran Strategis | Indikator Kinerja Kegiatan | Waktu Pelaporan | Satuan | Target[tahun] | Realisasi | Data Link
+          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
+
+          let no = 1;
+          for (const group of grouped) {
+            const groupStart = aoa.length;
+            aoa.push([no + ".", group.nama, "", "", "", "", "", ""]);
+
+            for (const sub of group.subIndikators) {
+              // L1
+              aoa.push(["", "", sub.kode + "  " + sub.nama, "", "", "", "", ""]);
+              for (const child of sub.children ?? []) {
+                // L2
+                aoa.push(["", "", "    " + child.kode + "  " + child.nama, "", "", "", "", ""]);
+                for (const l3 of child.children ?? []) {
+                  // L3 — target, satuan, tenggat dari target_universitas di L3
+                  aoa.push([
+                    "", "",
+                    "        " + l3.kode + "  " + l3.nama,
+                    l3.tenggat || "",
+                    l3.satuan || "",
+                    l3.nilaiTarget ?? "",
+                    l3.realisasiKuantitas || "",
+                    "",
+                  ]);
+                }
+              }
+            }
+
+            const groupEnd = aoa.length - 1;
+            if (groupEnd > groupStart) {
+              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+            }
+            no++;
           }
 
-          sastraNo++;
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!merges"] = merges;
+          ws["!cols"] = [
+            { wch: 6 }, { wch: 30 }, { wch: 44 },
+            { wch: 22 }, { wch: 14 },
+            { wch: 12 }, { wch: 12 }, { wch: 30 },
+          ];
+          XLSX.utils.book_append_sheet(wb, ws, "Laporan PK");
         }
-
-        const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws["!merges"] = merges;
-        ws["!cols"] = [
-          { wch: 6 }, { wch: 32 }, { wch: 44 },
-          { wch: 14 }, { wch: 10 },
-          { wch: 13 }, { wch: 13 },
-          { wch: 16 }, { wch: 16 }, { wch: 12 },
-        ];
-        XLSX.utils.book_append_sheet(wb, ws, jenis === "IKU" ? "Laporan IKU" : "Laporan PK");
       }
 
       XLSX.writeFile(wb, `Laporan_IKU_PK_${tahun}.xlsx`);
     } catch (err) {
       console.error("Failed to export Excel:", err);
+      toast.error("Gagal export Excel.");
     }
   };
 

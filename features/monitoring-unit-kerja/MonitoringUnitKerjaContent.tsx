@@ -3,15 +3,18 @@
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
+  Cell,
+  LabelList,
   ResponsiveContainer,
 } from "recharts";
+import { CheckCircle2, Clock3, ListChecks, Percent, type LucideIcon } from "lucide-react";
+
 import {
   getAggregatedProgress,
   getIndikatorMonitoringDetail,
@@ -19,6 +22,7 @@ import {
   IndikatorDetail,
 } from "@/services/monitoringService";
 import { getIndikatorGroupedForUser, getAllRealisasiFiles, type RealisasiFileItem } from "@/lib/api";
+import type { User } from "@/types";
 
 const jenisOptions = [
   { label: "Indikator Kinerja Kegiatan", value: "IKU" },
@@ -34,6 +38,24 @@ interface PersonalRow {
   target: number | null;
   realisasi: number | null;
   capaian: number | null;
+}
+
+interface MonitoringUser extends User {
+  userId?: number;
+}
+
+interface ChartTooltipItem {
+  payload: {
+    kode?: string;
+    nama?: string;
+    jenis?: string;
+    satuan?: string;
+    target?: number | string | null;
+    realisasi?: number | string | null;
+    progress?: number | string | null;
+    capaian?: number | string | null;
+    status?: string;
+  };
 }
 
 // ── Detail Modal ──────────────────────────────────────────────────────────────
@@ -183,8 +205,13 @@ function DetailModal({
             </h3>
             <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: "#6b7280" }}>
-                Target Univ: <strong style={{ color: "#1f2937" }}>{item.targetUniversitas}%</strong>
-                {item.targetAbsolut != null && (
+                {item.jenis === "PK" ? "Target Fak" : "Target Univ"}:{" "}
+                <strong style={{ color: "#1f2937" }}>
+                  {item.jenis === "PK"
+                    ? `${item.targetUniversitas}${item.satuan ? ` ${item.satuan}` : ""}`
+                    : `${item.targetUniversitas}%`}
+                </strong>
+                {item.jenis === "IKU" && item.targetAbsolut != null && (
                   <span style={{ color: "#9ca3af" }}> ({item.targetAbsolut} absolut)</span>
                 )}
               </span>
@@ -301,10 +328,106 @@ function DetailModal({
   );
 }
 
+// ── KPI Card ─────────────────────────────────────────────────────────────────
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  accent,
+  bg = "#ffffff",
+  icon: Icon = ListChecks,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  accent: string;
+  bg?: string;
+  icon?: LucideIcon;
+}) {
+  return (
+    <div
+      className="card border-0 h-100 overflow-hidden position-relative"
+      style={{
+        minHeight: 98,
+        borderRadius: 16,
+        background: `linear-gradient(135deg, ${bg} 0%, #ffffff 140%)`,
+        boxShadow: "0 10px 28px rgba(15, 23, 42, 0.075)",
+      }}
+    >
+      <div
+        className="position-absolute top-0 start-0 end-0"
+      />
+      <div className="card-body d-flex align-items-center justify-content-between gap-3 p-3">
+        <div className="min-w-0">
+          <div className="fw-semibold mb-2" style={{ fontSize: 13, color: accent }}>
+            {label}
+          </div>
+          <div className="fw-bold lh-1" style={{ fontSize: 30, color: "#111827", letterSpacing: 0 }}>
+            {value}
+          </div>
+          {sub && (
+            <div className="mt-2" style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
+              {sub}
+            </div>
+          )}
+        </div>
+        <div
+          className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+          style={{
+            width: 48,
+            height: 48,
+            backgroundColor: "rgba(255,255,255,0.62)",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.8)",
+          }}
+        >
+          <Icon size={24} color={accent} strokeWidth={2.1} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Custom Bar Tooltip ────────────────────────────────────────────────────────
+
+function BarTooltip({ active, payload }: { active?: boolean; payload?: ChartTooltipItem[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const isIku = d.jenis === "IKU";
+  const unit = !isIku && d.satuan ? ` ${d.satuan}` : "";
+  const progressColor = d.status === "Done" ? "#16a34a" : "#ea580c";
+  return (
+    <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", boxShadow: "0 4px 16px rgba(0,0,0,0.1)", fontSize: 12, maxWidth: 280 }}>
+      <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#1f2937" }}>[{d.kode}] {d.nama ?? d.kode}</p>
+      {d.target != null && (
+        <p style={{ margin: "2px 0", color: "#6b7280" }}>
+          Target: <strong style={{ color: "#374151" }}>{isIku ? `${d.target}%` : `${d.target}${unit}`}</strong>
+        </p>
+      )}
+      {d.realisasi != null && (
+        <p style={{ margin: "2px 0", color: "#6b7280" }}>
+          Realisasi: <strong style={{ color: progressColor }}>{d.realisasi}{unit}</strong>
+        </p>
+      )}
+      {d.progress != null && (
+        <p style={{ margin: "2px 0", color: "#6b7280" }}>
+          Progress: <strong style={{ color: progressColor }}>{d.progress}%</strong>
+        </p>
+      )}
+      {d.capaian != null && d.progress == null && (
+        <p style={{ margin: "2px 0", color: "#6b7280" }}>
+          Capaian: <strong style={{ color: progressColor }}>{d.capaian}%</strong>
+        </p>
+      )}
+      {d.status && <p style={{ margin: "4px 0 0", color: "#9ca3af", fontSize: 11 }}>Status: {d.status}</p>}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: string }) {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<MonitoringUser | null>(null);
   const [token, setToken] = useState("");
   const [selectedJenis, setSelectedJenis] = useState("IKU");
   const [selectedTahun, setSelectedTahun] = useState(new Date().getFullYear().toString());
@@ -389,124 +512,194 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
   const personalChartData = personalRows.map((r) => ({
     kode: r.kode,
+    nama: r.nama,
+    target: r.target ?? 0,
+    realisasi: r.realisasi ?? 0,
     capaian: r.capaian !== null ? Number(r.capaian.toFixed(1)) : 0,
+    progress: r.capaian !== null ? Math.min(100, Number(r.capaian.toFixed(1))) : 0,
+    status: r.capaian !== null && r.capaian >= 100 ? "Done" : "Proses",
   }));
 
+  // Pimpinan KPIs
+  const doneCount = chartData.filter((d) => d.status === "Done").length;
+  const prosesCount = chartData.filter((d) => d.status === "Proses").length;
+  const avgProgress = chartData.length > 0
+    ? Math.round(chartData.reduce((s, d) => s + d.chartProgress, 0) / chartData.length)
+    : 0;
+
+  // Personal KPIs
+  const pDone = personalRows.filter((r) => r.capaian !== null && r.capaian >= 100).length;
+  const pAvg = personalRows.length > 0
+    ? (personalRows.reduce((s, r) => s + (r.capaian ?? 0), 0) / personalRows.length).toFixed(1)
+    : "0";
+
+  const globalChartItems = chartData.map((d) => ({
+    kode: d.kode,
+    nama: d.nama,
+    jenis: d.jenis,
+    status: d.status,
+    satuan: d.satuan,
+    target: d.targetUniversitas,
+    realisasi: d.realisasi,
+    persentaseRealisasi: d.persentaseRealisasi,
+    progress: d.chartProgress,
+  }));
+
+  const globalChartHeight = Math.max(200, chartData.length * 64);
+  const personalChartHeight = Math.max(200, personalChartData.length * 64);
+
   return (
-    <div>
+    <div style={{ backgroundColor: "#ffffff", margin: "-24px -32px", minHeight: "calc(100vh - 64px)", padding: "24px 32px 40px" }}>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-          Monitoring Unit Kerja
-        </p>
-
-        <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 24, color: "#1f2937" }}>
-          {isPimpinan ? "Monitoring Global Indikator" : "Monitoring Indikator Saya"}
-        </h1>
-
-        {/* Filters */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 32 }}>
-          <div style={{ flex: 1, maxWidth: 280 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#4b5563" }}>
-              Jenis Indikator
-            </label>
-            <select
-              value={selectedJenis}
-              onChange={(e) => setSelectedJenis(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                fontSize: 14,
-                backgroundColor: "white",
-                cursor: "pointer",
-                color: "#374151",
-              }}
-            >
-              {jenisOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+        <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ color: "#ea580c", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+              Monitoring Unit Kerja
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: "#111827", letterSpacing: 0 }}>
+                  {isPimpinan ? "Monitoring Global Indikator" : "Monitoring Indikator Saya"}
+                </h1>
+                <div style={{ marginTop: 6, color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
+                  Pantau target, realisasi, dan progres capaian indikator berdasarkan jenis dan tahun.
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div style={{ width: 120 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#4b5563" }}>
-              Tahun
-            </label>
-            <select
-              value={selectedTahun}
-              onChange={(e) => setSelectedTahun(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                fontSize: 14,
-                backgroundColor: "white",
-                cursor: "pointer",
-                color: "#374151",
-              }}
-            >
-              {yearOptions.map((yr) => (
-                <option key={yr} value={yr}>{yr}</option>
-              ))}
-            </select>
+          {/* Filters */}
+          <div style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 20,
+            padding: 14,
+            backgroundColor: "#ffffff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+            flexWrap: "wrap",
+            alignItems: "flex-end",
+          }}>
+            <div style={{ flex: "1 1 260px", maxWidth: 360 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+                Jenis Indikator
+              </label>
+              <select
+                value={selectedJenis}
+                onChange={(e) => setSelectedJenis(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: 40,
+                  padding: "0 12px",
+                  borderRadius: 8,
+                  border: "1px solid #dbe3ea",
+                  fontSize: 13,
+                  backgroundColor: "#ffffff",
+                  cursor: "pointer",
+                  color: "#111827",
+                  outline: "none",
+                }}
+              >
+                {jenisOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ width: 140 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+                Tahun
+              </label>
+              <select
+                value={selectedTahun}
+                onChange={(e) => setSelectedTahun(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: 40,
+                  padding: "0 12px",
+                  borderRadius: 8,
+                  border: "1px solid #dbe3ea",
+                  fontSize: 13,
+                  backgroundColor: "#ffffff",
+                  cursor: "pointer",
+                  color: "#111827",
+                  outline: "none",
+                }}
+              >
+                {yearOptions.map((yr) => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
 
         {/* ── PIMPINAN / ADMIN: global view ── */}
         {isPimpinan && (
           <>
-            <div style={{ width: "100%", height: 260, position: "relative", marginBottom: 40 }}>
-              {loading ? (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.7)", zIndex: 10 }}>
-                  Loading Chart...
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 5 }}>
-                    <CartesianGrid vertical={false} stroke="#e5e7eb" strokeDasharray="3 3" />
-                    <XAxis dataKey="kode" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      domain={[0, 100]}
-                      ticks={[0, 100]}
-                      tick={{ fontSize: 12, fill: "#9ca3af" }}
-                      axisLine={false}
-                      tickLine={false}
-                      label={{ value: "Progress (%)", angle: -90, position: "insideLeft", offset: 10, fontSize: 11, fill: "#9ca3af" }}
-                    />
-                    <Tooltip
-                      contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                      formatter={(value) => [`${value}%`, "Progress"]}
-                    />
-                    <Legend iconType="plainline" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} />
-                    <Line
-                      type="monotone"
-                      dataKey="chartProgress"
-                      name="Progress Capaian"
-                      stroke="#7c6fcd"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: "#7c6fcd", strokeWidth: 2, stroke: "#fff" }}
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+            {/* KPI Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
+              <KpiCard label="Total Indikator" value={chartData.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
+              <KpiCard label="Sudah Tercapai" value={doneCount} sub={`dari ${chartData.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
+              <KpiCard label="Sedang Proses" value={prosesCount} sub={`dari ${chartData.length}`} accent="#b45309" bg="#FFF4C2" icon={Clock3} />
+              <KpiCard label="Rata-rata Progress" value={`${avgProgress}%`} accent="#be123c" bg="#F9E7E8" icon={Percent} />
             </div>
 
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "#1f2937" }}>
-              Rangkuman Target & Realisasi {selectedJenis} {selectedTahun}
-            </h2>
+            {/* Bar Chart */}
+            <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 22, position: "relative" }}>
+              <p style={{ margin: "0 0 16px", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                Progress per Indikator — {selectedJenis} {selectedTahun}
+              </p>
+              {loading ? (
+                <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>Memuat chart...</div>
+              ) : globalChartItems.length === 0 ? (
+                <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>Tidak ada data.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={globalChartHeight}>
+                  <BarChart layout="vertical" data={globalChartItems} margin={{ top: 0, right: 56, left: 8, bottom: 0 }} barSize={18} barCategoryGap="40%">
+                    <CartesianGrid horizontal={false} stroke="#f3f4f6" />
+                    <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<BarTooltip />} cursor={false} />
+                    <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
+                      <LabelList dataKey="progress" position="right" formatter={(v: number) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                      {globalChartItems.map((entry, i) => (
+                        <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+              {/* Legend */}
+              <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "flex-end" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6b7280" }}>
+                  <span style={{ width: 12, height: 8, borderRadius: 2, background: "#16a34a", display: "inline-block" }} />
+                  Tercapai
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6b7280" }}>
+                  <span style={{ width: 12, height: 8, borderRadius: 2, background: "#ea580c", display: "inline-block" }} />
+                  Proses
+                </span>
+              </div>
+            </div>
 
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
+                  Rangkuman Target & Realisasi
+                </div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  {selectedJenis} - {selectedTahun}
+                </div>
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                    <tr style={{ borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
                       {[
                         { label: "Kode", align: "left" },
                         { label: "Indikator", align: "left" },
-                        { label: "Target Univ (%)", align: "center" },
+                        { label: selectedJenis === "PK" ? "Target Fak" : "Target Univ (%)", align: "center" },
                         { label: "Realisasi", align: "center" },
                         { label: "Tenggat", align: "center" },
                         { label: "Status", align: "center" },
@@ -515,10 +708,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         <th
                           key={h.label}
                           style={{
-                            textAlign: h.align as any,
-                            padding: "12px 10px",
+                            textAlign: h.align as "left" | "center",
+                            padding: "11px 10px",
                             fontWeight: 600,
-                            color: "#374151",
+                            color: "#475569",
                             whiteSpace: "nowrap",
                           }}
                         >
@@ -536,18 +729,20 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       </tr>
                     ) : chartData.length > 0 ? (
                       chartData.map((item, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                          <td style={{ padding: "14px 10px", color: "#0284c7", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
+                        <tr key={i} style={{ borderBottom: "1px solid #edf2f7" }}>
+                          <td style={{ padding: "13px 10px", color: "#0369a1", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
                             {item.kode}
                           </td>
-                          <td style={{ padding: "14px 10px", color: "#374151", maxWidth: 260 }}>
+                          <td style={{ padding: "13px 10px", color: "#334155", maxWidth: 300, lineHeight: 1.45 }}>
                             {item.nama}
                           </td>
-                          <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>
+                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
                             {item.targetUniversitas != null ? (
                               <span>
-                                {item.targetUniversitas}%
-                                {item.targetAbsolut != null && (
+                                {item.jenis === "PK"
+                                  ? `${item.targetUniversitas}${item.satuan ? ` ${item.satuan}` : ""}`
+                                  : `${item.targetUniversitas}%`}
+                                {item.jenis === "IKU" && item.targetAbsolut != null && (
                                   <span style={{ display: "block", fontSize: 10, color: "#9ca3af" }}>
                                     ≈ {item.targetAbsolut} abs
                                   </span>
@@ -557,28 +752,28 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               <span style={{ color: "#9ca3af" }}>—</span>
                             )}
                           </td>
-                          <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>
+                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
                             {item.realisasi}
                           </td>
-                          <td style={{ padding: "14px 10px", textAlign: "center", color: "#374151" }}>
+                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
                             {item.tenggat}
                           </td>
-                          <td style={{ padding: "14px 10px", textAlign: "center" }}>
+                          <td style={{ padding: "13px 10px", textAlign: "center" }}>
                             <span
                               style={{
                                 padding: "4px 10px",
-                                borderRadius: 12,
+                                borderRadius: 999,
                                 fontSize: 11,
-                                fontWeight: 700,
-                                backgroundColor: item.status === "Done" ? "#d1fae5" : "#fff7ed",
-                                color: item.status === "Done" ? "#059669" : "#ea580c",
-                                border: `1px solid ${item.status === "Done" ? "#34d399" : "#fbbf24"}`,
+                                fontWeight: 600,
+                                backgroundColor: item.status === "Done" ? "#ecfdf5" : "#fff7ed",
+                                color: item.status === "Done" ? "#047857" : "#c2410c",
+                                border: `1px solid ${item.status === "Done" ? "#bbf7d0" : "#fed7aa"}`,
                               }}
                             >
                               {item.status}
                             </span>
                           </td>
-                          <td style={{ padding: "14px 10px", textAlign: "center" }}>
+                          <td style={{ padding: "13px 10px", textAlign: "center" }}>
                             {canViewDetail ? (
                               <button
                                 onClick={() => setDetailItem(item)}
@@ -618,56 +813,56 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         {/* ── ATASAN / USER: personal view ── */}
         {!isPimpinan && (
           <>
+            {/* KPI Cards */}
             {personalRows.length > 0 && (
-              <div style={{ width: "100%", height: 240, position: "relative", marginBottom: 32 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={personalChartData} margin={{ top: 10, right: 30, left: -10, bottom: 5 }}>
-                    <CartesianGrid vertical={false} stroke="#e5e7eb" strokeDasharray="3 3" />
-                    <XAxis dataKey="kode" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      domain={[0, 100]}
-                      ticks={[0, 25, 50, 75, 100]}
-                      tick={{ fontSize: 12, fill: "#9ca3af" }}
-                      axisLine={false}
-                      tickLine={false}
-                      label={{ value: "Capaian (%)", angle: -90, position: "insideLeft", offset: 10, fontSize: 11, fill: "#9ca3af" }}
-                    />
-                    <Tooltip
-                      contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                      formatter={(value) => [`${value}%`, "Capaian"]}
-                    />
-                    <Legend iconType="plainline" wrapperStyle={{ fontSize: 13, paddingTop: 10 }} />
-                    <Line
-                      type="monotone"
-                      dataKey="capaian"
-                      name="Capaian"
-                      stroke="#FF7900"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: "#FF7900", strokeWidth: 2, stroke: "#fff" }}
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                    />
-                  </LineChart>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
+                <KpiCard label="Total Indikator" value={personalRows.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
+                <KpiCard label="Sudah Tercapai" value={pDone} sub={`dari ${personalRows.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
+                <KpiCard label="Rata-rata Capaian" value={`${pAvg}%`} accent="#b45309" bg="#FFF4C2" icon={Percent} />
+              </div>
+            )}
+
+            {/* Bar Chart */}
+            {personalRows.length > 0 && (
+              <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 22 }}>
+                <p style={{ margin: "0 0 16px", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                  Capaian per Indikator — {selectedJenis} {selectedTahun}
+                </p>
+                <ResponsiveContainer width="100%" height={personalChartHeight}>
+                  <BarChart layout="vertical" data={personalChartData} margin={{ top: 0, right: 56, left: 8, bottom: 0 }} barSize={18} barCategoryGap="40%">
+                    <CartesianGrid horizontal={false} stroke="#f3f4f6" />
+                    <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<BarTooltip />} cursor={false} />
+                    <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
+                      <LabelList dataKey="progress" position="right" formatter={(v: number) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                      {personalChartData.map((entry, i) => (
+                        <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
+
 
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "#1f2937" }}>
               Rincian Indikator {selectedJenis} — {selectedTahun}
             </h2>
 
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                    <tr style={{ borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
                       {["No", "Kode", "Nama Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)"].map((h) => (
                         <th
                           key={h}
                           style={{
                             textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Capaian (%)" ? "center" : "left",
-                            padding: "12px 10px",
+                            padding: "11px 10px",
                             fontWeight: 600,
-                            color: "#374151",
+                            color: "#475569",
                             whiteSpace: "nowrap",
                           }}
                         >
@@ -728,6 +923,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             </div>
           </>
         )}
+        </div>
       </PageTransition>
 
       {/* Detail Modal */}

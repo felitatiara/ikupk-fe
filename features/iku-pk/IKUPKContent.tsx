@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getRealisasiFiles, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -90,17 +90,28 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
     try {
       let users: UnitUser[] = [];
+      let usedDirectBawahan = false;
       if (displayRole === 'admin') {
         // Admin: semua user di unit
         const allUsers = await getUsersByRole(unitId);
         users = allUsers.filter((u) => u.id !== authUser?.id);
-      } else if (roleLevel <= 1) {
-        // Dekan/WD (level 1): satu kesatuan pimpinan, bisa disposisi ke semua Kajur/Kabag (level 2)
-        users = await getUsersByLevel(2);
-        users = users.filter((u) => u.id !== authUser?.id);
-      } else if (roleLevel === 2 && authUser?.id) {
-        // Kajur/Kabag: disposisi ke Kaprodi bawahannya via user_relations
-        users = await getRelatedUsersFor(authUser.id);
+      } else if (roleLevel <= 2) {
+        // Level 1 (Dekan/WD/Kabag) DAN level 2 (Kajur): coba bawahan langsung dulu.
+        // Jika ada (misal Kabag → Tendik), gunakan itu. Jika kosong, gunakan level-based.
+        const directBawahan = await getRelatedUsersFor(authUser.id);
+        if (directBawahan.length > 0) {
+          users = directBawahan;
+          usedDirectBawahan = true;
+        } else if (roleLevel <= 1) {
+          // Dekan/WD: disposisi ke level-1 lainnya (Kabag, WD) DAN Kajur (level 2)
+          const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
+          const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
+          const seen = new Set<number>();
+          users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
+        } else {
+          // Kajur: disposisi ke semua Kaprodi (level 3)
+          users = await getUsersByLevel(3);
+        }
       } else if (roleLevel === 3 && authUser?.unitNama) {
         // Kaprodi: semua Dosen di prodinya (termasuk struktural yang juga Dosen)
         const dosenUsers = await getDosenByUnit(authUser.unitNama);
@@ -109,8 +120,9 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
         // Dosen (level 4): bawahan langsung via user_relations
         users = await getRelatedUsersFor(authUser.id);
       }
-      // Non-top-level users yang menerima disposisi bisa disposisi ke diri sendiri
-      if (authUser && roleLevel >= 2 && roleLevel <= 3) {
+      // Non-top-level users yang menerima disposisi bisa disposisi ke diri sendiri,
+      // kecuali saat bawahan langsung sudah dipakai (misal Kabag → Tendik).
+      if (authUser && !usedDirectBawahan && roleLevel >= 2 && roleLevel <= 3) {
         const selfEntry: UnitUser = {
           id: authUser.id,
           nama: `${authUser.nama ?? authUser.email} (Saya sendiri)`,
@@ -200,15 +212,33 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
   const isDosen = roleLevel >= 4;
 
-  const fetchRepoFiles = (indikatorId: number, asAtasan: boolean) => {
+  const fetchRepoFiles = (indikatorId: number, asAtasan: boolean, allowedEmails?: Set<string>) => {
     if (!token) { setFileRepoLoading(false); setFileRepoError('Token tidak ditemukan, silakan login ulang.'); return; }
     setFileRepoLoading(true);
     setFileRepoError(null);
     setFileRepoFiles([]);
-    const fetcher = asAtasan ? getAllRealisasiFiles(indikatorId, token) : getRealisasiFiles(indikatorId, token);
-    fetcher
+    // Selalu pakai getAllRealisasiFiles agar setiap file memiliki ownerEmail untuk filtering.
+    getAllRealisasiFiles(indikatorId, token)
       .then((result) => {
-        const mapped = result.files.map((f, i) => ({
+        let files = result.files;
+        if (asAtasan) {
+          // Mode atasan: filter ke bawahan yang diizinkan (misal Kabag → hanya Tendik)
+          if (allowedEmails && allowedEmails.size > 0) {
+            files = files.filter(f => {
+              const email = (f.ownerEmail || f.owner?.email || '').toLowerCase();
+              return allowedEmails.has(email);
+            });
+          }
+          // Jika allowedEmails undefined → tampilkan semua (Dekan/WD)
+        } else if (authUser?.email) {
+          // Mode self (Input File): hanya tampilkan file milik sendiri
+          const selfEmail = authUser.email.toLowerCase();
+          files = files.filter(f => {
+            const ownerEmail = (f.ownerEmail || f.owner?.email || '').toLowerCase();
+            return ownerEmail === selfEmail;
+          });
+        }
+        const mapped = files.map((f, i) => ({
           no: i + 1,
           namaFile: f.name,
           tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
@@ -225,7 +255,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
   // showAtasanView=false → tampilkan file milik sendiri (seperti dosen)
   // showAtasanView=true  → tampilkan semua file bawahan (mode lihat progress)
-  const handleInputFileClick = (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = [], showAtasanView = false) => {
+  const handleInputFileClick = async (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = [], showAtasanView = false) => {
     setFileRepoIsAtasan(showAtasanView);
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
@@ -237,7 +267,24 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
     setFileRepoError(null);
     setFileRepoChildren(children);
     setFileRepoModalOpen(true);
-    fetchRepoFiles(indikatorId, showAtasanView);
+
+    // Tentukan filter email bawahan berdasarkan user_relations.
+    // Untuk level-1 non-admin (Kabag): user_relations berisi Tendik → batasi tampilan file.
+    // Untuk Dekan/WD (tanpa user_relations): allowedEmails = undefined → tampilkan semua.
+    let allowedEmails: Set<string> | undefined;
+    if (showAtasanView && authUser?.id && roleLevel <= 2 && displayRole !== 'admin') {
+      try {
+        const bawahanUsers = await getRelatedUsersFor(authUser.id);
+        if (bawahanUsers.length > 0) {
+          allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+        }
+        // Jika kosong (Dekan/WD): allowedEmails tetap undefined → tampilkan semua
+      } catch {
+        // Gagal fetch → tidak batasi (aman: biarkan tampil semua)
+      }
+    }
+
+    fetchRepoFiles(indikatorId, showAtasanView, allowedEmails);
   };
 
   const handleFileRepoSubmit = async () => {
@@ -573,63 +620,63 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                       )}
                     </>
                   ) : (
-                  /* ── DOSEN: file sendiri ── */
-                  <>
-                    {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
-                      <div className="alert-banner--warning-lg">
-                        Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}). Mohon tambahkan file melalui{" "}
-                        <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">Repository.fik.upnvj.ac.id</a>
-                      </div>
-                    )}
-
-                    <div className="periode-group">
-                      <label className="periode-label">Pilih Periode</label>
-                      <select value={fileRepoPeriode} onChange={(e) => setFileRepoPeriode(e.target.value)} className="periode-select">
-                        {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                    </div>
-
-                    <div className="file-info-row">
-                      <span className="file-info-label">File Ditemukan</span>
-                      <span className={fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'}>
-                        {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
-                        {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
-                      </span>
-                    </div>
-
-                    {fileRepoFiles.length > 0 ? (
-                      <div className="file-table-wrapper">
-                        <table className="file-table">
-                          <thead>
-                            <tr>
-                              <th className="col-no">No</th>
-                              <th className="text-left">Nama File</th>
-                              <th className="col-tanggal">Tanggal</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {fileRepoFiles.map((f) => (
-                              <tr key={f.no}>
-                                <td className="text-center">{f.no}</td>
-                                <td>{f.previewUrl ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a> : f.namaFile}</td>
-                                <td className="text-center">{f.tanggal}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="file-empty">
-                        <div className="file-empty-icon">📂</div>
-                        <div className="file-empty-text">Belum ada file di folder ini</div>
-                        <div className="file-empty-hint">
-                          Upload file di{" "}
-                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">Repository FIK</a>
-                          {" "}pada folder dengan nama kode indikator ini
+                    /* ── DOSEN: file sendiri ── */
+                    <>
+                      {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
+                        <div className="alert-banner--warning-lg">
+                          Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}). Mohon tambahkan file melalui{" "}
+                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">Repository.fik.upnvj.ac.id</a>
                         </div>
+                      )}
+
+                      <div className="periode-group">
+                        <label className="periode-label">Pilih Periode</label>
+                        <select value={fileRepoPeriode} onChange={(e) => setFileRepoPeriode(e.target.value)} className="periode-select">
+                          {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </select>
                       </div>
-                    )}
-                  </>
+
+                      <div className="file-info-row">
+                        <span className="file-info-label">File Ditemukan</span>
+                        <span className={fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'}>
+                          {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
+                          {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
+                        </span>
+                      </div>
+
+                      {fileRepoFiles.length > 0 ? (
+                        <div className="file-table-wrapper">
+                          <table className="file-table">
+                            <thead>
+                              <tr>
+                                <th className="col-no">No</th>
+                                <th className="text-left">Nama File</th>
+                                <th className="col-tanggal">Tanggal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fileRepoFiles.map((f) => (
+                                <tr key={f.no}>
+                                  <td className="text-center">{f.no}</td>
+                                  <td>{f.previewUrl ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a> : f.namaFile}</td>
+                                  <td className="text-center">{f.tanggal}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="file-empty">
+                          <div className="file-empty-icon">📂</div>
+                          <div className="file-empty-text">Belum ada file di folder ini</div>
+                          <div className="file-empty-hint">
+                            Upload file di{" "}
+                            <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">Repository FIK</a>
+                            {" "}pada folder dengan nama kode indikator ini
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -773,7 +820,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                                 <td rowSpan={row.subTotalRows} className="action-cell">
                                   <div className="action-cell-inner">
                                     <button
-                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), null)}
+                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), authUser?.id)}
                                       className="btn-small btn-small--green btn-small--w100"
                                     >
                                       Disposisi

@@ -22,14 +22,14 @@ let _nextId = 1;
 const nextId = () => _nextId++;
 
 type NavEntry = { id: number | null; nama: string; kode: string };
-type Level3Item = { id: number; kode: string; nama: string };
+type Level3Item = { id: number; kode: string; nama: string; target: string; satuan: string; tenggat: string };
 type SubItem = {
   id: number; kodeSubIndikator: string; subIndikatorKinerja: string;
   level3Items: Level3Item[];
 };
 type Group = { id: number; kodeIndikator: string; indikatorKinerja: string; subItems: SubItem[] };
 
-const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "" });
+const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "", target: "", satuan: "", tenggat: "" });
 const blankSub = (): SubItem => ({
   id: nextId(), kodeSubIndikator: "", subIndikatorKinerja: "",
   level3Items: [blankL3()],
@@ -207,6 +207,7 @@ export default function TambahIndikatorForm() {
 
   // ── Append mode: editable target for selected L0 ──
   const [appendTargetUni, setAppendTargetUni] = useState("");
+  const [appendSatuan, setAppendSatuan] = useState("");
   const [appendTenggat, setAppendTenggat] = useState("");
   const [appendTargetLoading, setAppendTargetLoading] = useState(false);
 
@@ -236,12 +237,14 @@ export default function TambahIndikatorForm() {
     setNav1(blankNav());
     setNav2(blankNav());
     setAppendTargetUni("");
+    setAppendSatuan("");
     setAppendTenggat("");
     if (!appendL0Id) return;
     setAppendTargetLoading(true);
     getTargetUniversitas(appendL0Id, targetTahun)
       .then(t => {
         setAppendTargetUni(t ? String(t.targetAngka ?? "") : "");
+        setAppendSatuan(t?.satuan ?? "");
         setAppendTenggat(t?.tenggat ?? "");
       })
       .catch(() => {})
@@ -276,7 +279,7 @@ export default function TambahIndikatorForm() {
         ...s, level3Items: s.level3Items.filter(l => l.id !== lid),
       } : s),
     } : g));
-  const updateSubL3 = (gid: number, sid: number, lid: number, field: "kode" | "nama", val: string) =>
+  const updateSubL3 = (gid: number, sid: number, lid: number, field: "kode" | "nama" | "target" | "satuan" | "tenggat", val: string) =>
     setGroups(p => p.map(g => g.id === gid ? {
       ...g, subItems: g.subItems.map(s => s.id === sid ? {
         ...s, level3Items: s.level3Items.map(l => l.id === lid ? { ...l, [field]: val } : l),
@@ -304,8 +307,8 @@ export default function TambahIndikatorForm() {
   async function handleSubmit() {
     if (mode === "new") {
       if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Strategis wajib diisi."); return; }
-      if (!targetUniversitas || isNaN(Number(targetUniversitas)) || Number(targetUniversitas) < 0) { toast.error("Target Universitas wajib diisi."); return; }
-      if (!tenggat) { toast.error("Pilih Tenggat terlebih dahulu."); return; }
+      if (jenis === "IKU" && (!targetUniversitas || isNaN(Number(targetUniversitas)) || Number(targetUniversitas) < 0)) { toast.error("Target Universitas wajib diisi."); return; }
+      if (jenis === "IKU" && !tenggat) { toast.error("Pilih Tenggat terlebih dahulu."); return; }
       for (const g of groups) {
         if (!g.kodeIndikator.trim() || !g.indikatorKinerja.trim()) { toast.error("Kode dan nama Level 1 wajib diisi."); return; }
         for (const s of g.subItems) {
@@ -332,12 +335,14 @@ export default function TambahIndikatorForm() {
           tahun: targetTahun, level: 0, parentId: null,
           jenisData: l0JenisData.trim() || null,
         });
-        await upsertTargetUniversitas(l0.id, targetTahun, Number(targetUniversitas), tenggat);
+        if (jenis === "IKU") {
+          await upsertTargetUniversitas(l0.id, targetTahun, Number(targetUniversitas), tenggat);
+        }
         await saveGroupsUnder(l0.id, groups);
       } else {
-        // Update target jika diisi
-        if (appendTargetUni.trim() && !isNaN(Number(appendTargetUni))) {
-          await upsertTargetUniversitas(appendL0Id!, targetTahun, Number(appendTargetUni), appendTenggat || undefined);
+        // IKU: update target di L0; PK: target disimpan per L3 item
+        if (jenis === "IKU" && appendTargetUni.trim() && !isNaN(Number(appendTargetUni))) {
+          await upsertTargetUniversitas(appendL0Id!, targetTahun, Number(appendTargetUni), appendTenggat || undefined, appendSatuan.trim() || undefined);
         }
         // Resolve / create L1
         let l1Id: number;
@@ -363,11 +368,14 @@ export default function TambahIndikatorForm() {
             l2Id = l2.id;
           }
 
-          // Create L3 items (PK only)
+          // Create L3 items (PK only) with target per item
           if (jenis === "PK") {
             for (const l3 of appendL3Items) {
               if (l3.kode.trim() && l3.nama.trim()) {
-                await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id });
+                const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id });
+                if (l3.target.trim() && !isNaN(Number(l3.target))) {
+                  await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
+                }
               }
             }
           }
@@ -398,7 +406,10 @@ export default function TambahIndikatorForm() {
       if (jenis === "PK") {
         for (const l3 of s.level3Items) {
           if (l3.kode.trim() && l3.nama.trim()) {
-            await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2.id });
+            const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2.id });
+            if (l3.target.trim() && !isNaN(Number(l3.target))) {
+              await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
+            }
           }
         }
       }
@@ -415,7 +426,7 @@ export default function TambahIndikatorForm() {
     onUpdateField: (f: string, v: string) => void;
     onRemove: (() => void) | null;
     onAddL3: () => void; onRemoveL3: (id: number) => void;
-    onUpdateL3: (id: number, f: "kode" | "nama", v: string) => void;
+    onUpdateL3: (id: number, f: "kode" | "nama" | "target" | "satuan" | "tenggat", v: string) => void;
   }) {
     return (
       <div className="form-sub-item">
@@ -445,21 +456,62 @@ export default function TambahIndikatorForm() {
               <button type="button" className="form-add-btn--l3" onClick={onAddL3}>+ Tambah</button>
             </div>
             {sub.level3Items.map((l3, l3Idx) => (
-              <div key={l3.id} className="form-level3-row">
-                <div className="form-field">
-                  <label style={{ color: "#7c3aed" }}>Kode</label>
-                  <input className="form-input form-input--sm" type="text" value={l3.kode}
-                    onChange={e => onUpdateL3(l3.id, "kode", e.target.value)}
-                    placeholder={`${sub.kodeSubIndikator || "x"}.${l3Idx + 1}`} />
+              <div key={l3.id} style={{ background: "#f5f3ff", border: "1px solid #ede9fe", borderRadius: 6, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+                  <div className="form-field" style={{ width: 110 }}>
+                    <label style={{ color: "#7c3aed" }}>Kode</label>
+                    <input className="form-input form-input--sm" type="text" value={l3.kode}
+                      onChange={e => onUpdateL3(l3.id, "kode", e.target.value)}
+                      placeholder={`${sub.kodeSubIndikator || "x"}.${l3Idx + 1}`} />
+                  </div>
+                  <div className="form-field" style={{ flex: 1 }}>
+                    <label style={{ color: "#7c3aed" }}>Nama Rincian</label>
+                    <input className="form-input form-input--sm" type="text" value={l3.nama}
+                      onChange={e => onUpdateL3(l3.id, "nama", e.target.value)}
+                      placeholder="contoh: Rincian detail kegiatan" />
+                  </div>
+                  <button type="button" className="form-remove-icon"
+                    onClick={() => onRemoveL3(l3.id)} disabled={sub.level3Items.length <= 1}>−</button>
                 </div>
-                <div className="form-field">
-                  <label style={{ color: "#7c3aed" }}>Nama Rincian</label>
-                  <input className="form-input form-input--sm" type="text" value={l3.nama}
-                    onChange={e => onUpdateL3(l3.id, "nama", e.target.value)}
-                    placeholder="contoh: Rincian detail kegiatan" />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div className="form-field">
+                    <label style={{ color: "#7c3aed" }}>Target Fakultas</label>
+                    <input className="form-input form-input--sm" type="number" min={0} value={l3.target}
+                      onChange={e => onUpdateL3(l3.id, "target", e.target.value)}
+                      placeholder="5" />
+                  </div>
+                  <div className="form-field">
+                    <label style={{ color: "#7c3aed" }}>Satuan</label>
+                    <input className="form-input form-input--sm" type="text" value={l3.satuan}
+                      onChange={e => onUpdateL3(l3.id, "satuan", e.target.value)}
+                      placeholder="Dokumen, Kegiatan, ..." />
+                  </div>
+                  <div className="form-field">
+                    <label style={{ color: "#7c3aed" }}>Tenggat</label>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <select className="form-input form-input--sm" style={{ flex: 3 }}
+                        value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
+                        onChange={e => {
+                          const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
+                          const triwulan = e.target.value;
+                          onUpdateL3(l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
+                        }}>
+                        <option value="">— Triwulan —</option>
+                        {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                      <select className="form-input form-input--sm" style={{ flex: 2 }}
+                        value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
+                        onChange={e => {
+                          const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
+                          const year = e.target.value;
+                          onUpdateL3(l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
+                        }}>
+                        <option value="">— Tahun —</option>
+                        {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <button type="button" className="form-remove-icon"
-                  onClick={() => onRemoveL3(l3.id)} disabled={sub.level3Items.length <= 1}>−</button>
               </div>
             ))}
           </div>
@@ -476,120 +528,156 @@ export default function TambahIndikatorForm() {
     fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px", color,
   });
 
+  // ── style helpers ──
+  const fieldLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 };
+  const fieldInput: React.CSSProperties = { width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", outline: "none", background: "#fff" };
+  const levelBadge = (color: string, bg: string, label: string) => (
+    <span style={{ fontSize: 10, fontWeight: 800, color, background: bg, padding: "2px 8px", borderRadius: 20, letterSpacing: "0.05em", textTransform: "uppercase" }}>{label}</span>
+  );
+
   return (
     <PageTransition>
-      <div className="form-page">
+      <div style={{ margin: "0", padding: "4px 0 80px", fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
 
-        <nav className="form-breadcrumb">
-          <button className="form-breadcrumb__link" onClick={() => router.push("/admin/master-indikator")}>
+        {/* ── Breadcrumb ── */}
+        <nav style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 13 }}>
+          <button onClick={() => router.push("/admin/master-indikator")}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#FF7900", fontWeight: 600, padding: 0 }}>
             Master Indikator
           </button>
-          <span className="form-breadcrumb__sep">/</span>
-          <span className="form-breadcrumb__current">Form Tambah</span>
+          <span style={{ color: "#d1d5db" }}>/</span>
+          <span style={{ color: "#6b7280" }}>Form Indikator</span>
         </nav>
 
-        <h3 className="form-title">Tambah Indikator</h3>
-        <p className="form-subtitle">Buat indikator baru atau tambahkan ke data yang sudah ada.</p>
-
-        {/* Mode toggle */}
-        <div className="form-mode-toggle">
-          <button type="button" className={`form-mode-btn${mode === "new" ? " form-mode-btn--active" : ""}`}
-            onClick={() => setMode("new")}>Buat Baru</button>
-          <button type="button" className={`form-mode-btn${mode === "append" ? " form-mode-btn--active" : ""}`}
-            onClick={() => setMode("append")}>Tambah ke Yang Ada</button>
+        {/* ── Page Header ── */}
+        <div style={{ marginBottom: 16 }}>
+          <h2 style={{ fontWeight: 800, fontSize: 22, color: "#111", margin: "0 0 4px" }}>Tambah Indikator</h2>
         </div>
 
-        {/* ── NEW MODE ── */}
+        {/* ── Mode Toggle ── */}
+        <div style={{ display: "inline-flex", background: "#f0f0f0", borderRadius: 10, padding: 4, gap: 3, marginBottom: 16 }}>
+          {[{ id: "new", label: "✦ Buat Baru" }, { id: "append", label: "↳ Tambah data" }].map(m => (
+            <button key={m.id} type="button" onClick={() => setMode(m.id as "new" | "append")}
+              style={{
+                padding: "7px 20px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                background: mode === m.id ? (m.id === "new" ? "#FF7900" : "#111") : "transparent",
+                color: mode === m.id ? "#fff" : "#6b7280", transition: "all 0.15s",
+              }}>{m.label}</button>
+          ))}
+        </div>
+
+        {/* ══════════ NEW MODE ══════════ */}
         {mode === "new" && (
           <>
-            {/* Level 0 */}
-            <div style={card}>
-              <p style={sectionLabel()}>Level 0 — Sasaran Strategis</p>
-              <div className="form-row form-row--3" style={{ marginBottom: 14 }}>
-                <div className="form-field">
-                  <label>Jenis Indikator</label>
-                  <select className="form-input" value={jenis} onChange={e => setJenis(e.target.value)}>
+            {/* Level 0 card */}
+            <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 14, padding: "20px 24px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+                {levelBadge("#fff", "#FF7900", "Level 0")}
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Sasaran Strategis</span>
+              </div>
+
+              <div className="row g-3 mb-3">
+                <div className="col-md-4">
+                  <label style={fieldLabel}>Jenis Indikator <span style={{ color: "#ef4444" }}>*</span></label>
+                  <select style={fieldInput} value={jenis} onChange={e => setJenis(e.target.value)}>
                     <option value="IKU">IKU — Indikator Kinerja Utama</option>
                     <option value="PK">PK — Perjanjian Kerja</option>
                   </select>
                 </div>
-                <div className="form-field">
-                  <label>Tahun</label>
-                  <select className="form-input" value={targetTahun} onChange={e => setTargetTahun(e.target.value)}>
+                <div className="col-md-4">
+                  <label style={fieldLabel}>Tahun <span style={{ color: "#ef4444" }}>*</span></label>
+                  <select style={fieldInput} value={targetTahun} onChange={e => setTargetTahun(e.target.value)}>
                     {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
                   </select>
                 </div>
-                <div className="form-field">
-                  <label>Tenggat Waktu</label>
-                  <select className="form-input" value={tenggat} onChange={e => setTenggat(e.target.value)}>
-                    <option value="">— Pilih Tenggat —</option>
-                    {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
+                {jenis !== "PK" && (
+                  <div className="col-md-4">
+                    <label style={fieldLabel}>Tenggat Waktu</label>
+                    <select style={fieldInput} value={tenggat} onChange={e => setTenggat(e.target.value)}>
+                      <option value="">— Pilih Triwulan —</option>
+                      {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
-              <div className="form-row form-row--kode-target form-row--last" style={{ marginBottom: 14 }}>
-                <div className="form-field">
-                  <label>Nomor / Kode</label>
-                  <input className="form-input" type="text" value={nomor} onChange={e => setNomor(e.target.value)} placeholder="1" />
+
+              <div className="row g-3 mb-3">
+                <div className="col-md-2">
+                  <label style={fieldLabel}>Nomor / Kode <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input style={fieldInput} type="text" value={nomor} onChange={e => setNomor(e.target.value)} placeholder="1" />
                 </div>
-                <div className="form-field">
-                  <label>Sasaran Strategis</label>
-                  <input className="form-input" type="text" value={sasaranStrategis} onChange={e => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
+                <div className="col">
+                  <label style={fieldLabel}>Sasaran Strategis <span style={{ color: "#ef4444" }}>*</span></label>
+                  <input style={fieldInput} type="text" value={sasaranStrategis} onChange={e => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
                 </div>
-                <div className="form-field">
-                  <label>Target Universitas (%)</label>
-                  <input className="form-input" type="number" min={0} value={targetUniversitas}
-                    onChange={e => setTargetUniversitas(String(Math.max(0, Number(e.target.value))))} placeholder="80" />
-                </div>
+                {jenis !== "PK" && (
+                  <div className="col-md-3">
+                    <label style={fieldLabel}>Target Universitas (%)</label>
+                    <input style={fieldInput} type="number" min={0} max={100} value={targetUniversitas}
+                      onChange={e => setTargetUniversitas(String(Math.max(0, Number(e.target.value))))} placeholder="80" />
+                  </div>
+                )}
               </div>
-              <div className="form-row--baseline">
-                <div className="form-field">
-                  <label>Jenis Data (baseline)</label>
-                  <select className="form-input" value={l0JenisData} onChange={e => handleL0Baseline(e.target.value)}>
-                    <option value="">— Pilih —</option>
-                    {baselineOptions.map(b => (
-                      <option key={b.id} value={b.jenisData}>{b.jenisData}{b.keterangan ? ` (${b.keterangan})` : ""}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-baseline-wrapper">
-                  <label>Baseline {targetTahun}</label>
-                  <div className="form-baseline">
-                    {l0BaselineLoading ? "Memuat…" : l0Baseline !== null ? l0Baseline.toLocaleString("id-ID") : "—"}
+
+              {jenis !== "PK" && (
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label style={fieldLabel}>Jenis Data (baseline)</label>
+                    <select style={fieldInput} value={l0JenisData} onChange={e => handleL0Baseline(e.target.value)}>
+                      <option value="">— Pilih —</option>
+                      {baselineOptions.map(b => <option key={b.id} value={b.jenisData}>{b.jenisData}{b.keterangan ? ` (${b.keterangan})` : ""}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-md-3">
+                    <label style={fieldLabel}>Baseline {targetTahun}</label>
+                    <div style={{ ...fieldInput, background: "#f9fafb", color: "#374151", fontWeight: 600, minHeight: 38, display: "flex", alignItems: "center" }}>
+                      {l0BaselineLoading ? <span style={{ color: "#9ca3af", fontSize: 12 }}>Memuat…</span> : l0Baseline !== null ? l0Baseline.toLocaleString("id-ID") : <span style={{ color: "#d1d5db" }}>—</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Level 1 + 2 */}
-            <div className="form-section-header">
-              <p style={{ ...sectionLabel("#374151"), margin: 0 }}>Level 1 — Indikator Kinerja</p>
-              <button type="button" className="form-add-btn" onClick={addGroup}>+ Tambah Level 1</button>
+            {/* Level 1 header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {levelBadge("#1d4ed8", "#dbeafe", "Level 1")}
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Indikator Kinerja</span>
+              </div>
+              <button type="button" onClick={addGroup}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px dashed #d1d5db", background: "#fafafa", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                + Tambah Level 1
+              </button>
             </div>
+
             {groups.map((group, gIdx) => (
-              <div key={group.id} style={card}>
-                <div className="form-section-header">
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#2563eb" }}>Indikator Kinerja #{gIdx + 1}</span>
-                  {groups.length > 1 && <button type="button" className="form-remove-btn" onClick={() => removeGroup(group.id)}>Hapus</button>}
+              <div key={group.id} style={{ background: "#fff", border: "1px solid #dbeafe", borderRadius: 14, padding: "18px 22px", marginBottom: 14, boxShadow: "0 1px 3px rgba(37,99,235,0.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb" }}>Indikator Kinerja #{gIdx + 1}</span>
+                  {groups.length > 1 && (
+                    <button type="button" onClick={() => removeGroup(group.id)}
+                      style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Hapus</button>
+                  )}
                 </div>
-                <div className="form-row form-row--kode" style={{ marginBottom: 16 }}>
-                  <div className="form-field">
-                    <label>Kode</label>
-                    <input className="form-input" type="text" value={group.kodeIndikator}
+                <div className="row g-3 mb-3">
+                  <div className="col-md-2">
+                    <label style={fieldLabel}>Kode</label>
+                    <input style={fieldInput} type="text" value={group.kodeIndikator}
                       onChange={e => updateGroup(group.id, "kodeIndikator", e.target.value)}
                       placeholder={`${nomor || "1"}.${gIdx + 1}`} />
                   </div>
-                  <div className="form-field">
-                    <label>Nama Indikator Kinerja</label>
-                    <input className="form-input" type="text" value={group.indikatorKinerja}
+                  <div className="col">
+                    <label style={fieldLabel}>Nama Indikator Kinerja</label>
+                    <input style={fieldInput} type="text" value={group.indikatorKinerja}
                       onChange={e => updateGroup(group.id, "indikatorKinerja", e.target.value)}
                       placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" />
                   </div>
                 </div>
-                <div style={{ marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#059669", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Level 2 — Sub Indikator
-                  </span>
+
+                {/* Level 2 sub-items */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  {levelBadge("#059669", "#d1fae5", "Level 2")}
+                  <span style={{ fontSize: 11, color: "#6b7280" }}>Sub Indikator</span>
                 </div>
                 {group.subItems.map((sub, sIdx) => (
                   <SubItemRow key={sub.id} sub={sub} idx={sIdx} total={group.subItems.length}
@@ -601,75 +689,73 @@ export default function TambahIndikatorForm() {
                     onUpdateL3={(lid, f, v) => updateSubL3(group.id, sub.id, lid, f, v)}
                   />
                 ))}
-                <div className="form-sub-footer">
-                  <button type="button" className="form-add-btn--sub" onClick={() => addSub(group.id)}>+ Sub Indikator</button>
-                </div>
+                <button type="button" onClick={() => addSub(group.id)}
+                  style={{ padding: "6px 14px", borderRadius: 8, border: "1px dashed #a7f3d0", background: "#f0fdf4", color: "#059669", fontSize: 12, fontWeight: 600, cursor: "pointer", marginTop: 4 }}>
+                  + Sub Indikator
+                </button>
               </div>
             ))}
           </>
         )}
 
-        {/* ── APPEND MODE ── */}
+        {/* ══════════ APPEND MODE ══════════ */}
         {mode === "append" && (
           <>
-            {/* Jenis + Tahun */}
-            <div style={card}>
-              <p style={sectionLabel()}>Konfigurasi</p>
-              <div className="form-row form-row--3" style={{ marginBottom: 0 }}>
-                <div className="form-field">
-                  <label>Jenis Indikator</label>
-                  <select className="form-input" value={jenis} onChange={e => setJenis(e.target.value)}>
+            {/* Config card */}
+            <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 14, padding: "20px 24px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+              <p style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 14px" }}>Konfigurasi</p>
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label style={fieldLabel}>Jenis Indikator</label>
+                  <select style={fieldInput} value={jenis} onChange={e => setJenis(e.target.value)}>
                     <option value="IKU">IKU — Indikator Kinerja Utama</option>
                     <option value="PK">PK — Perjanjian Kerja</option>
                   </select>
                 </div>
-                <div className="form-field">
-                  <label>Tahun</label>
-                  <select className="form-input" value={targetTahun} onChange={e => setTargetTahun(e.target.value)}>
+                <div className="col-md-6">
+                  <label style={fieldLabel}>Tahun</label>
+                  <select style={fieldInput} value={targetTahun} onChange={e => setTargetTahun(e.target.value)}>
                     {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
                   </select>
                 </div>
               </div>
             </div>
 
-            {/* Navigasi hierarki — semua inline dalam satu card */}
-            <div style={card}>
-              <p style={sectionLabel()}>Pilih Posisi &amp; Isi Data Baru</p>
+            {/* Hierarchy navigation card */}
+            <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 14, padding: "20px 24px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+              <p style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px" }}>Pilih Posisi & Isi Data Baru</p>
 
-              {/* Level 0 — dropdown */}
-              <div className="form-field" style={{ marginBottom: 20 }}>
-                <label>Level 0 — Sasaran Strategis</label>
-                <select className="form-input" value={appendL0Id ?? ""}
-                  onChange={e => setAppendL0Id(e.target.value ? Number(e.target.value) : null)}>
+              {/* L0 */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  {levelBadge("#fff", "#FF7900", "Level 0")}
+                  <label style={{ ...fieldLabel, margin: 0 }}>Sasaran Strategis</label>
+                </div>
+                <select style={fieldInput} value={appendL0Id ?? ""} onChange={e => setAppendL0Id(e.target.value ? Number(e.target.value) : null)}>
                   <option value="">— Pilih Sasaran Strategis —</option>
                   {existingL0.map(i => <option key={i.id} value={i.id}>{i.kode} — {i.nama}</option>)}
                 </select>
-                {existingL0.length === 0 && (
-                  <p style={{ fontSize: 12, color: "#9ca3af", margin: "4px 0 0" }}>Tidak ada data {jenis} untuk tahun {targetTahun}.</p>
-                )}
+                {existingL0.length === 0 && <p style={{ fontSize: 12, color: "#9ca3af", margin: "4px 0 0" }}>Tidak ada data {jenis} untuk tahun {targetTahun}.</p>}
               </div>
 
-              {/* Target Universitas update (shown when L0 selected) */}
-              {appendL0Id && (
-                <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "14px 16px", marginBottom: 20 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>
+              {/* IKU target box */}
+              {appendL0Id && jenis === "IKU" && (
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 16px", marginBottom: 18 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>
                     Target Universitas (opsional — perbarui jika berubah)
                   </p>
                   {appendTargetLoading ? (
                     <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Memuat target saat ini…</p>
                   ) : (
-                    <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-                      <div className="form-field" style={{ flex: 1, minWidth: 120 }}>
-                        <label>Target (%)</label>
-                        <input className="form-input" type="number" min={0} max={100}
-                          value={appendTargetUni}
-                          onChange={e => setAppendTargetUni(e.target.value)}
-                          placeholder="misal 80" />
+                    <div className="row g-2">
+                      <div className="col-md-4">
+                        <label style={fieldLabel}>Target (%)</label>
+                        <input style={fieldInput} type="number" min={0} max={100} value={appendTargetUni} onChange={e => setAppendTargetUni(e.target.value)} placeholder="misal 80" />
                       </div>
-                      <div className="form-field" style={{ flex: 1, minWidth: 160 }}>
-                        <label>Tenggat Waktu</label>
-                        <select className="form-input" value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
-                          <option value="">— Pilih —</option>
+                      <div className="col-md-4">
+                        <label style={fieldLabel}>Tenggat Waktu</label>
+                        <select style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
+                          <option value="">— Pilih Triwulan —</option>
                           {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
                         </select>
                       </div>
@@ -678,70 +764,105 @@ export default function TambahIndikatorForm() {
                 </div>
               )}
 
-              {/* Level 1 — combobox */}
+              {/* L1 */}
               {appendL0Id && (
-                <div style={{ marginBottom: 20 }}>
+                <div style={{ marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "#2563eb" }}>Level 1</span>
+                    {levelBadge("#1d4ed8", "#dbeafe", "Level 1")}
+                    <label style={{ ...fieldLabel, margin: 0 }}>Indikator Kinerja</label>
                     <span style={{ fontSize: 11, color: "#9ca3af" }}>— ketik untuk cari atau buat baru</span>
                   </div>
-                  <ComboBox
-                    value={nav1}
-                    onSelect={(entry) => setNav1(entry)}
-                    options={existingL1}
-                    placeholder="Cari atau ketik nama indikator kinerja…"
-                  />
-                  {nav1.id === null && nav1.nama.trim() && (
-                    <KodeHint value={nav1.kode} onChange={v => setNav1(p => ({ ...p, kode: v }))} />
-                  )}
+                  <ComboBox value={nav1} onSelect={entry => setNav1(entry)} options={existingL1} placeholder="Cari atau ketik nama indikator kinerja…" />
+                  {nav1.id === null && nav1.nama.trim() && <KodeHint value={nav1.kode} onChange={v => setNav1(p => ({ ...p, kode: v }))} />}
                 </div>
               )}
 
-              {/* Level 2 — combobox + inline extra fields when new */}
+              {/* L2 */}
               {nav1Active && (
-                <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 20 }}>
+                <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "#059669" }}>Level 2</span>
-                    <span style={{ fontSize: 11, color: "#9ca3af" }}>— opsional, ketik untuk cari atau buat baru</span>
+                    {levelBadge("#059669", "#d1fae5", "Level 2")}
+                    <label style={{ ...fieldLabel, margin: 0 }}>Sub Indikator</label>
+                    <span style={{ fontSize: 11, color: "#9ca3af" }}>— opsional</span>
                   </div>
-                  <ComboBox
-                    value={nav2}
-                    onSelect={setNav2}
-                    options={existingL2}
+                  <ComboBox value={nav2} onSelect={setNav2} options={existingL2}
                     placeholder="Cari atau ketik nama sub indikator…"
-                    disabled={nav1.id === null && !nav1.nama.trim()}
-                  />
-                  {nav2.id === null && nav2.nama.trim() && (
-                    <KodeHint value={nav2.kode} onChange={v => setNav2(p => ({ ...p, kode: v }))} />
-                  )}
+                    disabled={nav1.id === null && !nav1.nama.trim()} />
+                  {nav2.id === null && nav2.nama.trim() && <KodeHint value={nav2.kode} onChange={v => setNav2(p => ({ ...p, kode: v }))} />}
 
-                  {/* Level 3 rows — shown for PK when L2 is active */}
+                  {/* L3 (PK only) */}
                   {nav2Active && jenis === "PK" && (
-                    <div style={{ marginTop: 20, borderTop: "1px solid #f3f4f6", paddingTop: 16 }}>
+                    <div style={{ marginTop: 18, borderTop: "1px solid #f3f4f6", paddingTop: 14 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          Level 3 — Rincian
-                        </span>
-                        <button type="button" className="form-add-btn--l3"
-                          onClick={() => setAppendL3Items(p => [...p, blankL3()])}>+ Tambah</button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {levelBadge("#7c3aed", "#ede9fe", "Level 3")}
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>Rincian</span>
+                        </div>
+                        <button type="button" onClick={() => setAppendL3Items(p => [...p, blankL3()])}
+                          style={{ padding: "5px 12px", borderRadius: 7, border: "1px dashed #c4b5fd", background: "#f5f3ff", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          + Tambah
+                        </button>
                       </div>
                       {appendL3Items.map((l3, idx) => (
-                        <div key={l3.id} className="form-level3-row" style={{ marginBottom: 8 }}>
-                          <div className="form-field">
-                            <label style={{ color: "#7c3aed" }}>Kode</label>
-                            <input className="form-input form-input--sm" type="text" value={l3.kode}
-                              onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, kode: e.target.value } : x))}
-                              placeholder={`x.x.${idx + 1}`} />
+                        <div key={l3.id} style={{ background: "#faf5ff", border: "1px solid #ede9fe", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                          <div className="row g-2 mb-2 align-items-end">
+                            <div className="col-md-2">
+                              <label style={{ ...fieldLabel, color: "#7c3aed" }}>Kode</label>
+                              <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.kode}
+                                onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, kode: e.target.value } : x))}
+                                placeholder={`x.x.${idx + 1}`} />
+                            </div>
+                            <div className="col">
+                              <label style={{ ...fieldLabel, color: "#7c3aed" }}>Nama Rincian</label>
+                              <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.nama}
+                                onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, nama: e.target.value } : x))}
+                                placeholder="contoh: Rincian detail kegiatan" />
+                            </div>
+                            <div className="col-auto">
+                              <button type="button" onClick={() => setAppendL3Items(p => p.filter(x => x.id !== l3.id))}
+                                disabled={appendL3Items.length <= 1}
+                                style={{ width: 32, height: 32, borderRadius: 7, border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                            </div>
                           </div>
-                          <div className="form-field">
-                            <label style={{ color: "#7c3aed" }}>Nama Rincian</label>
-                            <input className="form-input form-input--sm" type="text" value={l3.nama}
-                              onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, nama: e.target.value } : x))}
-                              placeholder="contoh: Rincian detail kegiatan" />
+                          <div className="row g-2">
+                            <div className="col-md-3">
+                              <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Target Fakultas</label>
+                              <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={l3.target}
+                                onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, target: e.target.value } : x))}
+                                placeholder="5" />
+                            </div>
+                            <div className="col-md-3">
+                              <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Satuan</label>
+                              <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.satuan}
+                                onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, satuan: e.target.value } : x))}
+                                placeholder="Dokumen, Kegiatan..." />
+                            </div>
+                            <div className="col-md-4">
+                              <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Tenggat</label>
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
+                                  value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
+                                  onChange={e => {
+                                    const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
+                                    const triwulan = e.target.value;
+                                    setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
+                                  }}>
+                                  <option value="">— Triwulan —</option>
+                                  {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                                </select>
+                                <select style={{ ...fieldInput, fontSize: 12, flex: 2 }}
+                                  value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
+                                  onChange={e => {
+                                    const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
+                                    const year = e.target.value;
+                                    setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
+                                  }}>
+                                  <option value="">— Tahun —</option>
+                                  {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
+                                </select>
+                              </div>
+                            </div>
                           </div>
-                          <button type="button" className="form-remove-icon"
-                            onClick={() => setAppendL3Items(p => p.filter(x => x.id !== l3.id))}
-                            disabled={appendL3Items.length <= 1}>−</button>
                         </div>
                       ))}
                     </div>
@@ -752,14 +873,23 @@ export default function TambahIndikatorForm() {
           </>
         )}
 
-        {/* Actions */}
-        <div className="form-actions">
-          <button type="button" className="btn-outline"
-            onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}>
+        {/* ── Sticky Action Bar ── */}
+        <div style={{
+          position: "sticky", bottom: 0, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
+          borderTop: "1px solid #f0f0f0", padding: "14px 0", marginTop: 8,
+          display: "flex", gap: 10, justifyContent: "flex-end"
+        }}>
+          <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}
+            style={{ padding: "9px 24px", borderRadius: 9, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
             Kembali
           </button>
-          <button type="button" className="btn-main" onClick={handleSubmit} disabled={submitLoading}
-            style={{ opacity: submitLoading ? 0.6 : 1, cursor: submitLoading ? "not-allowed" : "pointer" }}>
+          <button type="button" onClick={handleSubmit} disabled={submitLoading}
+            style={{
+              padding: "9px 28px", borderRadius: 9, border: "none", background: "#FF7900", color: "#fff",
+              fontSize: 13, fontWeight: 700, cursor: submitLoading ? "not-allowed" : "pointer",
+              opacity: submitLoading ? 0.65 : 1, display: "flex", alignItems: "center", gap: 8
+            }}>
+            {submitLoading && <div className="spinner-border spinner-border-sm" style={{ width: 14, height: 14, borderWidth: 2 }} />}
             {submitLoading ? "Menyimpan…" : "Simpan Indikator"}
           </button>
         </div>

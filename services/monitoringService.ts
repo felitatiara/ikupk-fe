@@ -12,7 +12,9 @@ export interface ProgressChartItem {
   id: number;
   kode: string;
   nama: string;
-  targetUniversitas: number;   // % dari target_universitas (level 0)
+  jenis: string;
+  targetUniversitas: number;   // IKU: %; PK: nilai absolut
+  satuan: string | null;       // unit untuk PK (e.g. "Dokumen")
   targetAbsolut: number | null;
   targetFakultas: number;      // sum target_unit (IKU: L1, PK: L3)
   realisasi: number;

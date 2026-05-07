@@ -1,5 +1,5 @@
 const API_BASE_URL = 'http://localhost:4000';
-const REPOSITORY_API_URL = 'http://localhost:3002/api';
+const REPOSITORY_API_URL = 'http://localhost:3000/api';
 
 export interface Indikator {
   id: number;
@@ -95,6 +95,8 @@ export interface LaporanChildNode {
   realisasiKualitas: number | null;
   persenCapaian: number;
   baselineJumlah: number | null;
+  tenggat?: string | null;
+  satuan?: string | null;
   children: LaporanChildNode[];
 }
 
@@ -106,6 +108,7 @@ export interface LaporanGroup {
   persentaseTarget: number | null;
   targetAbsolut: number | null;
   baselineJumlah: number | null;
+  tenggat?: string | null;
   sdPersen: number;
   subIndikators: LaporanChildNode[];
 }
@@ -270,11 +273,12 @@ export interface TargetUniversitasData {
   indikatorId: number;
   tahun: string;
   targetAngka: number;
+  satuan?: string | null;
   tenggat?: string | null;
 }
 
 export async function getTargetUniversitas(indikatorId: number, tahun: string): Promise<TargetUniversitasData | null> {
-  const response = await fetch(`${API_BASE_URL}/target-universitas?indikatorId=${indikatorId}&tahun=${tahun}`);
+  const response = await fetch(`${API_BASE_URL}/targets/target-universitas?indikatorId=${indikatorId}&tahun=${tahun}`);
   if (!response.ok) throw new Error('Failed to fetch target universitas');
   return response.json();
 }
@@ -289,11 +293,11 @@ export async function saveTargetUniversitas(indikatorId: number, tahun: string, 
   return response.json();
 }
 
-export async function upsertTargetUniversitas(indikatorId: number, tahun: string, persentase: number, tenggat?: string): Promise<any> {
+export async function upsertTargetUniversitas(indikatorId: number, tahun: string, persentase: number, tenggat?: string, satuan?: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/targets/upsert-target-universitas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, tahun, persentase, tenggat }),
+    body: JSON.stringify({ indikatorId, tahun, persentase, tenggat, satuan }),
   });
   if (!response.ok) throw new Error('Failed to upsert target universitas');
   return response.json();
@@ -893,6 +897,7 @@ export interface RealisasiFileItem {
 export interface RealisasiFilesResult {
   indikatorKode: string;
   indikatorNama: string;
+  folderLink: string | null;
   files: RealisasiFileItem[];
 }
 
@@ -1001,10 +1006,13 @@ export async function getRealisasiSubmissions(
 export async function validateRealisasiAtasan(
   id: number,
   validFileCount: number,
+  token?: string,
 ): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API_BASE_URL}/realisasi/${id}/validate-atasan`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ validFileCount }),
   });
   if (!res.ok) throw new Error('Failed to validate submission');

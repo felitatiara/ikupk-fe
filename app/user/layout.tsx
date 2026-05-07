@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import Sidebar from "@/components/layout/Sidebar";
-import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import Header from '@/components/layout/Header';
 
@@ -13,25 +11,13 @@ export default function UserLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, logout } = useAuth();
-  const [profileOpen, setProfileOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const { user, isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setProfileOpen(false);
-      }
+    if (!loading && !isAuthenticated) {
+      window.location.replace('/auth/login');
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleLogout = () => {
-    logout();
-    router.push('/landing');
-  };
+  }, [isAuthenticated, loading]);
 
   return (
     <>

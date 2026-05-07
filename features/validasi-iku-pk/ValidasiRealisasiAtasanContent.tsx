@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import PageTransition from "@/components/layout/PageTransition";
 import {
   getSubmissionsForAtasan,
   validateRealisasiAtasan,
   getAllRealisasiFiles,
+  getLaporanWithRealisasi,
   SubmissionPerIndikator,
   RealisasiSubmission,
 } from "@/lib/api";
@@ -43,11 +45,12 @@ export default function ValidasiRealisasiAtasanContent() {
 
   // Detail modal
   const [detail, setDetail] = useState<DetailModal | null>(null);
-  const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string }[]>([]);
+  const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string }[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // Export loading
   const [exporting, setExporting] = useState(false);
+  const [exportingLaporan, setExportingLaporan] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -60,13 +63,17 @@ export default function ValidasiRealisasiAtasanContent() {
     setDetailFiles([]);
     getAllRealisasiFiles(detail.submission.indikatorId, token)
       .then((result) => {
+        const dosenEmailLower = detail.dosenEmail.toLowerCase();
+        const mapFile = (f: any) => ({
+          name: f.name,
+          previewUrl: f.preview_url,
+          tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
+          ownerName: f.ownerName || f.owner?.name,
+          ownerEmail: f.ownerEmail || f.owner?.email,
+        });
         const filtered = result.files
-          .filter(f => (f.ownerEmail || f.owner?.email) === detail.dosenEmail)
-          .map(f => ({
-            name: f.name,
-            previewUrl: f.preview_url,
-            tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
-          }));
+          .filter(f => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
+          .map(mapFile);
         setDetailFiles(filtered);
       })
       .catch(() => setDetailFiles([]))
@@ -124,7 +131,7 @@ export default function ValidasiRealisasiAtasanContent() {
     if (isNaN(val) || val < 0) return;
     setSaving((prev) => ({ ...prev, [submissionId]: true }));
     try {
-      await validateRealisasiAtasan(submissionId, val);
+      await validateRealisasiAtasan(submissionId, val, token ?? undefined);
       setRawGroups((prev) =>
         prev.map((g) => ({
           ...g,
@@ -145,46 +152,69 @@ export default function ValidasiRealisasiAtasanContent() {
     if (!token) return;
     setExporting(true);
     try {
-      // Fetch all files per unique indikatorId in one pass
+      // Fetch folder link per unique indikatorId
       const indikatorIds = [...new Set(
         dosenGroups.flatMap(dg => dg.submissions.map(s => s.indikatorId))
       )];
       const fileResults = await Promise.all(
-        indikatorIds.map(id => getAllRealisasiFiles(id, token).catch(() => ({ files: [] as any[] })))
+        indikatorIds.map(id =>
+          getAllRealisasiFiles(id, token).catch(() => ({ folderLink: null, files: [] as any[] }))
+        )
       );
-      // Map: "indikatorId:dosenEmail" → comma-separated download URLs
-      const fileUrlMap = new Map<string, string>();
+      // Map: indikatorId → folder link
+      const folderLinkMap = new Map<number, string>();
       indikatorIds.forEach((id, idx) => {
-        const { files } = fileResults[idx];
-        const byDosen = new Map<string, string[]>();
-        for (const f of files) {
-          const email = f.ownerEmail || f.owner?.email || '';
-          if (!byDosen.has(email)) byDosen.set(email, []);
-          byDosen.get(email)!.push(f.download_url || f.preview_url || '');
-        }
-        byDosen.forEach((urls, email) => {
-          fileUrlMap.set(`${id}:${email}`, urls.filter(Boolean).join(' | '));
+        const link = (fileResults[idx] as any).folderLink;
+        if (link) folderLinkMap.set(id, link);
+      });
+
+      // Build flat rows: header row + data
+      type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
+      const COLS = ["Nama Dosen", "Email", "Indikator", "Periode", "Target", "File Diunggah", "File Valid", "Status", "Link Folder"];
+      const aoa: (string | number)[][] = [COLS];
+      const merges: MergeRange[] = [];
+
+      dosenGroups.forEach((dg) => {
+        dg.submissions.forEach((s) => {
+          const rowIdx = aoa.length;
+          const folderLink = folderLinkMap.get(s.indikatorId) || "-";
+          aoa.push([
+            dg.dosenNama,
+            dg.dosenEmail,
+            s.indikatorKode + " — " + s.indikatorNama,
+            s.periode ?? "-",
+            s.targetDosen ?? "-",
+            s.fileCount,
+            s.validFileCount ?? "-",
+            s.status,
+            folderLink,
+          ]);
+
+          // Merge "Link Folder" cells for same indikatorId vertically
+          // (collect ranges after building all rows — handled below)
+          void rowIdx;
         });
       });
 
-      const rows: any[] = [];
-      dosenGroups.forEach((dg) => {
-        dg.submissions.forEach((s, i) => {
-          rows.push({
-            "Nama Dosen": dg.dosenNama,
-            "Email Dosen": dg.dosenEmail,
-            No: i + 1,
-            Indikator: s.indikatorKode + " - " + s.indikatorNama,
-            "Jumlah File": s.fileCount,
-            "File Valid": s.validFileCount ?? "-",
-            Target: s.targetDosen ?? "-",
-            Periode: s.periode ?? "-",
-            Status: s.status,
-            "Link File": fileUrlMap.get(`${s.indikatorId}:${dg.dosenEmail}`) || "-",
-          });
-        });
-      });
-      const ws = XLSX.utils.json_to_sheet(rows);
+      // Merge Link Folder (col 8) for consecutive rows with same indikator link
+      const LINK_COL = 8;
+      let i = 1; // skip header
+      while (i < aoa.length) {
+        const link = aoa[i][LINK_COL];
+        let j = i + 1;
+        while (j < aoa.length && aoa[j][LINK_COL] === link && link !== "-") j++;
+        if (j - i > 1) {
+          merges.push({ s: { r: i, c: LINK_COL }, e: { r: j - 1, c: LINK_COL } });
+        }
+        i = j;
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!merges"] = merges;
+      ws["!cols"] = [
+        { wch: 24 }, { wch: 28 }, { wch: 40 }, { wch: 22 },
+        { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 50 },
+      ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Validasi Realisasi");
       XLSX.writeFile(wb, `Validasi_Realisasi_${tahun}.xlsx`);
@@ -192,6 +222,128 @@ export default function ValidasiRealisasiAtasanContent() {
       toast.error("Gagal mengekspor data.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const exportLaporanIKUPK = async () => {
+    if (!user?.roleId || !token) return;
+    setExportingLaporan(true);
+    try {
+      type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
+      const wb = XLSX.utils.book_new();
+
+      for (const jenisExport of ["IKU", "PK"]) {
+        const grouped = await getLaporanWithRealisasi(jenisExport, tahun, user.roleId);
+        if (grouped.length === 0) continue;
+
+        // Kumpulkan semua indikator ID yang perlu folder link
+        const indikatorIds: number[] = [];
+        for (const group of grouped) {
+          for (const sub of group.subIndikators) {
+            if (jenisExport === "IKU") {
+              indikatorIds.push(sub.id);
+            } else {
+              for (const child of sub.children ?? []) {
+                for (const l3 of (child as any).children ?? []) {
+                  indikatorIds.push(l3.id);
+                }
+              }
+            }
+          }
+        }
+        const uniqueIds = [...new Set(indikatorIds)];
+        const folderResults = await Promise.all(
+          uniqueIds.map(id =>
+            getAllRealisasiFiles(id, token).catch(() => ({ folderLink: null, files: [] }))
+          )
+        );
+        const folderLinkMap = new Map<number, string>();
+        uniqueIds.forEach((id, idx) => {
+          const link = (folderResults[idx] as any).folderLink;
+          if (link) folderLinkMap.set(id, link);
+        });
+
+        const aoa: (string | number)[][] = [];
+        const merges: MergeRange[] = [];
+
+        if (jenisExport === "IKU") {
+          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
+          aoa.push(["", "", "", "", "", "%", "Angka", ""]);
+          merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
+          merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
+          merges.push({ s: { r: 0, c: 2 }, e: { r: 1, c: 2 } });
+          merges.push({ s: { r: 0, c: 3 }, e: { r: 1, c: 3 } });
+          merges.push({ s: { r: 0, c: 4 }, e: { r: 1, c: 4 } });
+          merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 6 } });
+          merges.push({ s: { r: 0, c: 7 }, e: { r: 1, c: 7 } });
+
+          let no = 1;
+          for (const group of grouped) {
+            const groupStart = aoa.length;
+            aoa.push([no + ".", group.nama, "", group.persentaseTarget !== null ? group.persentaseTarget + "%" : "", group.tenggat || "", "", "", ""]);
+            for (const sub of group.subIndikators) {
+              const subRowIdx = aoa.length;
+              const childCount = (sub.children ?? []).length;
+              const folderLink = folderLinkMap.get(sub.id) || "";
+              aoa.push(["", "", sub.kode + "  " + sub.nama, "", "", sub.realisasiKualitas !== null ? sub.realisasiKualitas + "%" : "", sub.realisasiKuantitas || "", folderLink]);
+              for (const child of sub.children ?? []) {
+                aoa.push(["", "", "    " + child.kode + "  " + child.nama, "", "", "", child.realisasiKuantitas || "", folderLink]);
+              }
+              // Merge Data Link kolom 7 untuk sub + semua children-nya
+              if (childCount > 0 && folderLink) {
+                merges.push({ s: { r: subRowIdx, c: 7 }, e: { r: subRowIdx + childCount, c: 7 } });
+              }
+            }
+            const groupEnd = aoa.length - 1;
+            if (groupEnd > groupStart) {
+              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+              merges.push({ s: { r: groupStart, c: 3 }, e: { r: groupEnd, c: 3 } });
+              merges.push({ s: { r: groupStart, c: 4 }, e: { r: groupEnd, c: 4 } });
+            }
+            no++;
+          }
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!merges"] = merges;
+          ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
+          XLSX.utils.book_append_sheet(wb, ws, "Laporan IKU");
+
+        } else {
+          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
+          let no = 1;
+          for (const group of grouped) {
+            const groupStart = aoa.length;
+            aoa.push([no + ".", group.nama, "", "", "", "", "", ""]);
+            for (const sub of group.subIndikators) {
+              aoa.push(["", "", sub.kode + "  " + sub.nama, "", "", "", "", ""]);
+              for (const child of sub.children ?? []) {
+                aoa.push(["", "", "    " + child.kode + "  " + child.nama, "", "", "", "", ""]);
+                for (const l3 of (child as any).children ?? []) {
+                  const folderLink = folderLinkMap.get(l3.id) || "";
+                  aoa.push(["", "", "        " + l3.kode + "  " + l3.nama, l3.tenggat || "", l3.satuan || "", l3.nilaiTarget ?? "", l3.realisasiKuantitas || "", folderLink]);
+                }
+              }
+            }
+            const groupEnd = aoa.length - 1;
+            if (groupEnd > groupStart) {
+              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+            }
+            no++;
+          }
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!merges"] = merges;
+          ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
+          XLSX.utils.book_append_sheet(wb, ws, "Laporan PK");
+        }
+      }
+
+      XLSX.writeFile(wb, `Laporan_IKU_PK_${tahun}.xlsx`);
+      toast.success("Export laporan berhasil.");
+    } catch {
+      toast.error("Gagal mengekspor laporan.");
+    } finally {
+      setExportingLaporan(false);
     }
   };
 
@@ -245,95 +397,111 @@ export default function ValidasiRealisasiAtasanContent() {
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
               <button onClick={exportToExcel} disabled={exporting} className="btn-green-sm">
-                {exporting ? "Mengekspor..." : "Export Excel"}
+                {exporting ? "Mengekspor..." : "Export Validasi"}
+              </button>
+              <button onClick={exportLaporanIKUPK} disabled={exportingLaporan} className="btn-green-sm">
+                {exportingLaporan ? "Mengekspor..." : "Export Laporan IKU/PK"}
               </button>
             </div>
           </div>
         </div>
 
         {/* Detail Modal */}
-        {detail && (
-          <div
-            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-            onClick={() => setDetail(null)}
-          >
-            <div
-              style={{ backgroundColor: "white", borderRadius: 12, width: "100%", maxWidth: 560, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
-              onClick={e => e.stopPropagation()}
-            >
+        {detail && createPortal(
+          <div className="modal-overlay" onClick={() => setDetail(null)}>
+            <div className="modal-content modal-content--md" onClick={e => e.stopPropagation()} style={{ padding: 0, display: "flex", flexDirection: "column", maxHeight: "85vh", overflow: "hidden" }}>
               {/* Header */}
-              <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#1f2937" }}>Detail Realisasi</h3>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>{detail.dosenNama} · {detail.dosenEmail}</p>
+                  <h3 className="modal-title" style={{ marginBottom: 4 }}>Detail Realisasi</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{detail.dosenNama} · {detail.dosenEmail}</p>
                 </div>
-                <button onClick={() => setDetail(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#6b7280" }}>✕</button>
+                <button
+                  onClick={() => setDetail(null)}
+                  style={{ background: "#f3f4f6", border: "none", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280", fontSize: 14, flexShrink: 0, marginLeft: 12 }}
+                >
+                  ✕
+                </button>
               </div>
 
-              {/* Info */}
-              <div style={{ padding: "12px 20px", borderBottom: "1px solid #f3f4f6", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Indikator</p>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "2px 0 0" }}>
-                    {detail.submission.indikatorKode} — {detail.submission.indikatorNama}
-                  </p>
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Target Dosen</p>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "2px 0 0" }}>
-                    {detail.submission.targetDosen !== null ? detail.submission.targetDosen : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Diunggah</p>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "2px 0 0" }}>{detail.submission.fileCount}</p>
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Valid</p>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: detail.submission.validFileCount !== null ? "#16a34a" : "#9ca3af", margin: "2px 0 0" }}>
-                    {detail.submission.validFileCount !== null ? detail.submission.validFileCount : "Belum divalidasi"}
-                  </p>
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Periode</p>
-                  <p style={{ fontSize: 13, color: "#1f2937", margin: "2px 0 0" }}>{detail.submission.periode ?? "—"}</p>
+              {/* Info cards */}
+              <div style={{ padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px" }}>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Indikator</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "3px 0 0" }}>
+                      {detail.submission.indikatorKode} — {detail.submission.indikatorNama}
+                    </p>
+                  </div>
+                  <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
+                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Diunggah</p>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: "#1f2937", margin: "2px 0 0" }}>{detail.submission.fileCount}</p>
+                  </div>
+                  <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
+                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Valid</p>
+                    <p style={{ fontSize: 20, fontWeight: 700, color: detail.submission.validFileCount !== null ? "#16a34a" : "#9ca3af", margin: "2px 0 0" }}>
+                      {detail.submission.validFileCount !== null ? detail.submission.validFileCount : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Target Dosen</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "3px 0 0" }}>
+                      {detail.submission.targetDosen !== null ? detail.submission.targetDosen : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Periode</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "3px 0 0" }}>{detail.submission.periode ?? "—"}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* File list */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", margin: "0 0 8px" }}>Daftar File</p>
+              {/* File list — scrollable */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Daftar File {!detailLoading && detailFiles.length > 0 && <span style={{ color: "#6b7280", fontWeight: 400 }}>({detailFiles.length} file)</span>}
+                </p>
                 {detailLoading ? (
-                  <p style={{ textAlign: "center", color: "#6b7280", padding: 16, fontSize: 13 }}>Memuat file…</p>
+                  <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 13 }}>Memuat file…</div>
                 ) : detailFiles.length === 0 ? (
-                  <p style={{ textAlign: "center", color: "#9ca3af", padding: 16, fontSize: 13 }}>Tidak ada file.</p>
+                  <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", fontSize: 13 }}>Tidak ada file ditemukan.</div>
                 ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th style={{ padding: "5px 8px", textAlign: "left", fontSize: 11, color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>Nama File</th>
-                        <th style={{ padding: "5px 8px", textAlign: "center", fontSize: 11, color: "#6b7280", borderBottom: "1px solid #e5e7eb", width: 90 }}>Tanggal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailFiles.map((f, i) => (
-                        <tr key={i}>
-                          <td style={{ padding: "6px 8px", fontSize: 12, borderBottom: "1px solid #f3f4f6" }}>
-                            {f.previewUrl
-                              ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "none" }}>{f.name}</a>
-                              : f.name}
-                          </td>
-                          <td style={{ padding: "6px 8px", fontSize: 11, color: "#6b7280", textAlign: "center", borderBottom: "1px solid #f3f4f6" }}>{f.tanggal}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {detailFiles.map((f, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 14 }}>
+                          📄
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {f.previewUrl
+                            ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#2563eb", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+                            : <span style={{ fontSize: 13, fontWeight: 500, color: "#1f2937", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                          }
+                          {f.ownerName && (
+                            <p style={{ fontSize: 11, color: "#6b7280", margin: "2px 0 0" }}>{f.ownerName}{f.ownerEmail ? ` · ${f.ownerEmail}` : ""}</p>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{f.tanggal}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
+
+              {/* Footer */}
+              <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", background: "#f9fafb", borderRadius: "0 0 12px 12px" }}>
+                <button
+                  onClick={() => setDetail(null)}
+                  style={{ padding: "8px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "1px solid #d1d5db", background: "white", cursor: "pointer", color: "#374151" }}
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Content */}

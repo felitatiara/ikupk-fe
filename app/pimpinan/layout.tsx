@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import Sidebar from "@/components/layout/Sidebar";
-import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import Header from '@/components/layout/Header';
 
@@ -12,25 +10,13 @@ export default function PimpinanLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, logout } = useAuth();
-  const router = useRouter();
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const { user, isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setProfileOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleLogout = () => {
-    logout();
-    router.push('/landing');
-  };
+    if (!loading && !isAuthenticated) {
+      window.location.replace('/auth/login');
+    }
+  }, [isAuthenticated, loading]);
   return (
     <>
       <Header />
