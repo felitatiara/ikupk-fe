@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:4000';
+export const API_BASE_URL = 'http://localhost:4000';
 const REPOSITORY_API_URL = 'http://localhost:3000/api';
 
 export interface Indikator {
@@ -36,6 +36,7 @@ export interface IndikatorGroupedLevel3 {
   tahun: string;
   targetId: number | null;
   nilaiTarget: number | null;
+  sumberData?: string;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
   validRealisasiJumlah?: number | null;
@@ -63,6 +64,7 @@ export interface IndikatorGroupedSub {
   targetId: number | null;
   nilaiTarget: number | null;
   baselineJumlah: number | null;
+  sumberData?: string;
   isPkBerbasisIku?: boolean;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
@@ -146,7 +148,7 @@ export async function getIndikatorGroupedForUser(jenis: string, tahun: string, u
 }
 
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null; sumberData?: string }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -156,7 +158,7 @@ export async function createIndikator(data: { jenis: string; kode: string; nama:
   return response.json();
 }
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; tahun: string; level: number; parentId: number | null; jenisData: string | null }>): Promise<Indikator> {
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; tahun: string; level: number; parentId: number | null; jenisData: string | null; sumberData: string }>): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1093,6 +1095,101 @@ export async function getMySkpStatus(userId: number, tahun: string): Promise<MyS
   } catch {
     return { status: 'pending', realisasi: [], atasan: null };
   }
+}
+
+// ── Direct Input Realisasi (sumberData = 'ikupk') ─────────────────────────────
+
+export interface DirectRealisasiItem {
+  id: number;
+  realisasiAngka: number;
+  periode: string | null;
+  keterangan: string | null;
+  status: string;
+  createdAt: string;
+}
+
+/** Ambil riwayat realisasi direct-input milik user login untuk indikator + tahun */
+export async function getMyRealisasiDirect(
+  indikatorId: number,
+  tahun: string,
+  token: string,
+): Promise<DirectRealisasiItem[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/direct-input?indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/** Submit atau upsert realisasi direct-input */
+export async function submitRealisasiDirect(
+  data: { indikatorId: number; tahun: string; periode: string; realisasiAngka: number; keterangan?: string },
+  token: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/direct-input`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan realisasi');
+}
+
+// ── IKUPK File Upload (sumberData = 'ikupk') ──────────────────────────────────
+
+export interface IkupkFile {
+  id: number;
+  fileName: string;
+  fileUrl: string;
+  periode: string | null;
+  createdAt: string;
+}
+
+export async function uploadIkupkFile(
+  data: { indikatorId: number; tahun: string; periode: string; file: File },
+  token: string,
+): Promise<IkupkFile> {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  formData.append('indikatorId', String(data.indikatorId));
+  formData.append('tahun', data.tahun);
+  formData.append('periode', data.periode);
+  const res = await fetch(`${API_BASE_URL}/realisasi/ikupk-upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) throw new Error('Upload gagal');
+  return res.json();
+}
+
+export async function getIkupkFiles(
+  indikatorId: number,
+  tahun: string,
+  token: string,
+): Promise<IkupkFile[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/ikupk-files?indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteIkupkFile(id: number, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/ikupk-files/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Gagal menghapus file');
 }
 
 /** Approve atau reject semua realisasi bawahan untuk tahun tertentu */

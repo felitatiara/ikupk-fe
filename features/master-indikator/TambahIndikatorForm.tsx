@@ -22,20 +22,20 @@ let _nextId = 1;
 const nextId = () => _nextId++;
 
 type NavEntry = { id: number | null; nama: string; kode: string };
-type Level3Item = { id: number; kode: string; nama: string; target: string; satuan: string; tenggat: string };
+type Level3Item = { id: number; kode: string; nama: string; target: string; satuan: string; tenggat: string; sumberData: string };
 type SubItem = {
   id: number; kodeSubIndikator: string; subIndikatorKinerja: string;
   level3Items: Level3Item[];
 };
-type Group = { id: number; kodeIndikator: string; indikatorKinerja: string; subItems: SubItem[] };
+type Group = { id: number; kodeIndikator: string; indikatorKinerja: string; sumberData: string; subItems: SubItem[] };
 
-const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "", target: "", satuan: "", tenggat: "" });
+const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "", target: "", satuan: "", tenggat: "", sumberData: "repository" });
 const blankSub = (): SubItem => ({
   id: nextId(), kodeSubIndikator: "", subIndikatorKinerja: "",
   level3Items: [blankL3()],
 });
 const blankGroup = (): Group => ({
-  id: nextId(), kodeIndikator: "", indikatorKinerja: "", subItems: [blankSub()],
+  id: nextId(), kodeIndikator: "", indikatorKinerja: "", sumberData: "repository", subItems: [blankSub()],
 });
 const blankNav = (): NavEntry => ({ id: null, nama: "", kode: "" });
 
@@ -204,6 +204,7 @@ export default function TambahIndikatorForm() {
   const [nav1, setNav1] = useState<NavEntry>(blankNav()); // L1
   const [nav2, setNav2] = useState<NavEntry>(blankNav()); // L2
   const [appendL3Items, setAppendL3Items] = useState<Level3Item[]>([blankL3()]);
+  const [appendL1SumberData, setAppendL1SumberData] = useState("repository");
 
   // ── Append mode: editable target for selected L0 ──
   const [appendTargetUni, setAppendTargetUni] = useState("");
@@ -279,7 +280,7 @@ export default function TambahIndikatorForm() {
         ...s, level3Items: s.level3Items.filter(l => l.id !== lid),
       } : s),
     } : g));
-  const updateSubL3 = (gid: number, sid: number, lid: number, field: "kode" | "nama" | "target" | "satuan" | "tenggat", val: string) =>
+  const updateSubL3 = (gid: number, sid: number, lid: number, field: "kode" | "nama" | "target" | "satuan" | "tenggat" | "sumberData", val: string) =>
     setGroups(p => p.map(g => g.id === gid ? {
       ...g, subItems: g.subItems.map(s => s.id === sid ? {
         ...s, level3Items: s.level3Items.map(l => l.id === lid ? { ...l, [field]: val } : l),
@@ -349,7 +350,7 @@ export default function TambahIndikatorForm() {
         if (nav1.id !== null) {
           l1Id = nav1.id;
         } else {
-          const l1 = await createIndikator({ jenis, kode: nav1.kode.trim(), nama: nav1.nama.trim(), tahun: targetTahun, level: 1, parentId: appendL0Id! });
+          const l1 = await createIndikator({ jenis, kode: nav1.kode.trim(), nama: nav1.nama.trim(), tahun: targetTahun, level: 1, parentId: appendL0Id!, sumberData: appendL1SumberData || 'repository' });
           l1Id = l1.id;
         }
 
@@ -372,7 +373,7 @@ export default function TambahIndikatorForm() {
           if (jenis === "PK") {
             for (const l3 of appendL3Items) {
               if (l3.kode.trim() && l3.nama.trim()) {
-                const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id });
+                const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id, sumberData: l3.sumberData || 'repository' });
                 if (l3.target.trim() && !isNaN(Number(l3.target))) {
                   await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
                 }
@@ -392,7 +393,7 @@ export default function TambahIndikatorForm() {
 
   async function saveGroupsUnder(parentId: number, gs: Group[]) {
     for (const g of gs) {
-      const l1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), tahun: targetTahun, level: 1, parentId });
+      const l1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), tahun: targetTahun, level: 1, parentId, sumberData: g.sumberData || 'repository' });
       await saveSubsUnder(l1.id, g.subItems);
     }
   }
@@ -406,7 +407,7 @@ export default function TambahIndikatorForm() {
       if (jenis === "PK") {
         for (const l3 of s.level3Items) {
           if (l3.kode.trim() && l3.nama.trim()) {
-            const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2.id });
+            const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2.id, sumberData: l3.sumberData || 'repository' });
             if (l3.target.trim() && !isNaN(Number(l3.target))) {
               await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
             }
@@ -426,7 +427,7 @@ export default function TambahIndikatorForm() {
     onUpdateField: (f: string, v: string) => void;
     onRemove: (() => void) | null;
     onAddL3: () => void; onRemoveL3: (id: number) => void;
-    onUpdateL3: (id: number, f: "kode" | "nama" | "target" | "satuan" | "tenggat", v: string) => void;
+    onUpdateL3: (id: number, f: "kode" | "nama" | "target" | "satuan" | "tenggat" | "sumberData", v: string) => void;
   }) {
     return (
       <div className="form-sub-item">
@@ -473,7 +474,7 @@ export default function TambahIndikatorForm() {
                   <button type="button" className="form-remove-icon"
                     onClick={() => onRemoveL3(l3.id)} disabled={sub.level3Items.length <= 1}>−</button>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                   <div className="form-field">
                     <label style={{ color: "#7c3aed" }}>Target Fakultas</label>
                     <input className="form-input form-input--sm" type="number" min={0} value={l3.target}
@@ -510,6 +511,14 @@ export default function TambahIndikatorForm() {
                         {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
                       </select>
                     </div>
+                  </div>
+                  <div className="form-field">
+                    <label style={{ color: "#7c3aed" }}>Sumber Data</label>
+                    <select className="form-input form-input--sm" value={l3.sumberData}
+                      onChange={e => onUpdateL3(l3.id, "sumberData", e.target.value)}>
+                      <option value="repository">Repository</option>
+                      <option value="ikupk">IKU PK</option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -672,6 +681,14 @@ export default function TambahIndikatorForm() {
                       onChange={e => updateGroup(group.id, "indikatorKinerja", e.target.value)}
                       placeholder="contoh: Hasil Lulusan yang Bekerja Sesuai Bidang" />
                   </div>
+                  <div className="col-md-3">
+                    <label style={fieldLabel}>Sumber Data</label>
+                    <select style={fieldInput} value={group.sumberData}
+                      onChange={e => updateGroup(group.id, "sumberData", e.target.value)}>
+                      <option value="repository">Repository</option>
+                      <option value="ikupk">IKU PK (Input Langsung)</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Level 2 sub-items */}
@@ -774,6 +791,16 @@ export default function TambahIndikatorForm() {
                   </div>
                   <ComboBox value={nav1} onSelect={entry => setNav1(entry)} options={existingL1} placeholder="Cari atau ketik nama indikator kinerja…" />
                   {nav1.id === null && nav1.nama.trim() && <KodeHint value={nav1.kode} onChange={v => setNav1(p => ({ ...p, kode: v }))} />}
+                  {nav1.id === null && nav1.nama.trim() && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>Sumber Data:</span>
+                      <select style={{ fontSize: 12, padding: "5px 10px", border: "1px solid #e5e7eb", borderRadius: 8, color: "#374151" }}
+                        value={appendL1SumberData} onChange={e => setAppendL1SumberData(e.target.value)}>
+                        <option value="repository">Repository</option>
+                        <option value="ikupk">IKU PK (Input Langsung)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -825,17 +852,25 @@ export default function TambahIndikatorForm() {
                             </div>
                           </div>
                           <div className="row g-2">
-                            <div className="col-md-3">
+                            <div className="col-md-2">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Target Fakultas</label>
                               <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={l3.target}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, target: e.target.value } : x))}
                                 placeholder="5" />
                             </div>
-                            <div className="col-md-3">
+                            <div className="col-md-2">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Satuan</label>
                               <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.satuan}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, satuan: e.target.value } : x))}
                                 placeholder="Dokumen, Kegiatan..." />
+                            </div>
+                            <div className="col-md-2">
+                              <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Sumber Data</label>
+                              <select style={{ ...fieldInput, fontSize: 12 }} value={l3.sumberData}
+                                onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, sumberData: e.target.value } : x))}>
+                                <option value="repository">Repository</option>
+                                <option value="ikupk">IKU PK</option>
+                              </select>
                             </div>
                             <div className="col-md-4">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Tenggat</label>

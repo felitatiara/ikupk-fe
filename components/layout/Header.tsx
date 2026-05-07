@@ -109,7 +109,7 @@ export default function Header() {
           <div className="hidden h-9 w-px bg-gray-200 sm:block" />
           <div className="min-w-0">
             <div className="truncate text-[15px] font-bold tracking-[-0.01em]" style={{ color: '#111827' }}>
-              Indikator Kinerja Utama &amp; Perjanjian Kerja
+              Indikator Kinerja Utama &amp; Perjanjian Kinerja
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-xs font-bold" style={{ color: '#ff7900' }}>
               <ShieldCheck size={13} />

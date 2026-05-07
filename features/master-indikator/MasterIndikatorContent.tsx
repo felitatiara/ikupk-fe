@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { getIndikator, createIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, Indikator } from "../../lib/api";
+import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, Indikator } from "../../lib/api";
 import { toast } from "sonner";
 
 
@@ -93,6 +93,8 @@ export default function MasterIndikatorContent() {
   const [editTargetUniversitas, setEditTargetUniversitas] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  // sumberData per indikatorId (Level 1 and Level 2)
+  const [editSumberDataMap, setEditSumberDataMap] = useState<Record<number, string>>({});
 
   // Form fields
   const [jenis, setJenis] = useState<"IKU" | "PK">("IKU");
@@ -384,9 +386,20 @@ export default function MasterIndikatorContent() {
 
   const handleEditClick = (row: Level0WithChildren) => {
     setEditRow(row);
-    setEditTahun(String(new Date().getFullYear()));
+    const tahun = String(new Date().getFullYear());
+    setEditTahun(tahun);
+    setEditTenggat("");
+    // Populate sumberData map from current indikator list
+    const map: Record<number, string> = {};
+    for (const l1 of row.children) {
+      map[l1.record.id] = (l1.record as any).sumberData || 'repository';
+      for (const l2 of l1.children) {
+        map[l2.id] = (l2 as any).sumberData || 'repository';
+      }
+    }
+    setEditSumberDataMap(map);
     setEditModalOpen(true);
-    fetchEditTarget(row.record.id, String(new Date().getFullYear()));
+    fetchEditTarget(row.record.id, tahun);
   };
 
   const handleEditTahunChange = (tahun: string) => {
@@ -401,15 +414,22 @@ export default function MasterIndikatorContent() {
     }
     setEditSaving(true);
     try {
+      // Save target universitas
       await upsertTargetUniversitas(
         editRow.record.id,
         editTahun,
         Number(editTargetUniversitas),
         editTenggat || undefined
       );
-      toast.success("Target berhasil diperbarui.");
+      // Save sumberData for each changed indikator
+      const sumberDataUpdates = Object.entries(editSumberDataMap).map(([id, sumberData]) =>
+        updateIndikator(Number(id), { sumberData })
+      );
+      await Promise.all(sumberDataUpdates);
+      toast.success("Indikator berhasil diperbarui.");
       setEditModalOpen(false);
       setEditRow(null);
+      refreshList();
     } catch (err) {
       toast.error("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -482,97 +502,154 @@ export default function MasterIndikatorContent() {
       {editModalOpen && editRow && createPortal(
         <div
           style={{
-            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.4)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 9999,
+            position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)",
+            backdropFilter: "blur(4px)", display: "flex", alignItems: "center",
+            justifyContent: "center", zIndex: 9999, padding: 16,
           }}
           onClick={() => !editSaving && setEditModalOpen(false)}
         >
           <div
             style={{
-              backgroundColor: "white", borderRadius: 12, padding: 28,
-              width: 600, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)", boxSizing: "border-box",
+              background: "#fff", borderRadius: 16, width: 660, maxWidth: "100%",
+              maxHeight: "92vh", overflowY: "auto", boxSizing: "border-box",
+              boxShadow: "0 25px 80px rgba(0,0,0,0.22)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, color: "#1f2937", textAlign: "center" }}>
-              Edit Target Universitas
-            </h3>
+            {/* Header */}
+            <div style={{ padding: "24px 28px 0", borderBottom: "1px solid #f3f4f6", paddingBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: filterJenis === "IKU" ? "#fff7ed" : "#f5f3ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+                  {filterJenis === "IKU" ? "📊" : "📋"}
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#111827" }}>Edit Indikator</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                    {editRow.record.kode} — {editRow.record.nama}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-            {/* Detail Indikator */}
-            <div style={{ backgroundColor: "#f9fafb", borderRadius: 8, padding: 16, marginBottom: 20, border: "1px solid #e5e7eb" }}>
-              <div style={{ marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" }}>Nomor</span>
-                <p style={{ fontSize: 14, fontWeight: 700, color: "#1f2937", margin: "4px 0 0" }}>{editRow.record.kode}</p>
+            <div style={{ padding: "20px 28px" }}>
+              {/* Section: Target Universitas */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 3, height: 14, borderRadius: 2, background: "#FF7900", display: "inline-block" }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Target Universitas</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={fLabel}>Tahun</label>
+                    <select value={editTahun} onChange={(e) => handleEditTahunChange(e.target.value)} style={fInput} disabled={editLoading}>
+                      {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={fLabel}>Tenggat</label>
+                    <select value={editTenggat} onChange={(e) => setEditTenggat(e.target.value)} style={fInput}>
+                      <option value="">— Tidak diubah —</option>
+                      {TRIWULAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={fLabel}>Angka Target</label>
+                    {editLoading ? (
+                      <div style={{ ...fInput, background: "#f9fafb", color: "#9ca3af" }}>Memuat…</div>
+                    ) : (
+                      <input type="number" min={0} value={editTargetUniversitas}
+                        onChange={(e) => setEditTargetUniversitas(e.target.value)}
+                        placeholder="contoh: 80" style={fInput} />
+                    )}
+                  </div>
+                </div>
               </div>
-              <div style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" }}>Sasaran Strategis</span>
-                <p style={{ fontSize: 13, color: "#374151", margin: "4px 0 0" }}>{editRow.record.nama}</p>
-              </div>
+
+              {/* Divider */}
+              <div style={{ borderTop: "1px solid #f3f4f6", marginBottom: 20 }} />
+
+              {/* Section: Sumber Data per Sub-Indikator */}
               <div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-                  {filterJenis === "IKU" ? "Sub Indikator Kinerja Utama" : "Sub Indikator Perjanjian Kerja"}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 3, height: 14, borderRadius: 2, background: "#6366f1", display: "inline-block" }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data per Sub Indikator</span>
+                  <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— ubah cara input realisasi</span>
+                </div>
+
+                {editRow.children.length === 0 && (
+                  <p style={{ fontSize: 13, color: "#9ca3af", fontStyle: "italic" }}>Tidak ada sub-indikator.</p>
+                )}
+
                 {editRow.children.map((l1) => (
-                  <div key={l1.record.id} style={{ marginBottom: 6 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 2px" }}>
-                      {l1.record.kode} {l1.record.nama}
-                    </p>
-                    {l1.children.map((l2) => (
-                      <p key={l2.id} style={{ fontSize: 12, color: "#6b7280", margin: "0 0 2px", paddingLeft: 16 }}>
-                        {l2.kode} {l2.nama}
-                      </p>
+                  <div key={l1.record.id} style={{ marginBottom: l1.children.length > 0 ? 12 : 8 }}>
+                    {/* Level 1 row */}
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      background: "#f9fafb", border: "1px solid #e5e7eb",
+                      borderRadius: l1.children.length > 0 ? "8px 8px 0 0" : 8,
+                      padding: "10px 14px",
+                    }}>
+                      <span style={{ width: 3, height: 12, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", flex: 1, lineHeight: 1.4 }}>
+                        {l1.record.kode} {l1.record.nama}
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        <label style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>Sumber Data:</label>
+                        <select
+                          value={editSumberDataMap[l1.record.id] ?? 'repository'}
+                          onChange={(e) => setEditSumberDataMap(prev => ({ ...prev, [l1.record.id]: e.target.value }))}
+                          style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
+                        >
+                          <option value="repository">Repository FIK</option>
+                          <option value="ikupk">IKU PK (Upload)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Level 2 rows */}
+                    {l1.children.map((l2, l2Idx) => (
+                      <div key={l2.id} style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        background: "#fff", border: "1px solid #e5e7eb", borderTop: "none",
+                        borderRadius: l2Idx === l1.children.length - 1 ? "0 0 8px 8px" : 0,
+                        padding: "9px 14px 9px 28px",
+                      }}>
+                        <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
+                        <span style={{ fontSize: 12, color: "#4b5563", flex: 1, lineHeight: 1.4 }}>
+                          {l2.kode} {l2.nama}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          <label style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>Sumber Data:</label>
+                          <select
+                            value={editSumberDataMap[l2.id] ?? 'repository'}
+                            onChange={(e) => setEditSumberDataMap(prev => ({ ...prev, [l2.id]: e.target.value }))}
+                            style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
+                          >
+                            <option value="repository">Repository FIK</option>
+                            <option value="ikupk">IKU PK (Upload)</option>
+                          </select>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ))}
+
+                {/* Legend */}
+                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 14px", marginTop: 12 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: "#0369a1", lineHeight: 1.6 }}>
+                    <b>Repository FIK</b> — realisasi diambil otomatis dari sistem Repository.<br />
+                    <b>IKU PK (Upload)</b> — user upload file bukti langsung ke sistem IKU PK.
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Edit Fields */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-              <div>
-                <label style={labelStyle}>Tahun Target</label>
-                <select
-                  value={editTahun}
-                  onChange={(e) => handleEditTahunChange(e.target.value)}
-                  style={inputStyle}
-                  disabled={editLoading}
-                >
-                  {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Tenggat</label>
-                <select value={editTenggat} onChange={(e) => setEditTenggat(e.target.value)} style={inputStyle}>
-                  <option value="">-- Tidak Diubah --</option>
-                  {TRIWULAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Target Universitas</label>
-              {editLoading ? (
-                <div style={{ ...inputStyle, backgroundColor: "#f3f4f6", color: "#9ca3af" }}>Memuat...</div>
-              ) : (
-                <input
-                  type="number"
-                  min={0}
-                  value={editTargetUniversitas}
-                  onChange={(e) => setEditTargetUniversitas(e.target.value)}
-                  placeholder="contoh: 80"
-                  style={inputStyle}
-                />
-              )}
-            </div>
-
-            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            {/* Footer */}
+            <div style={{ padding: "16px 28px", borderTop: "1px solid #f3f4f6", display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
                 onClick={() => setEditModalOpen(false)}
                 disabled={editSaving}
-                style={{ padding: "8px 24px", borderRadius: 6, border: "1px solid #d1d5db", backgroundColor: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+                style={{ padding: "9px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
               >
                 Kembali
               </button>
@@ -580,13 +657,14 @@ export default function MasterIndikatorContent() {
                 onClick={handleEditSave}
                 disabled={editSaving || editLoading}
                 style={{
-                  padding: "8px 24px", borderRadius: 6, border: "none",
-                  backgroundColor: editSaving || editLoading ? "#9ca3af" : "#16a34a",
-                  color: "white", fontSize: 13, fontWeight: 600,
+                  padding: "9px 22px", borderRadius: 8, border: "none",
+                  background: editSaving || editLoading ? "#d1d5db" : "#16a34a",
+                  color: "#fff", fontSize: 13, fontWeight: 700,
                   cursor: editSaving || editLoading ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", gap: 6,
                 }}
               >
-                {editSaving ? "Menyimpan..." : "Simpan"}
+                {editSaving ? "Menyimpan…" : "✓ Simpan Perubahan"}
               </button>
             </div>
           </div>

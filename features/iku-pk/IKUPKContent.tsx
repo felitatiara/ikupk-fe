@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth } from "../../lib/api";
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, API_BASE_URL } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IkupkFile } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
@@ -36,6 +36,13 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
   const [fileRepoError, setFileRepoError] = useState<string | null>(null);
   const [fileRepoIsAtasan, setFileRepoIsAtasan] = useState(false);
+
+  // Ikupk file upload state (sumberData = 'ikupk')
+  const [ikupkFiles, setIkupkFiles] = useState<IkupkFile[]>([]);
+  const [ikupkFileUploading, setIkupkFileUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [directInputSubmitting, setDirectInputSubmitting] = useState(false);
+  const ikupkFileInputRef = useRef<HTMLInputElement>(null);
 
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
@@ -120,9 +127,8 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
         // Dosen (level 4): bawahan langsung via user_relations
         users = await getRelatedUsersFor(authUser.id);
       }
-      // Non-top-level users yang menerima disposisi bisa disposisi ke diri sendiri,
-      // kecuali saat bawahan langsung sudah dipakai (misal Kabag → Tendik).
-      if (authUser && !usedDirectBawahan && roleLevel >= 2 && roleLevel <= 3) {
+      // Semua user non-admin bisa disposisi ke diri sendiri (termasuk WD/Wadek).
+      if (authUser && displayRole !== 'admin' && !users.some(u => u.id === authUser.id)) {
         const selfEntry: UnitUser = {
           id: authUser.id,
           nama: `${authUser.nama ?? authUser.email} (Saya sendiri)`,
@@ -230,8 +236,14 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
             });
           }
           // Jika allowedEmails undefined → tampilkan semua (Dekan/WD)
+        } else if (allowedEmails && allowedEmails.size > 0) {
+          // Non-dosen (misal Kabag): tampilkan file milik bawahan langsung
+          files = files.filter(f => {
+            const email = (f.ownerEmail || f.owner?.email || '').toLowerCase();
+            return allowedEmails!.has(email);
+          });
         } else if (authUser?.email) {
-          // Mode self (Input File): hanya tampilkan file milik sendiri
+          // Dosen: hanya tampilkan file milik sendiri
           const selfEmail = authUser.email.toLowerCase();
           files = files.filter(f => {
             const ownerEmail = (f.ownerEmail || f.owner?.email || '').toLowerCase();
@@ -251,6 +263,71 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
       })
       .catch(() => setFileRepoError('Gagal memuat file dari repository.'))
       .finally(() => setFileRepoLoading(false));
+  };
+
+  // Direct-input modal (sumberData = 'ikupk')
+  const [directModalOpen, setDirectModalOpen] = useState(false);
+  const [directModalIndikatorId, setDirectModalIndikatorId] = useState<number | null>(null);
+  const [directModalNama, setDirectModalNama] = useState('');
+
+  const handleDirectInputClick = async (indikatorId: number, nama: string) => {
+    if (!token) { toast.error('Token tidak ditemukan, silakan login ulang.'); return; }
+    setDirectModalIndikatorId(indikatorId);
+    setDirectModalNama(nama);
+    setFileRepoPeriode(periodeOptions[0]);
+    setIkupkFiles([]);
+    setDirectModalOpen(true);
+    try {
+      const files = await getIkupkFiles(indikatorId, tahun, token);
+      setIkupkFiles(files);
+    } catch { }
+  };
+
+  const handleIkupkUpload = async (file: File) => {
+    if (!directModalIndikatorId || !token) return;
+    setIkupkFileUploading(true);
+    try {
+      await uploadIkupkFile({ indikatorId: directModalIndikatorId, tahun, periode: fileRepoPeriode, file }, token);
+      const files = await getIkupkFiles(directModalIndikatorId, tahun, token);
+      setIkupkFiles(files);
+      toast.success('File berhasil diupload.');
+    } catch {
+      toast.error('Gagal mengupload file.');
+    } finally {
+      setIkupkFileUploading(false);
+    }
+  };
+
+  const handleDeleteIkupkFile = async (id: number) => {
+    if (!token || !directModalIndikatorId) return;
+    try {
+      await deleteIkupkFile(id, token);
+      const files = await getIkupkFiles(directModalIndikatorId, tahun, token);
+      setIkupkFiles(files);
+      toast.success('File dihapus.');
+    } catch {
+      toast.error('Gagal menghapus file.');
+    }
+  };
+
+  const handleDirectInputSubmit = async () => {
+    if (!directModalIndikatorId || !token) return;
+    if (ikupkFiles.length === 0) { toast.error('Upload minimal satu file terlebih dahulu.'); return; }
+    setDirectInputSubmitting(true);
+    try {
+      await submitRealisasiDirect({
+        indikatorId: directModalIndikatorId,
+        tahun,
+        periode: fileRepoPeriode,
+        realisasiAngka: ikupkFiles.length,
+      }, token);
+      toast.success('Realisasi berhasil disimpan.');
+      setDirectModalOpen(false);
+    } catch {
+      toast.error('Gagal menyimpan realisasi.');
+    } finally {
+      setDirectInputSubmitting(false);
+    }
   };
 
   // showAtasanView=false → tampilkan file milik sendiri (seperti dosen)
@@ -282,6 +359,14 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
       } catch {
         // Gagal fetch → tidak batasi (aman: biarkan tampil semua)
       }
+    } else if (!showAtasanView && !isDosen && authUser?.id) {
+      // Non-dosen (misal Kabag) klik "Input File": fetch bawahan langsung agar file Tendik tampil
+      try {
+        const bawahanUsers = await getRelatedUsersFor(authUser.id);
+        if (bawahanUsers.length > 0) {
+          allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+        }
+      } catch { }
     }
 
     fetchRepoFiles(indikatorId, showAtasanView, allowedEmails);
@@ -319,7 +404,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
       sub: IndikatorGroupedSub;
       isSubFirst: boolean; subTotalRows: number;
       hasPkL3: boolean; showAction: boolean;
-      actionId: number; actionNama: string;
+      actionId: number; actionNama: string; actionSumberData: string;
     };
     return (
       <div className="table-wrapper">
@@ -345,12 +430,12 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                 } else {
                   subTotal += sub.children.length;
                 }
-                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: sub.id, actionNama: sub.nama });
+                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: sub.id, actionNama: sub.nama, actionSumberData: sub.sumberData ?? 'repository' });
                 for (const child of sub.children) {
-                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: false, actionId: child.id, actionNama: child.nama });
+                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: false, actionId: child.id, actionNama: child.nama, actionSumberData: 'repository' });
                   if (hasPkL3) {
                     for (const l3 of (child.children ?? [])) {
-                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama });
+                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama, actionSumberData: l3.sumberData ?? 'repository' });
                     }
                   }
                 }
@@ -360,7 +445,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                 const disposisiJumlah = row.sub.disposisiJumlah ?? null;
                 const capaianBase = row.sub.realisasiJumlah ?? 0;
                 const capaianPct = (capaianBase > 0 && disposisiJumlah && disposisiJumlah > 0)
-                  ? (capaianBase >= disposisiJumlah ? '100%' : `${Math.round((capaianBase / disposisiJumlah) * 100)}%`)
+                  ? `${Math.round((capaianBase / disposisiJumlah) * 100)}%`
                   : '-';
                 const capaianClass = (capaianBase > 0 && disposisiJumlah)
                   ? (capaianBase >= disposisiJumlah ? 'text-success' : 'text-warning')
@@ -387,7 +472,9 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                         {!row.hasPkL3 ? (
                           <td rowSpan={row.subTotalRows} className="action-cell">
                             <button
-                              onClick={() => handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), row.sub.children)}
+                              onClick={() => row.actionSumberData === 'ikupk'
+                                ? handleDirectInputClick(row.actionId, row.actionNama)
+                                : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), row.sub.children)}
                               className="btn-small btn-small--green"
                             >
                               Input File
@@ -400,7 +487,9 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                       <td className="action-cell">
                         {row.showAction && (
                           <button
-                            onClick={() => handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
+                            onClick={() => row.actionSumberData === 'ikupk'
+                              ? handleDirectInputClick(row.actionId, row.actionNama)
+                              : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
                             className="btn-small btn-small--green"
                           >
                             Input File
@@ -702,6 +791,171 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
           document.body
         )}
 
+
+        {/* DIRECT INPUT MODAL (sumberData = 'ikupk') — drag & drop upload */}
+        {directModalOpen && createPortal(
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}
+            onClick={() => setDirectModalOpen(false)}
+          >
+            <div
+              style={{ background: '#fff', borderRadius: 16, width: 520, maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📁</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#111827', lineHeight: 1.3 }}>Upload File Realisasi</h3>
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{directModalNama}</p>
+                  </div>
+                  <button onClick={() => setDirectModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 20, lineHeight: 1, padding: 4, flexShrink: 0 }}>✕</button>
+                </div>
+              </div>
+
+              <div style={{ padding: '18px 24px' }}>
+                {/* Periode */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Periode</label>
+                  <select
+                    value={fileRepoPeriode}
+                    onChange={(e) => setFileRepoPeriode(e.target.value)}
+                    style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', background: '#fff', color: '#374151', cursor: 'pointer' }}
+                  >
+                    {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+
+                {/* Drop zone */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); if (!ikupkFileUploading) setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && !ikupkFileUploading) void handleIkupkUpload(file);
+                  }}
+                  onClick={() => !ikupkFileUploading && ikupkFileInputRef.current?.click()}
+                  style={{
+                    border: `2px dashed ${isDragOver ? '#6366f1' : ikupkFileUploading ? '#e5e7eb' : '#d1d5db'}`,
+                    borderRadius: 12,
+                    padding: '28px 20px',
+                    marginBottom: 16,
+                    textAlign: 'center',
+                    background: isDragOver ? '#f5f3ff' : '#fafafa',
+                    cursor: ikupkFileUploading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    ref={ikupkFileInputRef}
+                    type="file"
+                    disabled={ikupkFileUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) { void handleIkupkUpload(file); e.target.value = ''; }
+                    }}
+                    style={{ display: 'none' }}
+                  />
+
+                  {ikupkFileUploading ? (
+                    <div>
+                      <div style={{ width: 44, height: 44, margin: '0 auto 10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="44" height="44" viewBox="0 0 44 44" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+                          <circle cx="22" cy="22" r="18" stroke="#e5e7eb" strokeWidth="4" />
+                          <path d="M22 4 a18 18 0 0 1 18 18" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#6366f1' }}>Mengupload file...</p>
+                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#9ca3af' }}>Mohon tunggu sebentar</p>
+                      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ width: 52, height: 52, margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+                          <circle cx="26" cy="26" r="26" fill={isDragOver ? '#ede9fe' : '#f3f4f6'} />
+                          <path d="M26 34V24M26 24L22 28M26 24L30 28" stroke={isDragOver ? '#6366f1' : '#9ca3af'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M18 32c-2.76 0-5-2.24-5-5 0-2.42 1.72-4.44 4-4.9A7 7 0 0 1 26 16a7 7 0 0 1 6.96 6.1C35.28 22.56 37 24.58 37 27c0 2.76-2.24 5-5 5H18z" stroke={isDragOver ? '#6366f1' : '#9ca3af'} strokeWidth="2" fill="none" />
+                        </svg>
+                      </div>
+                      <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: isDragOver ? '#4f46e5' : '#1f2937' }}>
+                        {isDragOver ? 'Lepaskan file di sini' : 'Pilih file atau drag & drop di sini'}
+                      </p>
+                      <p style={{ margin: '0 0 14px', fontSize: 12, color: '#9ca3af' }}>PDF, DOC, gambar, dan format lainnya — maks. 10 MB</p>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); ikupkFileInputRef.current?.click(); }}
+                        style={{ padding: '8px 20px', borderRadius: 8, border: '1.5px solid #d1d5db', background: '#fff', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}
+                      >
+                        Browse File
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* File list */}
+                {ikupkFiles.length > 0 && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>File Terupload</span>
+                      <span style={{ fontSize: 11, background: '#d1fae5', color: '#065f46', borderRadius: 20, padding: '2px 10px', fontWeight: 700 }}>{ikupkFiles.length} file</span>
+                    </div>
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+                      {ikupkFiles.map((f, idx) => (
+                        <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: idx > 0 ? '1px solid #f3f4f6' : 'none', background: '#fff' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                            {f.fileName.match(/\.(pdf)$/i) ? '📄' : f.fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? '🖼️' : f.fileName.match(/\.(doc|docx)$/i) ? '📝' : '📎'}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <a href={`${API_BASE_URL}${f.fileUrl}`} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'none' }}>
+                              {f.fileName}
+                            </a>
+                            <span style={{ fontSize: 11, color: '#9ca3af' }}>{f.periode ?? '-'}</span>
+                          </div>
+                          <button
+                            onClick={() => void handleDeleteIkupkFile(f.id)}
+                            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {ikupkFiles.length === 0 && !ikupkFileUploading && (
+                  <p style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: 0 }}>
+                    Belum ada file — upload file lalu klik Simpan Realisasi
+                  </p>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDirectModalOpen(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                  Tutup
+                </button>
+                <button
+                  onClick={handleDirectInputSubmit}
+                  disabled={directInputSubmitting || ikupkFiles.length === 0}
+                  style={{
+                    padding: '9px 20px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: directInputSubmitting || ikupkFiles.length === 0 ? 'not-allowed' : 'pointer',
+                    background: directInputSubmitting || ikupkFiles.length === 0 ? '#d1d5db' : '#16a34a', color: '#fff',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  {directInputSubmitting ? 'Menyimpan...' : `✓ Simpan Realisasi (${ikupkFiles.length} file)`}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
         <div className="page-card">
           <h3 className="ikupk-card-title">
