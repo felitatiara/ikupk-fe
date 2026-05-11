@@ -489,7 +489,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                   >
                     <option value={0} disabled>Pilih nama...</option>
                     {unitUsers.map((u) => (
-                      <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>
+                      <option key={u.id} value={u.id}>{u.nama} </option>
                     ))}
                   </select>
                   <input
