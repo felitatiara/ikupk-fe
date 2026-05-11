@@ -21,7 +21,7 @@ import {
   ProgressChartItem,
   IndikatorDetail,
 } from "@/services/monitoringService";
-import { getIndikatorGroupedForUser, getAllRealisasiFiles, type RealisasiFileItem } from "@/lib/api";
+import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, type RealisasiFileItem, type MonitoringBawahanResult } from "@/lib/api";
 import type { User } from "@/types";
 
 const jenisOptions = [
@@ -438,9 +438,26 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
   const [detailItem, setDetailItem] = useState<ProgressChartItem | null>(null);
 
+  const [monitoringBawahan, setMonitoringBawahan] = useState<MonitoringBawahanResult | null>(null);
+  const [monitoringBawahanLoading, setMonitoringBawahanLoading] = useState(false);
+  const [bawahanJenis, setBawahanJenis] = useState("IKU");
+  const [bawahanTahun, setBawahanTahun] = useState(new Date().getFullYear().toString());
+  const [bawahanFilterJabatan, setBawahanFilterJabatan] = useState("all");
+  const [bawahanFilterUser, setBawahanFilterUser] = useState("all");
+
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
   const canViewDetail = roleStr === "dekan" || roleStr.includes("wakil dekan");
+
+  const jabatanOptions = [...new Set((monitoringBawahan?.bawahanList ?? []).map(b => b.roleName))];
+  const userOptions = (monitoringBawahan?.bawahanList ?? []).filter(
+    b => bawahanFilterJabatan === "all" || b.roleName === bawahanFilterJabatan
+  );
+  const filteredBawahan = (monitoringBawahan?.bawahanList ?? []).filter(b => {
+    if (bawahanFilterJabatan !== "all" && b.roleName !== bawahanFilterJabatan) return false;
+    if (bawahanFilterUser !== "all" && String(b.id) !== bawahanFilterUser) return false;
+    return true;
+  });
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user");
@@ -460,6 +477,17 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       fetchPersonal();
     }
   }, [selectedJenis, selectedTahun, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const roleLevel: number = (user as MonitoringUser & { roleLevel?: number })?.roleLevel ?? 99;
+    if (!user || roleLevel > 3) { setMonitoringBawahan(null); return; }
+    let cancelled = false;
+    setMonitoringBawahanLoading(true);
+    getMonitoringBawahan(bawahanJenis, bawahanTahun, user.id, roleLevel)
+      .then((d) => { if (!cancelled) { setMonitoringBawahan(d); setMonitoringBawahanLoading(false); } })
+      .catch(() => { if (!cancelled) { setMonitoringBawahan(null); setMonitoringBawahanLoading(false); } });
+    return () => { cancelled = true; };
+  }, [bawahanJenis, bawahanTahun, user]);
 
   async function fetchGlobal() {
     setLoading(true);
@@ -923,6 +951,136 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             </div>
           </>
         )}
+          {/* ── Monitoring Bawahan ── */}
+          {monitoringBawahan && (
+            <div style={{ marginTop: 32 }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
+                  Distribusi Target Bawahan
+                </div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>
+                  Jumlah target yang telah diterima masing-masing bawahan berdasarkan disposisi.
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Target</label>
+                  <select
+                    value={bawahanJenis}
+                    onChange={(e) => setBawahanJenis(e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                  >
+                    <option value="IKU">Indikator Kinerja Utama</option>
+                    <option value="PK">Perjanjian Kerja</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Tahun</label>
+                  <select
+                    value={bawahanTahun}
+                    onChange={(e) => setBawahanTahun(e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                  >
+                    {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Jabatan</label>
+                  <select
+                    value={bawahanFilterJabatan}
+                    onChange={(e) => { setBawahanFilterJabatan(e.target.value); setBawahanFilterUser("all"); }}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                  >
+                    <option value="all">Semua Jabatan</option>
+                    {jabatanOptions.map((j) => <option key={j} value={j}>{j}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>User</label>
+                  <select
+                    value={bawahanFilterUser}
+                    onChange={(e) => setBawahanFilterUser(e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                  >
+                    <option value="all">Semua User</option>
+                    {userOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.nama}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {monitoringBawahanLoading && (
+                <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data...</div>
+              )}
+
+              {!monitoringBawahanLoading && monitoringBawahan.bawahanList.length === 0 && (
+                <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Belum ada bawahan terkonfigurasi.</div>
+              )}
+
+              {!monitoringBawahanLoading && monitoringBawahan.bawahanList.length > 0 && (
+                <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 600 + filteredBawahan.length * 130 }}>
+                    <thead>
+                      <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb" }}>
+                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", width: 80 }}>No.</th>
+                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", minWidth: 180 }}>Sasaran Strategis</th>
+                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", minWidth: 220 }}>Indikator</th>
+                        <th style={{ padding: "11px 10px", textAlign: "center", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", minWidth: 100 }}>Target</th>
+                        {filteredBawahan.map((b) => (
+                          <th key={b.id} style={{ padding: "11px 10px", textAlign: "center", fontWeight: 600, color: "#475569", minWidth: 130 }}>
+                            <div style={{ fontWeight: 700, color: "#1f2937" }}>{b.nama}</div>
+                            <div style={{ fontWeight: 400, color: "#9ca3af", fontSize: 11, marginTop: 2 }}>{b.roleName}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const rows = monitoringBawahan.rows;
+                        const groupIds = [...new Set(rows.map((r) => r.groupId))];
+                        return groupIds.flatMap((groupId) => {
+                          const groupRows = rows.filter((r) => r.groupId === groupId);
+                          return groupRows.map((row, rowIdx) => (
+                            <tr key={row.leafId} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              {rowIdx === 0 && (
+                                <>
+                                  <td rowSpan={groupRows.length} style={{ padding: "12px 10px", fontWeight: 700, color: "#0369a1", fontFamily: "monospace", fontSize: 11, verticalAlign: "top", borderRight: "1px solid #f1f5f9" }}>
+                                    {row.groupKode}
+                                  </td>
+                                  <td rowSpan={groupRows.length} style={{ padding: "12px 10px", color: "#334155", fontWeight: 500, verticalAlign: "top", borderRight: "1px solid #f1f5f9", lineHeight: 1.45 }}>
+                                    {row.groupNama}
+                                  </td>
+                                </>
+                              )}
+                              <td style={{ padding: "12px 10px", color: "#374151", lineHeight: 1.45 }}>
+                                <span style={{ color: "#9ca3af", marginRight: 6, fontFamily: "monospace", fontSize: 11 }}>{row.leafKode}</span>
+                                {row.leafNama}
+                              </td>
+                              <td style={{ padding: "12px 10px", textAlign: "center", color: "#374151" }}>
+                                {row.nilaiTarget !== null ? `${row.nilaiTarget}${row.satuan ? ` ${row.satuan}` : ""}` : "—"}
+                              </td>
+                              {filteredBawahan.map((b) => {
+                                const jumlah = row.disposisiByUser[b.id];
+                                return (
+                                  <td key={b.id} style={{ padding: "12px 10px", textAlign: "center" }}>
+                                    {jumlah > 0 ? (
+                                      <span style={{ fontWeight: 700, color: "#16a34a" }}>{jumlah}</span>
+                                    ) : (
+                                      <span style={{ color: "#e5e7eb" }}>—</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ));
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </PageTransition>
 

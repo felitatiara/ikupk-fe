@@ -4,8 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, API_BASE_URL } from "../../lib/api";
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IkupkFile } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, API_BASE_URL } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
@@ -48,7 +48,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
   const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
-  const [tahun, setTahun] = useState(new Date().getFullYear().toString());
+const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const [jenis, setJenis] = useState("IKU");
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
@@ -87,7 +87,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
     return () => { cancelled = true; };
   }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel]);
 
-  const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null) => {
+  const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null, l0Id?: number | null) => {
     setDisposisiSubId(subId);
     setDisposisiRow(null);
     setDisposisiTargetFakultas(targetAmount);
@@ -97,37 +97,73 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
     try {
       let users: UnitUser[] = [];
-      let usedDirectBawahan = false;
-      if (displayRole === 'admin') {
-        // Admin: semua user di unit
-        const allUsers = await getUsersByRole(unitId);
-        users = allUsers.filter((u) => u.id !== authUser?.id);
-      } else if (roleLevel <= 2) {
-        // Level 1 (Dekan/WD/Kabag) DAN level 2 (Kajur): coba bawahan langsung dulu.
-        // Jika ada (misal Kabag → Tendik), gunakan itu. Jika kosong, gunakan level-based.
-        const directBawahan = await getRelatedUsersFor(authUser.id);
-        if (directBawahan.length > 0) {
-          users = directBawahan;
-          usedDirectBawahan = true;
-        } else if (roleLevel <= 1) {
-          // Dekan/WD: disposisi ke level-1 lainnya (Kabag, WD) DAN Kajur (level 2)
-          const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
-          const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
-          const seen = new Set<number>();
-          users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
-        } else {
-          // Kajur: disposisi ke semua Kaprodi (level 3)
-          users = await getUsersByLevel(3);
-        }
-      } else if (roleLevel === 3 && authUser?.unitNama) {
-        // Kaprodi: semua Dosen di prodinya (termasuk struktural yang juga Dosen)
-        const dosenUsers = await getDosenByUnit(authUser.unitNama);
-        users = dosenUsers.filter((u) => u.id !== authUser?.id);
-      } else if (authUser?.id) {
-        // Dosen (level 4): bawahan langsung via user_relations
-        users = await getRelatedUsersFor(authUser.id);
+      let usedCascade = false;
+
+      // Cascade chain (role-based): ambil chain dari L0 indikator
+      if (l0Id) {
+        try {
+          const cascadeChain = await getIndikatorCascadeChain(l0Id); // [roleId, roleId, ...]
+          if (cascadeChain.length > 0) {
+            const normalizedChain = cascadeChain.map(Number);
+            const lastRoleId = normalizedChain[normalizedChain.length - 1];
+            let nextRoleId: number | null = null;
+
+            if (displayRole === 'admin') {
+              // Admin → kirim ke chain[0]
+              nextRoleId = normalizedChain[0];
+            } else if (authUser?.roleId) {
+              const myRoleId = Number(authUser.roleId);
+              const currentIdx = normalizedChain.indexOf(myRoleId);
+              if (currentIdx >= 0 && currentIdx < normalizedChain.length - 1) {
+                // Role di tengah chain → kirim ke role berikutnya
+                nextRoleId = normalizedChain[currentIdx + 1];
+              } else if (currentIdx === -1 && isTopLevel) {
+                // isTopLevel tidak ada di chain → kirim ke chain[0]
+                nextRoleId = normalizedChain[0];
+              }
+              // currentIdx === chain.length - 1 → role terakhir, fall through ke bawahan logic
+            }
+
+            if (nextRoleId !== null) {
+              users = await getUsersByRole(nextRoleId);
+              users = users.filter((u) => u.id !== authUser?.id);
+              usedCascade = true;
+            }
+          }
+        } catch { /* fallback ke logika lama */ }
       }
-      // Semua user non-admin bisa disposisi ke diri sendiri (termasuk WD/Wadek).
+
+      if (!usedCascade) {
+        if (displayRole === 'admin') {
+          // Admin: semua user di unit
+          const allUsers = await getUsersByRole(unitId);
+          users = allUsers.filter((u) => u.id !== authUser?.id);
+        } else if (roleLevel <= 2) {
+          // Level 1 (Dekan/WD/Kabag) DAN level 2 (Kajur): coba bawahan langsung dulu.
+          const directBawahan = await getRelatedUsersFor(authUser.id);
+          if (directBawahan.length > 0) {
+            users = directBawahan;
+          } else if (roleLevel <= 1) {
+            // Dekan/WD: disposisi ke level-1 lainnya DAN Kajur (level 2)
+            const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
+            const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
+            const seen = new Set<number>();
+            users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
+          } else {
+            // Kajur: disposisi ke semua Kaprodi (level 3)
+            users = await getUsersByLevel(3);
+          }
+        } else if (roleLevel === 3 && authUser?.unitNama) {
+          // Kaprodi: semua Dosen di prodinya
+          const dosenUsers = await getDosenByUnit(authUser.unitNama);
+          users = dosenUsers.filter((u) => u.id !== authUser?.id);
+        } else if (authUser?.id) {
+          // Dosen (level 4): bawahan langsung via user_relations
+          users = await getRelatedUsersFor(authUser.id);
+        }
+      }
+
+      // Semua user non-admin bisa disposisi ke diri sendiri.
       if (authUser && displayRole !== 'admin' && !users.some(u => u.id === authUser.id)) {
         const selfEntry: UnitUser = {
           id: authUser.id,
@@ -349,15 +385,18 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
     // Untuk level-1 non-admin (Kabag): user_relations berisi Tendik → batasi tampilan file.
     // Untuk Dekan/WD (tanpa user_relations): allowedEmails = undefined → tampilkan semua.
     let allowedEmails: Set<string> | undefined;
-    if (showAtasanView && authUser?.id && roleLevel <= 2 && displayRole !== 'admin') {
-      try {
-        const bawahanUsers = await getRelatedUsersFor(authUser.id);
-        if (bawahanUsers.length > 0) {
-          allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+    if (showAtasanView && authUser?.id && displayRole !== 'admin') {
+      if (roleLevel >= 2) {
+        // Kajur (2), Kaprodi (3): filter ke bawahan langsung
+        try {
+          const bawahanUsers = await getRelatedUsersFor(authUser.id);
+          if (bawahanUsers.length > 0) {
+            allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+          }
+          // Dekan/WD (roleLevel <= 1) yang tidak masuk blok ini: allowedEmails undefined → tampilkan semua
+        } catch {
+          // Gagal fetch → tidak batasi
         }
-        // Jika kosong (Dekan/WD): allowedEmails tetap undefined → tampilkan semua
-      } catch {
-        // Gagal fetch → tidak batasi (aman: biarkan tampil semua)
       }
     } else if (!showAtasanView && !isDosen && authUser?.id) {
       // Non-dosen (misal Kabag) klik "Input File": fetch bawahan langsung agar file Tendik tampil
@@ -432,7 +471,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                 }
                 flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: sub.id, actionNama: sub.nama, actionSumberData: sub.sumberData ?? 'repository' });
                 for (const child of sub.children) {
-                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: false, actionId: child.id, actionNama: child.nama, actionSumberData: 'repository' });
+                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: child.id, actionNama: child.nama, actionSumberData: child.sumberData ?? 'repository' });
                   if (hasPkL3) {
                     for (const l3 of (child.children ?? [])) {
                       flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama, actionSumberData: l3.sumberData ?? 'repository' });
@@ -469,23 +508,26 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                         <td rowSpan={row.subTotalRows} className={`td-cell td-cell--center fw-700 ${capaianClass}`}>
                           {capaianPct}
                         </td>
-                        {!row.hasPkL3 ? (
-                          <td rowSpan={row.subTotalRows} className="action-cell">
-                            <button
-                              onClick={() => row.actionSumberData === 'ikupk'
-                                ? handleDirectInputClick(row.actionId, row.actionNama)
-                                : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), row.sub.children)}
-                              className="btn-small btn-small--green"
-                            >
-                              Input File
-                            </button>
-                          </td>
-                        ) : <td className="action-cell" />}
+                        <td className="action-cell" />
                       </>
+                    )}
+                    {!row.isSubFirst && !row.hasPkL3 && (
+                      <td className="action-cell">
+                        {!(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
+                          <button
+                            onClick={() => row.actionSumberData === 'ikupk'
+                              ? handleDirectInputClick(row.actionId, row.actionNama)
+                              : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
+                            className="btn-small btn-small--green"
+                          >
+                            Input File
+                          </button>
+                        )}
+                      </td>
                     )}
                     {!row.isSubFirst && row.hasPkL3 && (
                       <td className="action-cell">
-                        {row.showAction && (
+                        {row.showAction && !(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
                           <button
                             onClick={() => row.actionSumberData === 'ikupk'
                               ? handleDirectInputClick(row.actionId, row.actionNama)
@@ -992,7 +1034,9 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
               {loading && <p className="text-loading">Loading...</p>}
 
-              {!loading && groupedData.length > 0 && (
+              {displayRole === 'admin' ? (
+                <>
+                {!loading && groupedData.length > 0 && (
                 <div className="table-wrapper">
                   <table className="table-universal">
                     <thead>
@@ -1001,6 +1045,8 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                         <th rowSpan={2} className="col-w20">Sasaran Strategis</th>
                         <th rowSpan={2} className="col-w35">Sub Indikator Kinerja Utama</th>
                         <th colSpan={2} className="text-center">Target Universitas</th>
+                        <th rowSpan={2} className="text-center min-w100">Target</th>
+
                         <th rowSpan={2} className="col-w10 text-center">Disposisi</th>
                       </tr>
                       <tr>
@@ -1016,7 +1062,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
                         if (filteredSubs.length === 0) return [];
 
-                        type TF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subTotalRows: number };
+                        type TF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
                         const flatRows: TF[] = [];
                         for (const sub of filteredSubs) {
                           const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
@@ -1026,12 +1072,12 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                           } else {
                             subTotal += sub.children.length;
                           }
-                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal });
+                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
                           for (const child of sub.children) {
-                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal });
+                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
                             if (hasPkL3) {
                               for (const l3 of (child.children ?? [])) {
-                                flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal });
+                                flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal });
                               }
                             }
                           }
@@ -1040,6 +1086,15 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
                         return flatRows.map((row, rowIdx) => {
                           const univKuantitas = group.targetAbsolut;
+                          const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                          const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
+                          const leafNilaiTarget = row.level === 3
+                            ? row.l3Obj?.nilaiTarget ?? null
+                            : row.child?.nilaiTarget ?? null;
+                          const leafTarget = Number(leafNilaiTarget || 0);
+                          const leafSatuan = row.level === 3
+                            ? (row.l3Obj?.satuan ?? null)
+                            : (row.child?.satuan ?? null);
 
                           return (
                             <tr key={`${group.id}-${rowIdx}`}>
@@ -1061,27 +1116,35 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                               {rowIdx === 0 && (
                                 <>
                                   <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
-                                    {univKuantitas !== null ? `${univKuantitas} Lulusan` : "-"}
+                                    {univKuantitas !== null
+                                      ? `${univKuantitas}${group.satuan ? ` ${group.satuan}` : ''}`
+                                      : "-"}
                                   </td>
                                   <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
                                     {group.tenggat || "-"}
                                   </td>
                                 </>
                               )}
+                              {/* Target per leaf row (L2 IKU / L3 PK) */}
+                              <td className="td-cell td-cell--center">
+                                {isLeaf && leafNilaiTarget !== null
+                                  ? `${leafNilaiTarget}${leafSatuan ? ` ${leafSatuan}` : ''}`
+                                  : '-'}
+                              </td>
 
-                              {/* Disposisi — merged per Sub (Level 1) */}
-                              {row.isSubFirst ? (
-                                <td rowSpan={row.subTotalRows} className="action-cell">
+                              {/* Disposisi — per leaf row (L2 untuk IKU, L3 untuk PK) */}
+                              {isLeaf ? (
+                                <td className="action-cell">
                                   <div className="action-cell-inner">
                                     <button
-                                      onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(group.targetAbsolut || 0), authUser?.id)}
+                                      onClick={() => handleGroupedDisposisiClick(row.id, leafTarget, authUser?.id, group.id)}
                                       className="btn-small btn-small--green btn-small--w100"
                                     >
                                       Disposisi
                                     </button>
                                     {displayRole !== 'admin' && (
                                       <button
-                                        onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(group.targetAbsolut || 0), row.sub.children, true)}
+                                        onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)}
                                         className="btn-small btn-small--outline btn-small--w100"
                                       >
                                         Lihat Progress
@@ -1089,7 +1152,9 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                                     )}
                                   </div>
                                 </td>
-                              ) : null}
+                              ) : (
+                                <td className="td-cell" />
+                              )}
                             </tr>
                           );
                         });
@@ -1102,14 +1167,167 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
               {!loading && groupedData.length === 0 && (
                 <p className="text-empty">Tidak ada data indikator</p>
               )}
+                </>
+              ) : (
+              <>
+              {loading && <p className="text-loading">Loading...</p>}
 
-              {/* Tabel Input File untuk Dekan/WD yang juga menerima disposisi dari Kaprodi */}
-              {!loading && receivedGroupedData.length > 0 && (
+              {/* Section 1: Target yang diterima via disposisi → bisa disposisi ulang */}
+              {!loading && (
+                <>
+                  <h4 className="ikupk-section-title">Target yang Anda Terima</h4>
+                  {receivedGroupedData.length === 0 ? (
+                    <p className="text-empty">Belum ada target yang didisposisikan kepada Anda melalui alur disposisi.</p>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table-universal">
+                        <thead>
+                          <tr>
+                            <th className="col-w5 text-center">No</th>
+                            <th className="col-w20">Sasaran Strategis</th>
+                            <th>Sub Indikator Kinerja</th>
+                            <th className="col-w10 text-center">Diterima</th>
+                            <th className="col-w15 text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {receivedGroupedData.map((group, groupIdx) => {
+                            type RF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
+                            const flatRows: RF[] = [];
+                            for (const sub of group.subIndikators) {
+                              const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                              let subTotal = 1;
+                              if (hasPkL3) { for (const child of sub.children) subTotal += 1 + (child.children ?? []).length; }
+                              else { subTotal += sub.children.length; }
+                              flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
+                              for (const child of sub.children) {
+                                flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
+                                if (hasPkL3) { for (const l3 of (child.children ?? [])) flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal }); }
+                              }
+                            }
+                            const totalRowSpan = flatRows.length;
+                            return flatRows.map((row, rowIdx) => {
+                              const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                              const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
+                              const leafDisposisi = row.level === 3 ? (row.l3Obj?.disposisiJumlah ?? null) : (row.child?.disposisiJumlah ?? null);
+                              return (
+                                <tr key={`recv-${group.id}-${rowIdx}`}>
+                                  {rowIdx === 0 && (
+                                    <>
+                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                                      <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                                    </>
+                                  )}
+                                  <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>{row.kode} {row.nama}</td>
+                                  {isLeaf ? (
+                                    <>
+                                      <td className="td-cell td-cell--center td-cell--bold">{leafDisposisi !== null ? leafDisposisi : "-"}</td>
+                                      <td className="action-cell">
+                                        <div className="action-cell-inner">
+                                          <button onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)} className="btn-small btn-small--blue btn-small--w100">Disposisi</button>
+                                          <button onClick={() => handleInputFileClick(row.id, row.nama, Number(leafDisposisi || 0), [], true)} className="btn-small btn-small--outline btn-small--w100">Lihat Progress</button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="td-cell" />
+                                      <td className="td-cell" />
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            });
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Section 2: Semua target — monitoring only (Lihat Progress) */}
+              {!loading && (
                 <>
                   <div className="ikupk-section-divider" />
-                  <h4 className="ikupk-section-title">Target yang Didisposisikan kepada Anda</h4>
-                  {renderInputFileTable(receivedGroupedData, 'received')}
+                  <h4 className="ikupk-section-title">Semua Target — Monitoring</h4>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: '-8px 0 14px' }}>Pantau progres seluruh target. Disposisi hanya tersedia untuk target yang Anda terima.</p>
+                  {groupedData.filter(g => g.persentaseTarget !== null).length === 0 ? (
+                    <p className="text-empty">Tidak ada data indikator.</p>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table-universal">
+                        <thead>
+                          <tr>
+                            <th rowSpan={2} className="col-w5 text-center">Nomor</th>
+                            <th rowSpan={2} className="col-w20">Sasaran Strategis</th>
+                            <th rowSpan={2} className="col-w35">Sub Indikator Kinerja Utama</th>
+                            <th rowSpan={2} className="text-center min-w100">Target</th>
+                            <th colSpan={2} className="text-center">Target Universitas</th>
+                            <th rowSpan={2} className="col-w10 text-center">Aksi</th>
+                          </tr>
+                          <tr>
+                            <th className="text-center min-w100">Kuantitas</th>
+                            <th className="text-center min-w100">Waktu</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {groupedData.filter(g => g.persentaseTarget !== null).flatMap((group, groupIdx) => {
+                            type MF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
+                            const flatRows: MF[] = [];
+                            for (const sub of group.subIndikators) {
+                              const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                              let subTotal = 1;
+                              if (hasPkL3) { for (const child of sub.children) subTotal += 1 + (child.children ?? []).length; }
+                              else { subTotal += sub.children.length; }
+                              flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
+                              for (const child of sub.children) {
+                                flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
+                                if (hasPkL3) { for (const l3 of (child.children ?? [])) flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal }); }
+                              }
+                            }
+                            const totalRowSpan = flatRows.length;
+                            return flatRows.map((row, rowIdx) => {
+                              const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                              const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
+                              const leafNilaiTarget = row.level === 3 ? (row.l3Obj?.nilaiTarget ?? null) : (row.child?.nilaiTarget ?? null);
+                              const leafSatuan = row.level === 3 ? (row.l3Obj?.satuan ?? null) : (row.child?.satuan ?? null);
+                              const leafTarget = Number(leafNilaiTarget || 0);
+                              const univKuantitas = group.targetAbsolut;
+                              return (
+                                <tr key={`mon-${group.id}-${rowIdx}`}>
+                                  {rowIdx === 0 && (
+                                    <>
+                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center"><p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p></td>
+                                      <td rowSpan={totalRowSpan} className="td-cell v-top"><div className="fw-600 mb-4">{group.nama}</div></td>
+                                    </>
+                                  )}
+                                  <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>{row.kode} {row.nama}</td>
+                                  <td className="td-cell td-cell--center">
+                                    {isLeaf && leafNilaiTarget !== null ? `${leafNilaiTarget}${leafSatuan ? ` ${leafSatuan}` : ''}` : '-'}
+                                  </td>
+                                  {rowIdx === 0 && (
+                                    <>
+                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">{univKuantitas !== null ? `${univKuantitas}${group.satuan ? ` ${group.satuan}` : ''}` : "-"}</td>
+                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">{group.tenggat || "-"}</td>
+                                    </>
+                                  )}
+                                  {isLeaf ? (
+                                    <td className="action-cell">
+                                      <button onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)} className="btn-small btn-small--outline btn-small--w100">Lihat Progress</button>
+                                    </td>
+                                  ) : <td className="td-cell" />}
+                                </tr>
+                              );
+                            });
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </>
+              )}
+            </>
               )}
             </>
           ) : (
@@ -1166,7 +1384,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                           </thead>
                           <tbody>
                             {groupedData.map((group, groupIdx) => {
-                              type DF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; isSubFirst: boolean; subTotalRows: number };
+                              type DF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
                               const flatRows: DF[] = [];
                               for (const sub of group.subIndikators) {
                                 const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
@@ -1176,20 +1394,23 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                                 } else {
                                   subTotal += sub.children.length;
                                 }
-                                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal });
+                                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
                                 for (const child of sub.children) {
-                                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal });
+                                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
                                   if (hasPkL3) {
                                     for (const l3 of (child.children ?? [])) {
-                                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal });
+                                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal });
                                     }
                                   }
                                 }
                               }
                               const totalRowSpan = flatRows.length;
                               return flatRows.map((row, rowIdx) => {
-                                const hasPkL3 = row.sub.children.some((c: any) => (c.children ?? []).length > 0);
-                                const disposisiJumlah = row.sub.disposisiJumlah ?? null;
+                                const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                                const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
+                                const leafDisposisi = row.level === 3
+                                  ? (row.l3Obj?.disposisiJumlah ?? null)
+                                  : (row.child?.disposisiJumlah ?? null);
                                 return (
                                   <tr key={`disp-${group.id}-${rowIdx}`}>
                                     {rowIdx === 0 && (
@@ -1201,27 +1422,32 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
                                     <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
                                       {row.kode} {row.nama}
                                     </td>
-                                    {row.isSubFirst && (
+                                    {isLeaf ? (
                                       <>
-                                        <td rowSpan={row.subTotalRows} className="td-cell td-cell--center td-cell--bold">
-                                          {disposisiJumlah !== null ? disposisiJumlah : "-"}
+                                        <td className="td-cell td-cell--center td-cell--bold">
+                                          {leafDisposisi !== null ? leafDisposisi : "-"}
                                         </td>
-                                        <td rowSpan={row.subTotalRows} className="action-cell">
+                                        <td className="action-cell">
                                           <div className="action-cell-inner">
                                             <button
-                                              onClick={() => handleGroupedDisposisiClick(row.sub.id, Number(disposisiJumlah || 0), authUser?.id)}
+                                              onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)}
                                               className="btn-small btn-small--blue btn-small--w100"
                                             >
                                               Redisposisi
                                             </button>
                                             <button
-                                              onClick={() => handleInputFileClick(row.sub.id, row.sub.nama, Number(disposisiJumlah || 0), hasPkL3 ? [] : row.sub.children, true)}
+                                              onClick={() => handleInputFileClick(row.id, row.nama, Number(leafDisposisi || 0), [], true)}
                                               className="btn-small btn-small--outline btn-small--w100"
                                             >
                                               Lihat Progress
                                             </button>
                                           </div>
                                         </td>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <td className="td-cell" />
+                                        <td className="td-cell" />
                                       </>
                                     )}
                                   </tr>
@@ -1239,8 +1465,10 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
               {!loading && groupedData.length === 0 && (
                 <p className="text-empty">Tidak ada data target yang didisposisikan kepada Anda</p>
               )}
+
             </>
           )}
+
         </div>
       </PageTransition>
     </div>

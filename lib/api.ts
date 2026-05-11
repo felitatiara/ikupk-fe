@@ -36,6 +36,7 @@ export interface IndikatorGroupedLevel3 {
   tahun: string;
   targetId: number | null;
   nilaiTarget: number | null;
+  satuan?: string | null;
   sumberData?: string;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
@@ -50,7 +51,10 @@ export interface IndikatorGroupedChild {
   tahun: string;
   targetId: number | null;
   nilaiTarget: number | null;
+  satuan?: string | null;
   baselineJumlah: number | null;
+  sumberData?: string;
+  disposisiJumlah?: number | null;
   children: IndikatorGroupedLevel3[];
 }
 
@@ -79,6 +83,7 @@ export interface IndikatorGrouped {
   tahun: string;
   persentaseTarget: number | null;
   targetAbsolut: number | null;
+  satuan?: string | null;
   tenggat: string | null;
   baselineJumlah: number | null;
   subIndikators: IndikatorGroupedSub[];
@@ -145,6 +150,48 @@ export async function getIndikatorGroupedForUser(jenis: string, tahun: string, u
   const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch grouped indikator for user');
   return response.json();
+}
+
+// ── Monitoring Bawahan ────────────────────────────────────────────────────────
+
+export interface MonitoringBawahanUser {
+  id: number;
+  nama: string;
+  roleName: string;
+  roleLevel: number;
+  unitNama: string | null;
+}
+
+export interface MonitoringBawahanRow {
+  groupId: number;
+  groupKode: string;
+  groupNama: string;
+  subId: number;
+  subKode: string;
+  subNama: string;
+  leafId: number;
+  leafKode: string;
+  leafNama: string;
+  nilaiTarget: number | null;
+  satuan: string | null;
+  disposisiByUser: Record<number, number>;
+}
+
+export interface MonitoringBawahanResult {
+  bawahanList: MonitoringBawahanUser[];
+  rows: MonitoringBawahanRow[];
+}
+
+export async function getMonitoringBawahan(
+  jenis: string,
+  tahun: string,
+  userId: number,
+  roleLevel: number,
+): Promise<MonitoringBawahanResult> {
+  const url = `${API_BASE_URL}/indikator/monitoring-bawahan?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}&userId=${userId}&roleLevel=${roleLevel}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch monitoring bawahan');
+  return res.json();
 }
 
 // ambil dari bawah (CRUD)
@@ -637,6 +684,21 @@ export async function getDosenByUnit(unitNama: string): Promise<UnitUser[]> {
   const response = await fetch(`${API_BASE_URL}/users/dosen-by-unit?unitNama=${encodeURIComponent(unitNama)}`);
   if (!response.ok) throw new Error('Failed to fetch dosen by unit');
   return response.json();
+}
+
+export async function getIndikatorCascadeChain(id: number): Promise<number[]> {
+  const response = await fetch(`${API_BASE_URL}/indikator/${id}/cascade-chain`);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+export async function saveIndikatorCascadeChain(id: number, chain: number[]): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/indikator/${id}/cascade-chain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chain }),
+  });
+  if (!response.ok) throw new Error('Failed to save cascade chain');
 }
 
 /** (legacy) Mengambil user yang berelasi dengan userId - aitu parent dari userId */

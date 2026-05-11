@@ -817,6 +817,16 @@ export default function MasterIndikatorContent() {
                               onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>
                               Edit
                             </button>
+                            <button
+                              onClick={() => { window.location.href = `/admin/master-indikator/${row.parent.id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }}
+                              style={{
+                                padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                                border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", width: "100%"
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "#e0f2fe")}
+                              onMouseLeave={e => (e.currentTarget.style.background = "#f0f9ff")}>
+                              Alur
+                            </button>
                             <button onClick={() => setConfirmDeleteSingleId(row.parent.id)}
                               style={{
                                 padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
