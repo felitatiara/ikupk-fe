@@ -715,7 +715,7 @@ export default function MasterIndikatorContent() {
                 background: filterJenis === j ? (j === "IKU" ? "#FF7900" : "#7c3aed") : "transparent",
                 color: filterJenis === j ? "#fff" : "#6b7280", transition: "all 0.15s"
               }}>
-              {j === "IKU" ? "Indikator Kinerja Utama" : "Perjanjian Kerja"}
+              {j === "IKU" ? "Indikator Kinerja Utama" : "Perjanjian Kinerja"}
             </button>
           ))}
         </div>
@@ -888,7 +888,7 @@ export default function MasterIndikatorContent() {
                   <label style={labelStyle}>Jenis Indikator</label>
                   <select value={jenis} onChange={(e) => setJenis(e.target.value as "IKU" | "PK")} style={inputStyle}>
                     <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-                    <option value="PK">Perjanjian Kerja (PK)</option>
+                    <option value="PK">Perjanjian Kinerja (PK)</option>
                   </select>
                 </div>
                 <div>

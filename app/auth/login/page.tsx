@@ -65,7 +65,7 @@ export default function LoginPage() {
                     Fakultas Ilmu Komputer
                   </div>
                   <div className="max-w-[420px] text-[32px] font-bold leading-tight" style={{ color: '#ffffff' }}>
-                    Pelaporan Kinerja Indikator Kinerja Utama dan Perjanjian Kerja Dekan
+                    Pelaporan Kinerja Indikator Kinerja Utama dan Perjanjian Kinerja Dekan
                   </div>
                   <div className="mt-3 max-w-[430px] text-sm leading-6" style={{ color: 'rgba(255,255,255,0.85)' }}>
                     Masuk untuk mengelola indikator, validasi capaian, dan memantau proses IKUPK Fakultas Ilmu Komputer.

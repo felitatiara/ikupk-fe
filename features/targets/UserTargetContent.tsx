@@ -134,7 +134,7 @@ export default function UserTargetContent() {
       <div>
         <PageTransition>
           <p style={{ color: "#FF7900", fontSize: 12, fontWeight: 600, marginBottom: 14 }}>
-            Target Indikator Kinerja Utama &amp; Perjanjian Kerja &nbsp; &gt; &nbsp;
+            Target Indikator Kinerja Utama &amp; Perjanjian Kinerja &nbsp; &gt; &nbsp;
             <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={handleBack}>Pengajuan Target</span>
           </p>
 
@@ -260,7 +260,7 @@ export default function UserTargetContent() {
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-          Target Indikator Kinerja Utama &amp; Perjanjian Kerja
+          Target Indikator Kinerja Utama &amp; Perjanjian Kinerja
         </p>
 
         <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>

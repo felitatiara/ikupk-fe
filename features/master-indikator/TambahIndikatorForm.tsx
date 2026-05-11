@@ -443,7 +443,7 @@ export default function TambahIndikatorForm() {
                   <label style={fieldLabel}>Jenis Indikator <span style={{ color: "#ef4444" }}>*</span></label>
                   <select style={fieldInput} value={jenis} onChange={e => setJenis(e.target.value)}>
                     <option value="IKU">IKU — Indikator Kinerja Utama</option>
-                    <option value="PK">PK — Perjanjian Kerja</option>
+                    <option value="PK">PK — Perjanjian Kinerja</option>
                   </select>
                 </div>
                 <div className="col-md-4">
@@ -706,7 +706,7 @@ export default function TambahIndikatorForm() {
                   <label style={fieldLabel}>Jenis Indikator</label>
                   <select style={fieldInput} value={jenis} onChange={e => setJenis(e.target.value)}>
                     <option value="IKU">IKU — Indikator Kinerja Utama</option>
-                    <option value="PK">PK — Perjanjian Kerja</option>
+                    <option value="PK">PK — Perjanjian Kinerja</option>
                   </select>
                 </div>
                 <div className="col-md-6">

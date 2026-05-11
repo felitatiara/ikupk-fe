@@ -553,7 +553,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
     <div>
       <PageTransition>
         <p className="ikupk-header-text">
-          {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kerja'}
+          {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
         </p>
         {headerSlot}
 
@@ -1001,7 +1001,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
 
         <div className="page-card">
           <h3 className="ikupk-card-title">
-            Indikator Kinerja Utama & Perjanjian Kerja
+            Indikator Kinerja Utama & Perjanjian Kinerja
           </h3>
 
           {isTopLevel ? (
@@ -1015,7 +1015,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                     className="filter-isi"
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
-                    <option value="PK">Perjanjian Kerja</option>
+                    <option value="PK">Perjanjian Kinerja</option>
                   </select>
                 </div>
                 <div className="filter-content">
@@ -1341,7 +1341,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                     className="filter-isi"
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
-                    <option value="PK">Perjanjian Kerja</option>
+                    <option value="PK">Perjanjian Kinerja</option>
                   </select>
                 </div>
                 <div className="filter-content">

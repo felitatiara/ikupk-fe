@@ -76,7 +76,7 @@ export default function DashboardContent() {
               Target Baru!
             </h3>
             <p style={{ fontSize: 14, color: "#2e7d32", margin: 0 }}>
-              Segera periksa target Indikator Kinerja Utama dan Perjanjian Kerja mu lalu lakukan penyesuaian sebelum tanggal 30 Oktober
+              Segera periksa target Indikator Kinerja Utama dan Perjanjian Kinerja mu lalu lakukan penyesuaian sebelum tanggal 30 Oktober
             </p>
           </div>
 

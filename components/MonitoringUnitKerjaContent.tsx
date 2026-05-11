@@ -16,19 +16,19 @@ export default function MonitoringUnitKerjaContent() {
   const [kinerjaData, setKinerjaData] = useState<KinerjaRow[]>([
     {
       waktu: "02 Januari 2024",
-      target: "Perjanjian Kerja",
+      target: "Perjanjian Kinerja",
       sasaran: "Pemberlakuan kegiatan melalui web Fakultas",
       capaian: "100%",
     },
     {
       waktu: "02 Januari 2024",
-      target: "Perjanjian Kerja",
+      target: "Perjanjian Kinerja",
       sasaran: "Laporan Rapat Tinjauan Manajemen (RTM)",
       capaian: "100%",
     },
     {
       waktu: "02 Januari 2024",
-      target: "Perjanjian Kerja",
+      target: "Perjanjian Kinerja",
       sasaran: "Penyelesaian LP3",
       capaian: "80%",
     },

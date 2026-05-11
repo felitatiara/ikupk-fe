@@ -26,7 +26,7 @@ import type { User } from "@/types";
 
 const jenisOptions = [
   { label: "Indikator Kinerja Kegiatan", value: "IKU" },
-  { label: "Perjanjian Kerja", value: "PK" },
+  { label: "Perjanjian Kinerja", value: "PK" },
 ];
 
 const yearOptions = ["2024", "2025", "2026"];
@@ -38,6 +38,7 @@ interface PersonalRow {
   target: number | null;
   realisasi: number | null;
   capaian: number | null;
+  level?: number;
 }
 
 interface MonitoringUser extends User {
@@ -459,6 +460,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     return true;
   });
 
+  const hasBawahanTargets = (monitoringBawahan?.rows ?? []).some(row =>
+    Object.values(row.disposisiByUser).some(v => v > 0)
+  );
+
   useEffect(() => {
     const userStr = sessionStorage.getItem("user");
     if (!userStr) {
@@ -523,7 +528,25 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             target,
             realisasi,
             capaian,
+            level: 1,
           });
+          for (const child of (sub.children ?? [])) {
+            const cTarget = child.disposisiJumlah ?? child.nilaiTarget ?? null;
+            const cRealisasi = child.realisasiJumlah ?? null;
+            const cCapaian =
+              cTarget !== null && cTarget > 0 && cRealisasi !== null
+                ? Math.min((cRealisasi / cTarget) * 100, 100)
+                : null;
+            rows.push({
+              kode: child.kode,
+              nama: child.nama,
+              sasaran: group.nama,
+              target: cTarget,
+              realisasi: cRealisasi,
+              capaian: cCapaian,
+              level: 2,
+            });
+          }
         }
       }
       setPersonalRows(rows);
@@ -538,7 +561,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     return <div style={{ padding: 24 }}>Loading...</div>;
   }
 
-  const personalChartData = personalRows.map((r) => ({
+  const personalChartData = personalRows.filter((r) => !r.level || r.level <= 1).map((r) => ({
     kode: r.kode,
     nama: r.nama,
     target: r.target ?? 0,
@@ -555,10 +578,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     ? Math.round(chartData.reduce((s, d) => s + d.chartProgress, 0) / chartData.length)
     : 0;
 
-  // Personal KPIs
-  const pDone = personalRows.filter((r) => r.capaian !== null && r.capaian >= 100).length;
-  const pAvg = personalRows.length > 0
-    ? (personalRows.reduce((s, r) => s + (r.capaian ?? 0), 0) / personalRows.length).toFixed(1)
+  // Personal KPIs (L1 only)
+  const l1Rows = personalRows.filter((r) => !r.level || r.level <= 1);
+  const pDone = l1Rows.filter((r) => r.capaian !== null && r.capaian >= 100).length;
+  const pAvg = l1Rows.length > 0
+    ? (l1Rows.reduce((s, r) => s + (r.capaian ?? 0), 0) / l1Rows.length).toFixed(1)
     : "0";
 
   const globalChartItems = chartData.map((d) => ({
@@ -844,8 +868,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             {/* KPI Cards */}
             {personalRows.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
-                <KpiCard label="Total Indikator" value={personalRows.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
-                <KpiCard label="Sudah Tercapai" value={pDone} sub={`dari ${personalRows.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
+                <KpiCard label="Total Indikator" value={l1Rows.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
+                <KpiCard label="Sudah Tercapai" value={pDone} sub={`dari ${l1Rows.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
                 <KpiCard label="Rata-rata Capaian" value={`${pAvg}%`} accent="#b45309" bg="#FFF4C2" icon={Percent} />
               </div>
             )}
@@ -874,12 +898,16 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             )}
 
 
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: "#1f2937" }}>
-              Rincian Indikator {selectedJenis} — {selectedTahun}
-            </h2>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
+                Rincian Indikator {selectedJenis} — {selectedTahun}
+              </div>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>
+                Target dan realisasi indikator yang didisposisikan kepada Anda.
+              </div>
+            </div>
 
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-              <div style={{ overflowX: "auto" }}>
+            <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
@@ -924,14 +952,17 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             : row.capaian >= 51
                             ? "#d97706"
                             : "#dc2626";
+                        const isL2 = row.level === 2;
                         return (
-                          <tr key={i} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                            <td style={{ padding: "12px 10px", textAlign: "center", color: "#6b7280" }}>{i + 1}</td>
-                            <td style={{ padding: "12px 10px", color: "#0284c7", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
+                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: isL2 ? "#fafafa" : undefined }}>
+                            <td style={{ padding: "12px 10px", textAlign: "center", color: "#9ca3af", fontSize: isL2 ? 10 : 13 }}>
+                              {isL2 ? "↳" : i + 1}
+                            </td>
+                            <td style={{ padding: "12px 10px", color: isL2 ? "#6b7280" : "#0284c7", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
                               {row.kode}
                             </td>
-                            <td style={{ padding: "12px 10px", color: "#1f2937", fontWeight: 500 }}>{row.nama}</td>
-                            <td style={{ padding: "12px 10px", color: "#6b7280", fontSize: 12 }}>{row.sasaran}</td>
+                            <td style={{ padding: "12px 10px", paddingLeft: isL2 ? 24 : 10, color: isL2 ? "#6b7280" : "#1f2937", fontWeight: isL2 ? 400 : 500 }}>{row.nama}</td>
+                            <td style={{ padding: "12px 10px", color: "#6b7280", fontSize: 12 }}>{isL2 ? "" : row.sasaran}</td>
                             <td style={{ padding: "12px 10px", textAlign: "center", color: "#374151" }}>
                               {row.target !== null ? row.target : <span style={{ color: "#9ca3af" }}>—</span>}
                             </td>
@@ -947,12 +978,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     )}
                   </tbody>
                 </table>
-              </div>
             </div>
           </>
         )}
           {/* ── Monitoring Bawahan ── */}
-          {monitoringBawahan && (
+          {monitoringBawahan && hasBawahanTargets && (
             <div style={{ marginTop: 32 }}>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
@@ -972,7 +1002,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
-                    <option value="PK">Perjanjian Kerja</option>
+                    <option value="PK">Perjanjian Kinerja</option>
                   </select>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

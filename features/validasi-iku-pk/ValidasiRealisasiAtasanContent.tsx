@@ -386,7 +386,7 @@ export default function ValidasiRealisasiAtasanContent() {
               <label className="filter-label">Jenis</label>
               <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK")} className="filter-isi">
                 <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-                <option value="PK">Perjanjian Kerja (PK)</option>
+                <option value="PK">Perjanjian Kinerja (PK)</option>
               </select>
             </div>
             <div>

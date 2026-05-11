@@ -55,7 +55,7 @@ export default function TargetIKUPKAdmin({ apiBaseUrl = 'http://localhost:4000' 
         <main className="p-8">
           {view === 'list' && (
             <>
-              <h2 className="text-xl font-bold mb-6">Indikator Kinerja Utama & Perjanjian Kerja</h2>
+              <h2 className="text-xl font-bold mb-6">Indikator Kinerja Utama & Perjanjian Kinerja</h2>
               {/* Filter Section */}
               <div className="bg-white rounded shadow p-6 mb-6">
                 <div className="grid grid-cols-2 gap-4 mb-4">

@@ -235,12 +235,12 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
     <div>
       <PageTransition>
         <p className="ikupk-header-text">
-          Validasi Indikator Kinerja Utama &amp; Perjanjian Kerja
+          Validasi Indikator Kinerja Utama &amp; Perjanjian Kinerja
         </p>
 
         <div className="page-card">
           <h3 className="ikupk-card-title">
-            Validasi Indikator Kinerja Utama &amp; Perjanjian Kerja
+            Validasi Indikator Kinerja Utama &amp; Perjanjian Kinerja
           </h3>
 
           <div className="filter-section">

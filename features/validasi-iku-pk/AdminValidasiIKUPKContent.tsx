@@ -120,7 +120,7 @@ export default function AdminValidasiIKUPKContent() {
     <div>
       <PageTransition>
         <p className="ikupk-header-text">
-          Validasi Indikator Kinerja Utama &amp; Perjanjian Kerja
+          Validasi Indikator Kinerja Utama &amp; Perjanjian Kinerja
         </p>
 
         {/* Info Banner */}
