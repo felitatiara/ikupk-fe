@@ -620,7 +620,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                   >
                     <option value={0} disabled>Pilih nama...</option>
                     {unitUsers.map((u) => (
-                      <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>
+                      <option key={u.id} value={u.id}>{u.nama} </option>
                     ))}
                   </select>
                   <input

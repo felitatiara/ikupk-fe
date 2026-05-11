@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
@@ -509,7 +509,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   async function fetchPersonal() {
     setLoading(true);
     try {
-      const userId: number = user?.id ?? user?.userId;
+      const userId: number = user?.id ?? user?.userId ?? 0;
       const roleId: number = user?.roleId ?? 0;
       const data = await getIndikatorGroupedForUser(selectedJenis, selectedTahun, userId, roleId);
       const rows: PersonalRow[] = [];
@@ -714,7 +714,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<BarTooltip />} cursor={false} />
                     <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
-                      <LabelList dataKey="progress" position="right" formatter={(v: number) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                      <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                       {globalChartItems.map((entry, i) => (
                         <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
                       ))}
@@ -887,7 +887,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<BarTooltip />} cursor={false} />
                     <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
-                      <LabelList dataKey="progress" position="right" formatter={(v: number) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                      <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                       {personalChartData.map((entry, i) => (
                         <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
                       ))}

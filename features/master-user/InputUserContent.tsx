@@ -45,15 +45,16 @@ function getRoleColor(role: string) {
 interface FormData {
   id?: number;
   nip: string; nama: string; email: string; password: string;
-  roleId: number | ""; jenis: string; atasanId: number | "";
+  roleIds: number[]; jenis: string; atasanIds: number[];
 }
-const blankForm = (): FormData => ({ nip: "", nama: "", email: "", password: "", roleId: "", jenis: "Dosen", atasanId: "" });
+const blankForm = (): FormData => ({ nip: "", nama: "", email: "", password: "", roleIds: [], jenis: "Dosen", atasanIds: [] });
 
 export default function InputUserContent() {
   const [allUsers, setAllUsers] = useState<UnitUser[]>([]);
   const [allRoles, setAllRoles] = useState<RoleOption[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRole, setFilterRole] = useState("all");
+  const [filterUnit, setFilterUnit] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"tambah" | "edit">("tambah");
   const [formData, setFormData] = useState<FormData>(blankForm());
@@ -68,38 +69,62 @@ export default function InputUserContent() {
     getAllRoles().then(setAllRoles).catch(() => setAllRoles([]));
   };
 
-  const selectedRole = allRoles.find(r => r.id === formData.roleId);
-  const isStructural = selectedRole ? STRUCTURAL_ROLES.has(selectedRole.name.toLowerCase()) : false;
-  const dosenRole = isStructural && selectedRole
-    ? allRoles.find(r => r.name.toLowerCase() === "dosen" && r.unitNama === selectedRole.unitNama) : null;
+  const [rolePick, setRolePick] = useState<number | "">("");
+  const [atasanPick, setAtasanPick] = useState<number | "">("");
 
-  const handleRoleChange = (roleId: number | "") => {
+  const addRole = (roleId: number) => {
+    if (!roleId || formData.roleIds.includes(roleId)) return;
     const role = allRoles.find(r => r.id === roleId);
     const structural = role ? STRUCTURAL_ROLES.has(role.name.toLowerCase()) : false;
-    setFormData(p => ({ ...p, roleId, jenis: structural ? "Dosen" : p.jenis }));
+    setFormData(p => ({
+      ...p,
+      roleIds: [...p.roleIds, roleId],
+      jenis: structural && p.roleIds.length === 0 ? "Dosen" : p.jenis,
+    }));
+    setRolePick("");
   };
 
-  const openTambah = () => { setFormData(blankForm()); setModalMode("tambah"); setModalOpen(true); };
+  const removeRole = (roleId: number) =>
+    setFormData(p => ({ ...p, roleIds: p.roleIds.filter(id => id !== roleId) }));
+
+  const addAtasan = (userId: number) => {
+    if (!userId || formData.atasanIds.includes(userId)) return;
+    setFormData(p => ({ ...p, atasanIds: [...p.atasanIds, userId] }));
+    setAtasanPick("");
+  };
+
+  const removeAtasan = (userId: number) =>
+    setFormData(p => ({ ...p, atasanIds: p.atasanIds.filter(id => id !== userId) }));
+
+  const openTambah = () => { setFormData(blankForm()); setRolePick(""); setAtasanPick(""); setModalMode("tambah"); setModalOpen(true); };
   const openEdit = (u: UnitUser) => {
-    const primaryRoleId = (u as any).roleId ?? (u as any).userRoles?.find((ur: any) => ur.isPrimary)?.roleId ?? (u as any).userRoles?.[0]?.roleId ?? "";
-    setFormData({
-      id: u.id, nip: (u as any).nip || "", nama: u.nama, email: u.email, password: "",
-      roleId: primaryRoleId, jenis: (u as any).jenis || "Dosen", atasanId: (u as any).atasanId ?? ""
-    });
+    const userRoles: any[] = (u as any).userRoles ?? [];
+    const primaryRoleId = userRoles.find((ur: any) => ur.isPrimary)?.roleId ?? userRoles[0]?.roleId;
+    const nonPrimaryIds = userRoles.filter((ur: any) => !ur.isPrimary).map((ur: any) => ur.roleId);
+    const roleIds = primaryRoleId ? [primaryRoleId, ...nonPrimaryIds] : nonPrimaryIds;
+    const atasanIds: number[] = (u as any).atasanIds?.length
+      ? (u as any).atasanIds
+      : (u as any).atasanId ? [(u as any).atasanId] : [];
+    setFormData({ id: u.id, nip: (u as any).nip || "", nama: u.nama, email: u.email, password: "", roleIds, jenis: (u as any).jenis || "Dosen", atasanIds });
+    setRolePick(""); setAtasanPick("");
     setModalMode("edit"); setModalOpen(true);
   };
 
   const handleSave = async () => {
     if (!formData.nama.trim() || !formData.email.trim()) { toast.error("Nama dan email wajib diisi."); return; }
     if (!formData.id && !formData.password.trim()) { toast.error("Password wajib diisi untuk user baru."); return; }
-    if (formData.roleId === "") { toast.error("Role wajib dipilih."); return; }
+    if (formData.roleIds.length === 0) { toast.error("Minimal 1 role wajib dipilih."); return; }
     setSaving(true);
     try {
-      const extraRoleIds: number[] = dosenRole ? [dosenRole.id] : [];
+      const [primaryRoleId, ...extraRoleIds] = formData.roleIds;
+      const primaryRole = allRoles.find(r => r.id === primaryRoleId);
+      if (primaryRole && STRUCTURAL_ROLES.has(primaryRole.name.toLowerCase())) {
+        const dosenRole = allRoles.find(r => r.name.toLowerCase() === "dosen" && r.unitNama === primaryRole.unitNama);
+        if (dosenRole && !formData.roleIds.includes(dosenRole.id)) extraRoleIds.push(dosenRole.id);
+      }
       const payload: any = {
         nip: formData.nip.trim() || undefined, nama: formData.nama.trim(), email: formData.email.trim(),
-        roleId: Number(formData.roleId), jenis: formData.jenis, atasanId: formData.atasanId === "" ? null : Number(formData.atasanId),
-        ...(extraRoleIds.length ? { extraRoleIds } : {})
+        roleId: primaryRoleId, extraRoleIds, jenis: formData.jenis, atasanIds: formData.atasanIds,
       };
       if (formData.password.trim()) payload.password = formData.password;
       if (formData.id) { await updateUserAccount(formData.id, payload); toast.success("User berhasil diperbarui."); }
@@ -121,9 +146,11 @@ export default function InputUserContent() {
     const q = searchQuery.toLowerCase();
     const matchQ = !q || u.nama.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.role || "").toLowerCase().includes(q);
     const matchRole = filterRole === "all" || (u.role || "").toLowerCase() === filterRole.toLowerCase();
-    return matchQ && matchRole;
+    const matchUnit = filterUnit === "all" || ((u as any).unitNama || "").toLowerCase() === filterUnit.toLowerCase();
+    return matchQ && matchRole && matchUnit;
   });
   const uniqueRoleNames = Array.from(new Set(allUsers.map(u => u.role).filter(Boolean)));
+  const uniqueUnitNames = Array.from(new Set(allUsers.map(u => (u as any).unitNama).filter(Boolean))).sort();
 
   /* form input style */
   const fInput: React.CSSProperties = {
@@ -232,34 +259,86 @@ export default function InputUserContent() {
                   <input type="password" style={fInput} value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="••••••••" />
                 </div>
                 <div className="col-12">
-                  <label style={fLabel}>Role <span style={{ color: "#ef4444" }}>*</span></label>
-                  <select style={fInput} value={formData.roleId}
-                    onChange={e => handleRoleChange(e.target.value === "" ? "" : Number(e.target.value))}>
-                    <option value="">— Pilih Role —</option>
-                    {allRoles.map(r => <option key={r.id} value={r.id}>{r.name}{r.unitNama ? ` — ${r.unitNama}` : ""}</option>)}
-                  </select>
-                  {selectedRole?.unitNama && (
-                    <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, background: "#f3f4f6", color: "#6b7280", padding: "3px 10px", borderRadius: 20 }}>{selectedRole.unitNama}</span>
-                      {isStructural && <span style={{ fontSize: 11, background: "#f0fdf4", color: "#16a34a", padding: "3px 10px", borderRadius: 20, fontWeight: 700 }}>+ Dosen{dosenRole ? "" : " (role Dosen belum ada)"}</span>}
+                  <label style={fLabel}>Unit Kerja (Role) <span style={{ color: "#ef4444" }}>*</span></label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select style={{ ...fInput, flex: 1 }} value={rolePick}
+                      onChange={e => setRolePick(e.target.value === "" ? "" : Number(e.target.value))}>
+                      <option value="">— Pilih Role —</option>
+                      {allRoles
+                        .filter(r => !formData.roleIds.includes(r.id))
+                        .map(r => <option key={r.id} value={r.id}>{r.name}{r.unitNama ? ` — ${r.unitNama}` : ""}</option>)}
+                    </select>
+                    <button type="button" onClick={() => rolePick !== "" && addRole(Number(rolePick))}
+                      disabled={rolePick === ""}
+                      style={{
+                        padding: "9px 16px", borderRadius: 8, border: "none", background: "#2563eb",
+                        color: "#fff", fontWeight: 700, fontSize: 13, cursor: rolePick === "" ? "not-allowed" : "pointer",
+                        opacity: rolePick === "" ? 0.5 : 1, whiteSpace: "nowrap"
+                      }}>+ Tambah</button>
+                  </div>
+                  {formData.roleIds.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      {formData.roleIds.map((rid, idx) => {
+                        const r = allRoles.find(x => x.id === rid);
+                        return (
+                          <span key={rid} style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            background: idx === 0 ? "#eff6ff" : "#f3f4f6",
+                            color: idx === 0 ? "#2563eb" : "#374151",
+                            borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600
+                          }}>
+                            {idx === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a" }}>PRIMARY</span>}
+                            {r ? `${r.name}${r.unitNama ? ` — ${r.unitNama}` : ""}` : `Role #${rid}`}
+                            <button type="button" onClick={() => removeRole(rid)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
                 <div className="col-6">
                   <label style={fLabel}>Jenis Pegawai</label>
-                  <select style={{ ...fInput, background: isStructural ? "#f9fafb" : "#fff", color: isStructural ? "#9ca3af" : "#111" }}
-                    value={formData.jenis} onChange={e => setFormData(p => ({ ...p, jenis: e.target.value }))} disabled={isStructural}>
+                  <select style={fInput} value={formData.jenis} onChange={e => setFormData(p => ({ ...p, jenis: e.target.value }))}>
                     {JENIS_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
                   </select>
-                  {isStructural && <div style={{ fontSize: 11, color: "#16a34a", marginTop: 4 }}>✓ Otomatis sebagai Dosen</div>}
                 </div>
-                <div className="col-6">
+                <div className="col-12">
                   <label style={fLabel}>Atasan Langsung</label>
-                  <select style={fInput} value={formData.atasanId}
-                    onChange={e => setFormData(p => ({ ...p, atasanId: e.target.value === "" ? "" : Number(e.target.value) }))}>
-                    <option value="">— Opsional —</option>
-                    {allUsers.filter(u => u.id !== formData.id).map(u => <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>)}
-                  </select>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select style={{ ...fInput, flex: 1 }} value={atasanPick}
+                      onChange={e => setAtasanPick(e.target.value === "" ? "" : Number(e.target.value))}>
+                      <option value="">— Pilih Atasan —</option>
+                      {allUsers
+                        .filter(u => u.id !== formData.id && !formData.atasanIds.includes(u.id))
+                        .map(u => <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>)}
+                    </select>
+                    <button type="button" onClick={() => atasanPick !== "" && addAtasan(Number(atasanPick))}
+                      disabled={atasanPick === ""}
+                      style={{
+                        padding: "9px 16px", borderRadius: 8, border: "none", background: "#6b7280",
+                        color: "#fff", fontWeight: 700, fontSize: 13, cursor: atasanPick === "" ? "not-allowed" : "pointer",
+                        opacity: atasanPick === "" ? 0.5 : 1, whiteSpace: "nowrap"
+                      }}>+ Tambah</button>
+                  </div>
+                  {formData.atasanIds.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      {formData.atasanIds.map(uid => {
+                        const u = allUsers.find(x => x.id === uid);
+                        return (
+                          <span key={uid} style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            background: "#f0fdf4", color: "#16a34a",
+                            borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600
+                          }}>
+                            {u ? `${u.nama} (${u.role})` : `User #${uid}`}
+                            <button type="button" onClick={() => removeAtasan(uid)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -324,6 +403,14 @@ export default function InputUserContent() {
               value={filterRole} onChange={e => setFilterRole(e.target.value)}>
               <option value="all">Semua Role</option>
               {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Unit</div>
+            <select style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", background: "#fff", outline: "none", minWidth: 180 }}
+              value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+              <option value="all">Semua Unit</option>
+              {uniqueUnitNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
           </div>
           <div>
