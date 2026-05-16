@@ -8,6 +8,25 @@ export interface MonitoringData {
   charts: any;
 }
 
+export interface ProgressChartSubChild {
+  id: number;
+  kode: string;
+  nama: string;
+  realisasi: number;
+  nilaiTarget?: number | null;
+  satuan?: string | null;
+}
+
+export interface ProgressChartSubItem {
+  id: number;
+  kode: string;
+  nama: string;
+  targetFakultas: number;
+  realisasi: number;
+  status: string;
+  children: ProgressChartSubChild[];
+}
+
 export interface ProgressChartItem {
   id: number;
   kode: string;
@@ -23,6 +42,7 @@ export interface ProgressChartItem {
   status: string;
   progress: number;
   chartProgress: number;
+  subIndikators: ProgressChartSubItem[];
 }
 
 export interface DetailEntry {

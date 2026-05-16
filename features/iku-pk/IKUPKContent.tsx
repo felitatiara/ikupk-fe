@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, API_BASE_URL } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, API_BASE_URL } from "../../lib/api";
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -48,7 +48,8 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
   const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
-const [tahun, setTahun] = useState(new Date().getFullYear().toString());
+const [tahun, setTahun] = useState("2026");
+  const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
   const [jenis, setJenis] = useState("IKU");
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
@@ -56,8 +57,30 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
   const unitId = authUser?.roleId;
 
   const roleLevel = authUser?.roleLevel ?? 4;
-  // Admin dan Dekan level-1 lihat semua data; Kajur/Kaprodi/User lihat data yang didisposisikan ke mereka
+  const roleName = (authUser?.role ?? '').toLowerCase();
+  // Dekan sesungguhnya: level 1 dan bukan Wakil Dekan
+  const isActualDekan = roleLevel <= 1 && !roleName.includes('wakil');
+  // isTopLevel: kontrol tampilan JSX — Dekan DAN WD pakai view Dekan/Wadek
   const isTopLevel = displayRole === 'admin' || (displayRole === 'dekan' && roleLevel <= 1);
+
+  // Auto-select tahun berdasarkan tahun yang punya data di DB
+  useEffect(() => {
+    const cy = new Date().getFullYear();
+    getAvailableYears().then(dbYears => {
+      const merged = [...new Set([
+        ...dbYears,
+        String(cy - 1),
+        String(cy),
+        String(cy + 1),
+      ])].sort();
+      setAvailableYears(merged);
+      if (!merged.includes("2026")) {
+        setTahun(merged[merged.length - 1]);
+      }
+    }).catch(() => {
+      setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
+    });
+  }, []);
 
   // Fetch grouped data
   useEffect(() => {
@@ -65,7 +88,8 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
     let cancelled = false;
     const isAdmin = displayRole === 'admin';
 
-    const fetchPromise = isTopLevel
+    // Hanya Admin dan Dekan (bukan WD) lihat semua indikator; WD hanya lihat yang didisposisi Dekan
+    const fetchPromise = (isAdmin || isActualDekan)
       ? getIndikatorGrouped(jenis, tahun, unitId)
       : (authUser?.id)
         ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
@@ -85,7 +109,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
     }
 
     return () => { cancelled = true; };
-  }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel]);
+  }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel, isActualDekan, isTopLevel]);
 
   const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null, l0Id?: number | null) => {
     setDisposisiSubId(subId);
@@ -105,7 +129,6 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
           const cascadeChain = await getIndikatorCascadeChain(l0Id); // [roleId, roleId, ...]
           if (cascadeChain.length > 0) {
             const normalizedChain = cascadeChain.map(Number);
-            const lastRoleId = normalizedChain[normalizedChain.length - 1];
             let nextRoleId: number | null = null;
 
             if (displayRole === 'admin') {
@@ -225,12 +248,12 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
     try {
       if (disposisiSubId && unitId) {
         await upsertDisposisi(disposisiSubId, tahun, validItems, disposedBy);
-        // Refresh data
-        if (!isTopLevel && authUser?.id) {
-          const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
-          setGroupedData(d);
-        } else {
+        // Refresh data: admin/Dekan pakai getIndikatorGrouped, WD/bawahan pakai getIndikatorGroupedForUser
+        if ((displayRole === 'admin' || isActualDekan) && unitId) {
           const d = await getIndikatorGrouped(jenis, tahun, unitId);
+          setGroupedData(d);
+        } else if (authUser?.id && unitId) {
+          const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
           setGroupedData(d);
         }
         toast.success("Disposisi berhasil disimpan.");
@@ -444,6 +467,9 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
       isSubFirst: boolean; subTotalRows: number;
       hasPkL3: boolean; showAction: boolean;
       actionId: number; actionNama: string; actionSumberData: string;
+      leafDisposisi: number | null;
+      leafRealisasi: number | null;
+      isLeaf: boolean;
     };
     return (
       <div className="table-wrapper">
@@ -469,26 +495,31 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                 } else {
                   subTotal += sub.children.length;
                 }
-                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: sub.id, actionNama: sub.nama, actionSumberData: sub.sumberData ?? 'repository' });
+                flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, isSubFirst: true, subTotalRows: subTotal, hasPkL3, showAction: false, actionId: sub.id, actionNama: sub.nama, actionSumberData: sub.sumberData ?? 'repository', leafDisposisi: null, leafRealisasi: null, isLeaf: false });
                 for (const child of sub.children) {
-                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: !hasPkL3, actionId: child.id, actionNama: child.nama, actionSumberData: child.sumberData ?? 'repository' });
+                  const childIsLeaf = !hasPkL3;
+                  const childLeafDisposisi = childIsLeaf ? (child.disposisiJumlah ?? null) : null;
+                  const childLeafRealisasi = childIsLeaf ? (child.realisasiJumlah ?? null) : null;
+                  flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: childIsLeaf, actionId: child.id, actionNama: child.nama, actionSumberData: child.sumberData ?? 'repository', leafDisposisi: childLeafDisposisi, leafRealisasi: childLeafRealisasi, isLeaf: childIsLeaf });
                   if (hasPkL3) {
                     for (const l3 of (child.children ?? [])) {
-                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama, actionSumberData: l3.sumberData ?? 'repository' });
+                      flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, isSubFirst: false, subTotalRows: subTotal, hasPkL3, showAction: true, actionId: l3.id, actionNama: l3.nama, actionSumberData: l3.sumberData ?? 'repository', leafDisposisi: l3.disposisiJumlah ?? null, leafRealisasi: l3.realisasiJumlah ?? null, isLeaf: true });
                     }
                   }
                 }
               }
               const totalRowSpan = flatRows.length;
               return flatRows.map((row, rowIdx) => {
-                const disposisiJumlah = row.sub.disposisiJumlah ?? null;
-                const capaianBase = row.sub.realisasiJumlah ?? 0;
-                const capaianPct = (capaianBase > 0 && disposisiJumlah && disposisiJumlah > 0)
-                  ? `${Math.round((capaianBase / disposisiJumlah) * 100)}%`
+                const leafTarget = row.leafDisposisi;
+                const leafReal = row.leafRealisasi ?? 0;
+                const leafCapaianPct = (row.isLeaf && leafTarget && leafTarget > 0 && leafReal > 0)
+                  ? `${Math.round((leafReal / leafTarget) * 100)}%`
                   : '-';
-                const capaianClass = (capaianBase > 0 && disposisiJumlah)
-                  ? (capaianBase >= disposisiJumlah ? 'text-success' : 'text-warning')
-                  : 'text-dark';
+                const leafCapaianClass = (row.isLeaf && leafTarget && leafReal >= leafTarget)
+                  ? 'text-success'
+                  : row.isLeaf && leafTarget && leafReal > 0
+                    ? 'text-warning'
+                    : 'text-dark';
                 return (
                   <tr key={`${keyPrefix}-${group.id}-${rowIdx}`}>
                     {rowIdx === 0 && (
@@ -500,45 +531,24 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                     <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
                       {row.kode} {row.nama}
                     </td>
-                    {row.isSubFirst && (
-                      <>
-                        <td rowSpan={row.subTotalRows} className="td-cell td-cell--center td-cell--bold">
-                          {disposisiJumlah !== null ? disposisiJumlah : "-"}
-                        </td>
-                        <td rowSpan={row.subTotalRows} className={`td-cell td-cell--center fw-700 ${capaianClass}`}>
-                          {capaianPct}
-                        </td>
-                        <td className="action-cell" />
-                      </>
-                    )}
-                    {!row.isSubFirst && !row.hasPkL3 && (
-                      <td className="action-cell">
-                        {!(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
-                          <button
-                            onClick={() => row.actionSumberData === 'ikupk'
-                              ? handleDirectInputClick(row.actionId, row.actionNama)
-                              : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
-                            className="btn-small btn-small--green"
-                          >
-                            Input File
-                          </button>
-                        )}
-                      </td>
-                    )}
-                    {!row.isSubFirst && row.hasPkL3 && (
-                      <td className="action-cell">
-                        {row.showAction && !(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
-                          <button
-                            onClick={() => row.actionSumberData === 'ikupk'
-                              ? handleDirectInputClick(row.actionId, row.actionNama)
-                              : handleInputFileClick(row.actionId, row.actionNama, Number(disposisiJumlah || 0), [])}
-                            className="btn-small btn-small--green"
-                          >
-                            Input File
-                          </button>
-                        )}
-                      </td>
-                    )}
+                    <td className="td-cell td-cell--center td-cell--bold">
+                      {row.isLeaf ? (leafTarget !== null ? leafTarget : '-') : ''}
+                    </td>
+                    <td className={`td-cell td-cell--center fw-700 ${leafCapaianClass}`}>
+                      {row.isLeaf ? leafCapaianPct : ''}
+                    </td>
+                    <td className="action-cell">
+                      {row.isLeaf && !(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
+                        <button
+                          onClick={() => row.actionSumberData === 'ikupk'
+                            ? handleDirectInputClick(row.actionId, row.actionNama)
+                            : handleInputFileClick(row.actionId, row.actionNama, Number(leafTarget || 0), [])}
+                          className="btn-small btn-small--green"
+                        >
+                          Input File
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               });
@@ -1025,7 +1035,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                     onChange={(e) => setTahun(e.target.value)}
                     className="filter-isi"
                   >
-                    {["2024", "2025", "2026", "2027"].map((y) => (
+                    {availableYears.map((y) => (
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>
@@ -1034,7 +1044,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
 
               {loading && <p className="text-loading">Loading...</p>}
 
-              {displayRole === 'admin' ? (
+              {(displayRole === 'admin' || isActualDekan) ? (
                 <>
                 {!loading && groupedData.length > 0 && (
                 <div className="table-wrapper">
@@ -1245,88 +1255,6 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                   )}
                 </>
               )}
-
-              {/* Section 2: Semua target — monitoring only (Lihat Progress) */}
-              {!loading && (
-                <>
-                  <div className="ikupk-section-divider" />
-                  <h4 className="ikupk-section-title">Semua Target — Monitoring</h4>
-                  <p style={{ fontSize: 13, color: '#6b7280', margin: '-8px 0 14px' }}>Pantau progres seluruh target. Disposisi hanya tersedia untuk target yang Anda terima.</p>
-                  {groupedData.filter(g => g.persentaseTarget !== null).length === 0 ? (
-                    <p className="text-empty">Tidak ada data indikator.</p>
-                  ) : (
-                    <div className="table-wrapper">
-                      <table className="table-universal">
-                        <thead>
-                          <tr>
-                            <th rowSpan={2} className="col-w5 text-center">Nomor</th>
-                            <th rowSpan={2} className="col-w20">Sasaran Strategis</th>
-                            <th rowSpan={2} className="col-w35">Sub Indikator Kinerja Utama</th>
-                            <th rowSpan={2} className="text-center min-w100">Target</th>
-                            <th colSpan={2} className="text-center">Target Universitas</th>
-                            <th rowSpan={2} className="col-w10 text-center">Aksi</th>
-                          </tr>
-                          <tr>
-                            <th className="text-center min-w100">Kuantitas</th>
-                            <th className="text-center min-w100">Waktu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {groupedData.filter(g => g.persentaseTarget !== null).flatMap((group, groupIdx) => {
-                            type MF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
-                            const flatRows: MF[] = [];
-                            for (const sub of group.subIndikators) {
-                              const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
-                              let subTotal = 1;
-                              if (hasPkL3) { for (const child of sub.children) subTotal += 1 + (child.children ?? []).length; }
-                              else { subTotal += sub.children.length; }
-                              flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
-                              for (const child of sub.children) {
-                                flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
-                                if (hasPkL3) { for (const l3 of (child.children ?? [])) flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal }); }
-                              }
-                            }
-                            const totalRowSpan = flatRows.length;
-                            return flatRows.map((row, rowIdx) => {
-                              const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
-                              const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
-                              const leafNilaiTarget = row.level === 3 ? (row.l3Obj?.nilaiTarget ?? null) : (row.child?.nilaiTarget ?? null);
-                              const leafSatuan = row.level === 3 ? (row.l3Obj?.satuan ?? null) : (row.child?.satuan ?? null);
-                              const leafTarget = Number(leafNilaiTarget || 0);
-                              const univKuantitas = group.targetAbsolut;
-                              return (
-                                <tr key={`mon-${group.id}-${rowIdx}`}>
-                                  {rowIdx === 0 && (
-                                    <>
-                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center"><p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p></td>
-                                      <td rowSpan={totalRowSpan} className="td-cell v-top"><div className="fw-600 mb-4">{group.nama}</div></td>
-                                    </>
-                                  )}
-                                  <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>{row.kode} {row.nama}</td>
-                                  <td className="td-cell td-cell--center">
-                                    {isLeaf && leafNilaiTarget !== null ? `${leafNilaiTarget}${leafSatuan ? ` ${leafSatuan}` : ''}` : '-'}
-                                  </td>
-                                  {rowIdx === 0 && (
-                                    <>
-                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">{univKuantitas !== null ? `${univKuantitas}${group.satuan ? ` ${group.satuan}` : ''}` : "-"}</td>
-                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">{group.tenggat || "-"}</td>
-                                    </>
-                                  )}
-                                  {isLeaf ? (
-                                    <td className="action-cell">
-                                      <button onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)} className="btn-small btn-small--outline btn-small--w100">Lihat Progress</button>
-                                    </td>
-                                  ) : <td className="td-cell" />}
-                                </tr>
-                              );
-                            });
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              )}
             </>
               )}
             </>
@@ -1351,7 +1279,7 @@ const [tahun, setTahun] = useState(new Date().getFullYear().toString());
                     onChange={(e) => setTahun(e.target.value)}
                     className="filter-isi"
                   >
-                    {["2024", "2025", "2026", "2027"].map((y) => (
+                    {availableYears.map((y) => (
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>

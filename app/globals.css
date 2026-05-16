@@ -1759,31 +1759,41 @@ h3 {
 .table-validasi {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  overflow: hidden;
+  font-size: 13px;
 }
 
 .table-validasi th {
   text-align: left;
-  padding: 12px 14px;
+  padding: 10px 14px;
+  font-size: 11px;
   font-weight: 700;
-  color: #374151;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid #e5e7eb;
+  background-color: #f8fafc;
+  white-space: nowrap;
 }
 
 .table-validasi th.text-center {
   text-align: center;
 }
 
-.table-validasi tr {
-  border-bottom: 1px solid #e5e7eb;
+.table-validasi tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+
+.table-validasi tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.table-validasi tbody tr:hover {
+  background-color: #f8fafc;
 }
 
 .table-validasi td {
-  padding: 12px 14px;
+  padding: 10px 14px;
   color: #374151;
 }
 
@@ -1896,24 +1906,39 @@ h3 {
 .table-admin {
   width: 100%;
   border-collapse: collapse;
+  font-size: 13px;
   min-width: 1000px;
 }
 
 .table-admin th {
   padding: 10px 14px;
+  font-size: 11px;
   font-weight: 700;
-  font-size: 12px;
-  color: #374151;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid #e5e7eb;
+  background-color: #f8fafc;
   text-align: left;
+  white-space: nowrap;
+}
+
+.table-admin tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+
+.table-admin tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.table-admin tbody tr:hover {
+  background-color: #f8fafc;
 }
 
 .table-admin td {
   padding: 10px 14px;
-  font-size: 12px;
   color: #374151;
-  border-bottom: 1px solid #f3f4f6;
   vertical-align: top;
 }
 
@@ -2011,18 +2036,22 @@ h3 {
 .atasan-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .atasan-table thead tr {
-  background-color: #f9fafb;
+  background-color: #f8fafc;
 }
 
 .atasan-table th {
-  padding: 8px 10px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 14px;
+  font-size: 11px;
   font-weight: 700;
-  color: #374151;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
 }
 
 .atasan-table th.text-left {
@@ -2033,13 +2062,22 @@ h3 {
   text-align: center;
 }
 
-.atasan-table tr {
-  border-bottom: 1px solid #f3f4f6;
+.atasan-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+
+.atasan-table tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.atasan-table tbody tr:hover {
+  background-color: #f8fafc;
 }
 
 .atasan-table td {
-  padding: 8px 10px;
-  color: #1f2937;
+  padding: 10px 14px;
+  color: #374151;
 }
 
 .atasan-table td.text-center {
@@ -2565,19 +2603,19 @@ h3 {
 
 /* ── Header ── */
 .table-universal thead tr {
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
+  background: #f8fafc;
 }
 
 .table-universal thead th {
-  padding: 11px 14px;
+  padding: 10px 14px;
   font-size: 11px;
   font-weight: 700;
-  color: #9ca3af;
+  color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   text-align: left;
+  border-bottom: 2px solid #e5e7eb;
 }
 
 .table-universal thead th.text-center {
@@ -2586,12 +2624,16 @@ h3 {
 
 /* ── Body rows ── */
 .table-universal tbody tr {
-  border-bottom: 1px solid #f8f8f8;
+  border-bottom: 1px solid #f1f5f9;
   transition: background 0.1s;
 }
 
-.table-universal tbody tr:hover {
+.table-universal tbody tr:nth-child(even) {
   background: #fafafa;
+}
+
+.table-universal tbody tr:hover {
+  background: #f8fafc;
 }
 
 /* ── Footer ── */

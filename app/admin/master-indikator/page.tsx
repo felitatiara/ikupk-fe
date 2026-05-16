@@ -28,7 +28,7 @@ export default function MasterIndikatorPage() {
         return;
       }
 
-      const isSuperAdmin = (user.roleLevel ?? 99) === 0;
+      const isSuperAdmin = (user.roleLevel ?? 99) === 0 || (user?.role ?? '').toLowerCase() === 'admin';
 
       if (!cancelled) {
         setCanAccess(isSuperAdmin);

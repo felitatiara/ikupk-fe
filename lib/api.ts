@@ -27,6 +27,12 @@ export async function getIndikator(tahun?: string): Promise<Indikator[]> {
   return response.json();
 }
 
+export async function getIndikatorById(id: number): Promise<Indikator | null> {
+  const response = await fetch(`${API_BASE_URL}/indikator/${id}`);
+  if (!response.ok) return null;
+  return response.json();
+}
+
 // ambil dari atas (grouped)
 export interface IndikatorGroupedLevel3 {
   id: number;
@@ -55,6 +61,8 @@ export interface IndikatorGroupedChild {
   baselineJumlah: number | null;
   sumberData?: string;
   disposisiJumlah?: number | null;
+  realisasiJumlah?: number | null;
+  validRealisasiJumlah?: number | null;
   children: IndikatorGroupedLevel3[];
 }
 

@@ -17,7 +17,7 @@ export default function AdminMasterDataPage() {
     const checkAccess = async () => {
       if (loading) return;
 
-      const isSuperAdmin = (user?.roleLevel ?? 99) === 0;
+      const isSuperAdmin = (user?.roleLevel ?? 99) === 0 || (user?.role ?? '').toLowerCase() === 'admin';
 
       if (!user || !isSuperAdmin) {
         if (!cancelled) {

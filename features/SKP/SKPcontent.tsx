@@ -9,6 +9,7 @@ import {
   approveBawahanSkp,
   getMySkpStatus,
   getAllRealisasiFiles,
+  getAvailableYears,
   type SkpBawahanRow,
   type MySkpStatus,
 } from "@/lib/api";
@@ -78,7 +79,8 @@ export default function SKPContent() {
   const roleLevel = user?.roleLevel ?? 4;
   const isDosen = roleLevel >= 4;
   const isDekan = user?.role?.toLowerCase() === 'dekan' && roleLevel <= 1;
-  const tahun = new Date().getFullYear().toString();
+  const [tahun, setTahun] = useState("2026");
+  const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
 
   // Own SKP
   const [rows, setRows] = useState<SKPRow[]>([]);
@@ -117,16 +119,30 @@ export default function SKPContent() {
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const cy = new Date().getFullYear();
+    getAvailableYears().then(dbYears => {
+      const merged = [...new Set([...dbYears, String(cy - 1), String(cy), String(cy + 1)])].sort();
+      setAvailableYears(merged);
+      if (!merged.includes("2026")) setTahun(merged[merged.length - 1]);
+    }).catch(() => {
+      setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     fetchOwnSKP();
     if (isDosen) fetchMySkpStatus();
     if (isDekan) fetchBawahanSKP();
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, tahun]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchOwnSKP() {
     setLoading(true);
     try {
-      const roleId = user?.roleId ?? 0;
+      const roleId: number = user?.roleId
+      ?? user?.roles?.find((r: { id: number; isPrimary: boolean }) => r.isPrimary)?.id
+      ?? user?.roles?.[0]?.id
+      ?? 0;
       const [ikuData, pkData] = await Promise.all([
         getIndikatorGroupedForUser("IKU", tahun, user!.id, roleId),
         getIndikatorGroupedForUser("PK", tahun, user!.id, roleId),
@@ -134,24 +150,45 @@ export default function SKPContent() {
       const allData = [...ikuData, ...pkData];
       const newRows: SKPRow[] = [];
       let no = 1;
+
+      function pushRow(item: any, sasaran: string) {
+        const target = (item.disposisiJumlah ?? null) as number | null;
+        const realisasi = (item.realisasiJumlah ?? null) as number | null;
+        const capaian =
+          target !== null && target > 0 && realisasi !== null
+            ? Math.min((realisasi / target) * 100, 100)
+            : null;
+        newRows.push({
+          id: item.id,
+          no: no++,
+          kodeIndikator: item.kode,
+          namaIndikator: item.nama,
+          sasaranStrategis: sasaran,
+          targetKuantitas: target,
+          realisasiKuantitas: realisasi,
+          capaianPersen: capaian,
+        });
+      }
+
       for (const group of allData) {
         for (const sub of group.subIndikators) {
-          const target = sub.disposisiJumlah ?? null;
-          const realisasi = sub.realisasiJumlah ?? null;
-          const capaian =
-            target !== null && target > 0 && realisasi !== null
-              ? Math.min((realisasi / target) * 100, 100)
-              : null;
-          newRows.push({
-            id: sub.id,
-            no: no++,
-            kodeIndikator: sub.kode,
-            namaIndikator: sub.nama,
-            sasaranStrategis: group.nama,
-            targetKuantitas: target,
-            realisasiKuantitas: realisasi,
-            capaianPersen: capaian,
-          });
+          const children = (sub.children ?? []) as any[];
+          if (children.length === 0) {
+            pushRow(sub, group.nama);
+          } else {
+            for (const child of children) {
+              const grandchildren = (child.children ?? []) as any[];
+              if (grandchildren.length === 0) {
+                // IKU leaf at L2
+                pushRow(child, group.nama);
+              } else {
+                // PK leaf at L3
+                for (const gc of grandchildren) {
+                  pushRow(gc, group.nama);
+                }
+              }
+            }
+          }
         }
       }
       setRows(newRows);
@@ -525,6 +562,86 @@ export default function SKPContent() {
     downloadHtml(html, `SKP_Massal_${tahun}.html`);
   }
 
+  function generateRencanaSKP() {
+    const nama = user?.nama ?? "—";
+    const nip = user?.nip ?? "—";
+    const jabatan = user?.role ?? "—";
+    const unitKerja = user?.unitNama ?? "—";
+    const tanggal = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+    const tableRows = rows.map((row, i) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td>${row.sasaranStrategis}</td>
+        <td style="font-family:monospace;font-size:10pt;text-align:center">${row.kodeIndikator}</td>
+        <td>${row.namaIndikator}</td>
+        <td style="text-align:center">${row.targetKuantitas !== null ? row.targetKuantitas : "—"}</td>
+      </tr>
+    `).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Rencana SKP – ${nama}</title>
+  <style>
+    @page { size: A4; margin: 25mm 20mm 20mm 30mm; }
+    body { font-family: 'Times New Roman', serif; font-size: 12pt; color: #000; margin: 0; }
+    h1 { text-align: center; font-size: 14pt; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 1px; }
+    .sub { text-align: center; font-size: 11pt; margin-bottom: 20px; }
+    .identitas table { border-collapse: collapse; margin-bottom: 16px; }
+    .identitas td { padding: 2px 8px 2px 0; font-size: 12pt; vertical-align: top; }
+    table.main { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    table.main th, table.main td { border: 1px solid #000; padding: 6px 8px; font-size: 11pt; }
+    table.main th { background: #f3f3f3; text-align: center; font-weight: bold; }
+    .signature { display: flex; justify-content: flex-end; margin-top: 48px; }
+    .sig-box { text-align: center; width: 220px; }
+    .sig-line { border-bottom: 1px solid #000; margin: 60px 0 4px; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <h1>Rencana Sasaran Kinerja Pegawai</h1>
+  <p class="sub">Periode Penilaian: 1 Januari ${tahun} s/d 31 Desember ${tahun}</p>
+  <div class="identitas">
+    <table>
+      <tr><td style="width:160px;font-weight:600">NIP</td><td style="width:12px">:</td><td>${nip}</td></tr>
+      <tr><td style="font-weight:600">Nama</td><td>:</td><td>${nama}</td></tr>
+      <tr><td style="font-weight:600">Jabatan</td><td>:</td><td>${jabatan}</td></tr>
+      <tr><td style="font-weight:600">Unit Kerja</td><td>:</td><td>${unitKerja}</td></tr>
+    </table>
+  </div>
+  <table class="main">
+    <thead>
+      <tr>
+        <th style="width:36px">No</th>
+        <th>Sasaran Strategis</th>
+        <th style="width:100px">Kode Indikator</th>
+        <th>Nama Indikator</th>
+        <th style="width:80px">Target</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="signature">
+    <div class="sig-box">
+      <p style="margin:0">Jakarta, ${tanggal}</p>
+      <p style="margin:4px 0 0">Yang Membuat,</p>
+      <div class="sig-line"></div>
+      <p style="margin:0;font-weight:bold">${nama}</p>
+      <p style="margin:0;font-size:10pt">NIP. ${nip}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  }
+
   async function handleApprove(action: "approved" | "rejected", sigDataUrl?: string) {
     if (!selectedBawahan) return;
     setApproving(true);
@@ -660,6 +777,30 @@ export default function SKPContent() {
               ))}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+              <button
+                onClick={generateRencanaSKP}
+                disabled={rows.length === 0}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "none",
+                  backgroundColor: rows.length > 0 ? "#2563eb" : "#d1d5db",
+                  color: rows.length > 0 ? "white" : "#9ca3af",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: rows.length > 0 ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                🖨️ Cetak Rencana SKP
+              </button>
+              {rows.length === 0 && (
+                <span style={{ fontSize: 11, color: "#6b7280", textAlign: "right" }}>
+                  Tersedia setelah target didisposisikan
+                </span>
+              )}
               {isDosen && mySkpStatus?.status === "approved" && (
                 <button
                   onClick={generateSuratSKPDosen}

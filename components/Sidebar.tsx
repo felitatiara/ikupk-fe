@@ -19,7 +19,7 @@ export default function Sidebar({ activeMenu, onMenuChange, unitNama, authRole }
   const isSuperAdmin = (user?.roleLevel ?? 99) === 0;
 
   function getMenus() {
-    if (role === "superadmin" && isSuperAdmin) {
+    if ((role === "superadmin" || role === "admin") && isSuperAdmin) {
       return [
         { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
         { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
@@ -28,16 +28,6 @@ export default function Sidebar({ activeMenu, onMenuChange, unitNama, authRole }
         { key: "target-iku-pk", label: "Target IKU PK", href: "/admin/target-iku-pk" },
         { key: "master-indikator", label: "Master Indikator", href: "/admin/master-indikator" },
         { key: "master-user", label: "Master User", href: "/admin/master-user" },
-      ];
-    }
-    if (role === "admin" && isSuperAdmin) {
-      return [
-        { key: "beranda", label: "Beranda", href: "/admin/dashboard" },
-        { key: "monitoring", label: "Monitoring Unit Kerja", href: "/admin/monitoring-unit-kerja" },
-        { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/admin/iku-pk" },
-        { key: "validasi", label: "Validasi IKU PK", href: "/admin/validasi-iku-pk" },
-        { key: "target-iku-pk", label: "Target IKU PK", href: "/admin/target-iku-pk" },
-        { key: "master-indikator", label: "Master Indikator", href: "/admin/master-indikator" },
       ];
     }
     // User biasa / admin non-FIK

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  getIndikator,
+  getIndikatorById,
   getAllRoles,
   getIndikatorCascadeChain,
   saveIndikatorCascadeChain,
@@ -24,19 +24,19 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
 
   useEffect(() => {
     Promise.all([
-      getIndikator(tahun),
+      getIndikatorById(l0Id),
       getAllRoles(),
       getIndikatorCascadeChain(l0Id),
     ])
-      .then(([indikators, roles, existingChain]) => {
-        setL0(indikators.find(i => i.id === l0Id) ?? null);
+      .then(([indikator, roles, existingChain]) => {
+        setL0(indikator);
         // Hanya tampilkan role non-admin (level > 0)
         setAllRoles(roles.filter(r => r.level > 0).sort((a, b) => a.level - b.level));
         if (existingChain.length > 0) setChain(existingChain);
       })
       .catch(() => {})
       .finally(() => setLoadingInfo(false));
-  }, [l0Id, tahun]);
+  }, [l0Id]);
 
   const addStep = () => setChain(p => [...p, 0]);
   const removeStep = (idx: number) => setChain(p => p.filter((_, i) => i !== idx));

@@ -21,7 +21,7 @@ import {
   ProgressChartItem,
   IndikatorDetail,
 } from "@/services/monitoringService";
-import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, type RealisasiFileItem, type MonitoringBawahanResult } from "@/lib/api";
+import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, type RealisasiFileItem, type MonitoringBawahanResult } from "@/lib/api";
 import type { User } from "@/types";
 
 const jenisOptions = [
@@ -29,7 +29,7 @@ const jenisOptions = [
   { label: "Perjanjian Kinerja", value: "PK" },
 ];
 
-const yearOptions = ["2024", "2025", "2026"];
+const DEFAULT_TAHUN = "2026";
 
 interface PersonalRow {
   kode: string;
@@ -431,18 +431,22 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [user, setUser] = useState<MonitoringUser | null>(null);
   const [token, setToken] = useState("");
   const [selectedJenis, setSelectedJenis] = useState("IKU");
-  const [selectedTahun, setSelectedTahun] = useState(new Date().getFullYear().toString());
+  const [selectedTahun, setSelectedTahun] = useState(DEFAULT_TAHUN);
+  const [yearOptions, setYearOptions] = useState<string[]>([DEFAULT_TAHUN]);
 
   const [chartData, setChartData] = useState<ProgressChartItem[]>([]);
   const [personalRows, setPersonalRows] = useState<PersonalRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [personalLoading, setPersonalLoading] = useState(false);
 
   const [detailItem, setDetailItem] = useState<ProgressChartItem | null>(null);
+
+  const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima">("keseluruhan");
 
   const [monitoringBawahan, setMonitoringBawahan] = useState<MonitoringBawahanResult | null>(null);
   const [monitoringBawahanLoading, setMonitoringBawahanLoading] = useState(false);
   const [bawahanJenis, setBawahanJenis] = useState("IKU");
-  const [bawahanTahun, setBawahanTahun] = useState(new Date().getFullYear().toString());
+  const [bawahanTahun, setBawahanTahun] = useState(DEFAULT_TAHUN);
   const [bawahanFilterJabatan, setBawahanFilterJabatan] = useState("all");
   const [bawahanFilterUser, setBawahanFilterUser] = useState("all");
 
@@ -475,12 +479,31 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   }, []);
 
   useEffect(() => {
+    getAvailableYears().then(dbYears => {
+      const cy = new Date().getFullYear();
+      const merged = [...new Set([
+        ...dbYears,
+        String(cy - 1),
+        String(cy),
+        String(cy + 1),
+      ])].sort();
+      setYearOptions(merged);
+      if (!merged.includes(DEFAULT_TAHUN)) {
+        setSelectedTahun(merged[merged.length - 1]);
+        setBawahanTahun(merged[merged.length - 1]);
+      }
+    }).catch(() => {
+      const cy = new Date().getFullYear();
+      setYearOptions([String(cy - 1), String(cy), String(cy + 1)]);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     if (isPimpinan) {
       fetchGlobal();
-    } else {
-      fetchPersonal();
     }
+    fetchPersonal();
   }, [selectedJenis, selectedTahun, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -507,13 +530,26 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   }
 
   async function fetchPersonal() {
-    setLoading(true);
+    setPersonalLoading(true);
     try {
       const userId: number = user?.id ?? user?.userId ?? 0;
-      const roleId: number = user?.roleId ?? 0;
+      const roleId: number = user?.roleId
+        ?? user?.roles?.find((r: { id: number; isPrimary: boolean }) => r.isPrimary)?.id
+        ?? user?.roles?.[0]?.id
+        ?? 0;
       const data = await getIndikatorGroupedForUser(selectedJenis, selectedTahun, userId, roleId);
       const rows: PersonalRow[] = [];
       for (const group of data) {
+        // Level 0 header row
+        rows.push({
+          kode: group.kode ?? '',
+          nama: group.nama ?? '',
+          sasaran: '',
+          target: null,
+          realisasi: null,
+          capaian: null,
+          level: 0,
+        });
         for (const sub of group.subIndikators) {
           const target = sub.disposisiJumlah ?? null;
           const realisasi = sub.realisasiJumlah ?? null;
@@ -532,7 +568,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           });
           for (const child of (sub.children ?? [])) {
             const cTarget = child.disposisiJumlah ?? child.nilaiTarget ?? null;
-            const cRealisasi = child.realisasiJumlah ?? null;
+            const cRealisasi = null;
             const cCapaian =
               cTarget !== null && cTarget > 0 && cRealisasi !== null
                 ? Math.min((cRealisasi / cTarget) * 100, 100)
@@ -553,7 +589,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     } catch {
       setPersonalRows([]);
     } finally {
-      setLoading(false);
+      setPersonalLoading(false);
     }
   }
 
@@ -561,7 +597,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     return <div style={{ padding: 24 }}>Loading...</div>;
   }
 
-  const personalChartData = personalRows.filter((r) => !r.level || r.level <= 1).map((r) => ({
+  const personalChartData = personalRows.filter((r) => r.level === 1).map((r) => ({
     kode: r.kode,
     nama: r.nama,
     target: r.target ?? 0,
@@ -579,7 +615,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     : 0;
 
   // Personal KPIs (L1 only)
-  const l1Rows = personalRows.filter((r) => !r.level || r.level <= 1);
+  const l1Rows = personalRows.filter((r) => r.level === 1);
   const pDone = l1Rows.filter((r) => r.capaian !== null && r.capaian >= 100).length;
   const pAvg = l1Rows.length > 0
     ? (l1Rows.reduce((s, r) => s + (r.capaian ?? 0), 0) / l1Rows.length).toFixed(1)
@@ -619,6 +655,47 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               </div>
             </div>
           </div>
+
+          {/* ── Tab Switcher (pimpinan only) — di atas filter ── */}
+          {isPimpinan && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                display: "inline-flex",
+                backgroundColor: "#f1f5f9",
+                borderRadius: 10,
+                padding: 4,
+                gap: 4,
+              }}>
+                {([
+                  { key: "keseluruhan", label: "Monitoring Keseluruhan" },
+                  { key: "diterima", label: "Target yang Diterima" },
+                ] as const).map((tab) => {
+                  const isActive = activeTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      style={{
+                        padding: "8px 20px",
+                        fontSize: 13,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? "#ea580c" : "#64748b",
+                        background: isActive ? "#ffffff" : "transparent",
+                        border: "none",
+                        borderRadius: 7,
+                        cursor: "pointer",
+                        boxShadow: isActive ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
+                        transition: "all 0.15s",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Filters */}
           <div style={{
@@ -686,9 +763,19 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             </div>
           </div>
 
-        {/* ── PIMPINAN / ADMIN: global view ── */}
-        {isPimpinan && (
+        {/* ── PIMPINAN / ADMIN: Monitoring Keseluruhan ── */}
+        {isPimpinan && activeTab === "keseluruhan" && (
           <>
+            {/* Section Header */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
+                Monitoring Keseluruhan
+              </div>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>
+                Progres seluruh indikator {selectedJenis} tahun {selectedTahun}.
+              </div>
+            </div>
+
             {/* KPI Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
               <KpiCard label="Total Indikator" value={chartData.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
@@ -722,7 +809,6 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </BarChart>
                 </ResponsiveContainer>
               )}
-              {/* Legend */}
               <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "flex-end" }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6b7280" }}>
                   <span style={{ width: 12, height: 8, borderRadius: 2, background: "#16a34a", display: "inline-block" }} />
@@ -735,7 +821,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               </div>
             </div>
 
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 32 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
                   Rangkuman Target & Realisasi
@@ -747,26 +833,18 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
+                    <tr style={{ backgroundColor: "#f8fafc" }}>
                       {[
-                        { label: "Kode", align: "left" },
-                        { label: "Indikator", align: "left" },
-                        { label: selectedJenis === "PK" ? "Target Fak" : "Target Univ (%)", align: "center" },
-                        { label: "Realisasi", align: "center" },
-                        { label: "Tenggat", align: "center" },
-                        { label: "Status", align: "center" },
-                        { label: "Aksi", align: "center" },
+                        { label: "No", w: "4%" },
+                        { label: "Sasaran", w: "14%" },
+                        { label: "Indikator / Sub-Indikator", w: "auto" },
+                        { label: "Target", w: "10%" },
+                        { label: "Realisasi", w: "9%" },
+                        { label: "Tenggat", w: "10%" },
+                        { label: "Status", w: "9%" },
+                        { label: "Aksi", w: "8%" },
                       ].map((h) => (
-                        <th
-                          key={h.label}
-                          style={{
-                            textAlign: h.align as "left" | "center",
-                            padding: "11px 10px",
-                            fontWeight: 600,
-                            color: "#475569",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
                           {h.label}
                         </th>
                       ))}
@@ -774,86 +852,118 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
-                          Memuat data kinerja...
-                        </td>
-                      </tr>
-                    ) : chartData.length > 0 ? (
-                      chartData.map((item, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #edf2f7" }}>
-                          <td style={{ padding: "13px 10px", color: "#0369a1", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
-                            {item.kode}
-                          </td>
-                          <td style={{ padding: "13px 10px", color: "#334155", maxWidth: 300, lineHeight: 1.45 }}>
-                            {item.nama}
-                          </td>
-                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
-                            {item.targetUniversitas != null ? (
-                              <span>
-                                {item.jenis === "PK"
-                                  ? `${item.targetUniversitas}${item.satuan ? ` ${item.satuan}` : ""}`
-                                  : `${item.targetUniversitas}%`}
-                                {item.jenis === "IKU" && item.targetAbsolut != null && (
-                                  <span style={{ display: "block", fontSize: 10, color: "#9ca3af" }}>
-                                    ≈ {item.targetAbsolut} abs
-                                  </span>
-                                )}
-                              </span>
-                            ) : (
-                              <span style={{ color: "#9ca3af" }}>—</span>
-                            )}
-                          </td>
-                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
-                            {item.realisasi}
-                          </td>
-                          <td style={{ padding: "13px 10px", textAlign: "center", color: "#334155" }}>
-                            {item.tenggat}
-                          </td>
-                          <td style={{ padding: "13px 10px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                padding: "4px 10px",
-                                borderRadius: 999,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                backgroundColor: item.status === "Done" ? "#ecfdf5" : "#fff7ed",
-                                color: item.status === "Done" ? "#047857" : "#c2410c",
-                                border: `1px solid ${item.status === "Done" ? "#bbf7d0" : "#fed7aa"}`,
-                              }}
-                            >
-                              {item.status}
-                            </span>
-                          </td>
-                          <td style={{ padding: "13px 10px", textAlign: "center" }}>
-                            {canViewDetail ? (
-                              <button
-                                onClick={() => setDetailItem(item)}
-                                style={{
-                                  padding: "5px 14px",
-                                  borderRadius: 6,
-                                  border: "1px solid #e5e7eb",
-                                  background: "white",
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                  color: "#374151",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Detail
-                              </button>
-                            ) : (
-                              <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
-                          Tidak ada data target ditemukan.
-                        </td>
-                      </tr>
+                      <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
+                    ) : chartData.length > 0 ? (() => {
+                      const sortKode = (a: string, b: string) => {
+                        const pa = a.split('.').map(Number);
+                        const pb = b.split('.').map(Number);
+                        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                          const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+                          if (d !== 0) return d;
+                        }
+                        return 0;
+                      };
+
+                      const sorted = [...chartData].sort((a, b) => sortKode(a.kode, b.kode));
+                      const rows: React.ReactNode[] = [];
+                      let globalNo = 0;
+
+                      for (const item of sorted) {
+                        const subs = [...(item.subIndikators ?? [])].sort((a, b) => sortKode(a.kode, b.kode));
+                        const totalRows = subs.reduce((s, sub) => s + 1 + (sub.children?.length ?? 0), 0) || 1;
+                        let firstRow = true;
+
+                        if (subs.length === 0) {
+                          globalNo++;
+                          rows.push(
+                            <tr key={`${item.id}-empty`} style={{ borderBottom: "1px solid #edf2f7" }}>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 700, fontFamily: "monospace" }}>{globalNo}</td>
+                              <td style={{ padding: "10px 14px", color: "#334155", fontWeight: 600 }}>{item.kode} — {item.nama}</td>
+                              <td colSpan={6} style={{ padding: "10px 14px", color: "#9ca3af", textAlign: "center" }}>—</td>
+                            </tr>
+                          );
+                          continue;
+                        }
+
+                        for (const sub of subs) {
+                          globalNo++;
+                          rows.push(
+                            <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #edf2f7", backgroundColor: "#fff" }}>
+                              {firstRow && (
+                                <>
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, borderRight: "1px solid #f0f0f0", verticalAlign: "top" }}>
+                                    {item.kode}
+                                  </td>
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "top", borderRight: "1px solid #f0f0f0" }}>
+                                    <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
+                                  </td>
+                                </>
+                              )}
+                              <td style={{ padding: "10px 14px", color: "#334155", lineHeight: 1.4 }}>
+                                <span style={{ fontSize: 11, fontFamily: "monospace", color: "#6b7280", marginRight: 6 }}>{sub.kode}</span>
+                                <span style={{ fontWeight: 600 }}>{sub.nama}</span>
+                              </td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155", borderLeft: "1px solid #f0f0f0" }}>
+                                {(() => {
+                                  const l2WithTarget = (sub.children ?? []).filter((c) => c.nilaiTarget != null);
+                                  if (l2WithTarget.length > 0) {
+                                    const total = l2WithTarget.reduce((s, c) => s + (c.nilaiTarget ?? 0), 0);
+                                    const sat = l2WithTarget[0]?.satuan ?? null;
+                                    return <span style={{ fontWeight: 600 }}>{total}{sat ? ` ${sat}` : ""}</span>;
+                                  }
+                                  if (sub.targetFakultas > 0) return <span style={{ fontWeight: 600 }}>{sub.targetFakultas}</span>;
+                                  return <span style={{ color: "#9ca3af" }}>—</span>;
+                                })()}
+                              </td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155" }}>{sub.realisasi}</td>
+                              {firstRow && (
+                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>{item.tenggat}</td>
+                              )}
+                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: sub.status === "Done" ? "#ecfdf5" : "#fff7ed", color: sub.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${sub.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
+                                  {sub.status}
+                                </span>
+                              </td>
+                              {firstRow && (
+                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>
+                                  {canViewDetail ? (
+                                    <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+                                      Detail
+                                    </button>
+                                  ) : <span style={{ color: "#d1d5db" }}>—</span>}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                          firstRow = false;
+
+                          for (const child of (sub.children ?? [])) {
+                            const childTarget = child.nilaiTarget ?? null;
+                            const childSatuan = child.satuan ?? null;
+                            rows.push(
+                              <tr key={`${item.id}-${sub.id}-${child.id}`} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: "#fafafa" }}>
+                                <td style={{ padding: "8px 10px 8px 30px", color: "#64748b", lineHeight: 1.4 }}>
+                                  <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9ca3af", marginRight: 6 }}>{child.kode}</span>
+                                  <span style={{ fontSize: 12 }}>{child.nama}</span>
+                                </td>
+                                <td style={{ padding: "8px 10px", textAlign: "center", color: "#334155", fontSize: 12, borderLeft: "1px solid #f0f0f0" }}>
+                                  {childTarget != null
+                                    ? <span style={{ fontWeight: 600 }}>{childTarget}{childSatuan ? ` ${childSatuan}` : ""}</span>
+                                    : <span style={{ color: "#d1d5db" }}>—</span>}
+                                </td>
+                                <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b", fontSize: 12 }}>{child.realisasi > 0 ? child.realisasi : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                                <td style={{ padding: "8px 10px" }} />
+                              </tr>
+                            );
+                          }
+                        }
+                      }
+
+                      return rows.length > 0 ? rows : (
+                        <tr key="empty"><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data indikator.</td></tr>
+                      );
+                    })() : (
+                      <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -862,127 +972,151 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           </>
         )}
 
-        {/* ── ATASAN / USER: personal view ── */}
-        {!isPimpinan && (
+        {/* ── Target yang Diterima — non-pimpinan always; pimpinan when tab active ── */}
+        {(!isPimpinan || activeTab === "diterima") && (
           <>
-            {/* KPI Cards */}
-            {personalRows.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
-                <KpiCard label="Total Indikator" value={l1Rows.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
-                <KpiCard label="Sudah Tercapai" value={pDone} sub={`dari ${l1Rows.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
-                <KpiCard label="Rata-rata Capaian" value={`${pAvg}%`} accent="#b45309" bg="#FFF4C2" icon={Percent} />
-              </div>
-            )}
-
-            {/* Bar Chart */}
-            {personalRows.length > 0 && (
-              <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 22 }}>
-                <p style={{ margin: "0 0 16px", fontSize: 13, fontWeight: 700, color: "#374151" }}>
-                  Capaian per Indikator — {selectedJenis} {selectedTahun}
-                </p>
-                <ResponsiveContainer width="100%" height={personalChartHeight}>
-                  <BarChart layout="vertical" data={personalChartData} margin={{ top: 0, right: 56, left: 8, bottom: 0 }} barSize={18} barCategoryGap="40%">
-                    <CartesianGrid horizontal={false} stroke="#f3f4f6" />
-                    <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                    <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<BarTooltip />} cursor={false} />
-                    <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
-                      <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
-                      {personalChartData.map((entry, i) => (
-                        <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-
+          {/* Section Header — hanya untuk non-pimpinan */}
+          {!isPimpinan && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
-                Rincian Indikator {selectedJenis} — {selectedTahun}
+                Target yang Diterima
               </div>
               <div style={{ fontSize: 13, color: "#6b7280" }}>
-                Target dan realisasi indikator yang didisposisikan kepada Anda.
+                Target {selectedJenis} tahun {selectedTahun} yang diterima melalui alur cascade atau disposisi.
               </div>
             </div>
+          )}
 
-            <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid #e5e7eb", backgroundColor: "#f8fafc" }}>
-                      {["No", "Kode", "Nama Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)"].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Capaian (%)" ? "center" : "left",
-                            padding: "11px 10px",
-                            fontWeight: 600,
-                            color: "#475569",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
-                          Memuat data indikator...
-                        </td>
-                      </tr>
-                    ) : personalRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
-                          Belum ada indikator yang didisposisikan untuk tahun {selectedTahun}.
-                        </td>
-                      </tr>
-                    ) : (
-                      personalRows.map((row, i) => {
-                        const capColor =
-                          row.capaian === null
-                            ? "#9ca3af"
-                            : row.capaian >= 100
-                            ? "#16a34a"
-                            : row.capaian >= 76
-                            ? "#2563eb"
-                            : row.capaian >= 51
-                            ? "#d97706"
-                            : "#dc2626";
-                        const isL2 = row.level === 2;
+          {/* KPI Cards */}
+          {personalRows.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
+              <KpiCard label="Total Indikator" value={l1Rows.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
+              <KpiCard label="Sudah Tercapai" value={pDone} sub={`dari ${l1Rows.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
+              <KpiCard label="Rata-rata Capaian" value={`${pAvg}%`} accent="#b45309" bg="#FFF4C2" icon={Percent} />
+            </div>
+          )}
+
+          {/* Bar Chart */}
+          {personalRows.length > 0 && (
+            <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 22 }}>
+              <p style={{ margin: "0 0 16px", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                Capaian per Indikator — {selectedJenis} {selectedTahun}
+              </p>
+              <ResponsiveContainer width="100%" height={personalChartHeight}>
+                <BarChart layout="vertical" data={personalChartData} margin={{ top: 0, right: 56, left: 8, bottom: 0 }} barSize={18} barCategoryGap="40%">
+                  <CartesianGrid horizontal={false} stroke="#f3f4f6" />
+                  <XAxis type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<BarTooltip />} cursor={false} />
+                  <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
+                    <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                    {personalChartData.map((entry, i) => (
+                      <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Tabel personal */}
+          <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+                  {["No", "Kode", "Nama Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Capaian (%)" ? "center" : "left",
+                        padding: "10px 14px",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {personalLoading ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
+                      Memuat data indikator...
+                    </td>
+                  </tr>
+                ) : personalRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+                      Belum ada target yang diterima untuk tahun {selectedTahun}.
+                    </td>
+                  </tr>
+                ) : (() => {
+                    let l1Counter = 0;
+                    return personalRows.map((row, i) => {
+                      const isL0 = row.level === 0;
+                      const isL2 = row.level === 2;
+                      if (!isL0 && !isL2) l1Counter++;
+
+                      if (isL0) {
                         return (
-                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: isL2 ? "#fafafa" : undefined }}>
-                            <td style={{ padding: "12px 10px", textAlign: "center", color: "#9ca3af", fontSize: isL2 ? 10 : 13 }}>
-                              {isL2 ? "↳" : i + 1}
-                            </td>
-                            <td style={{ padding: "12px 10px", color: isL2 ? "#6b7280" : "#0284c7", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
-                              {row.kode}
-                            </td>
-                            <td style={{ padding: "12px 10px", paddingLeft: isL2 ? 24 : 10, color: isL2 ? "#6b7280" : "#1f2937", fontWeight: isL2 ? 400 : 500 }}>{row.nama}</td>
-                            <td style={{ padding: "12px 10px", color: "#6b7280", fontSize: 12 }}>{isL2 ? "" : row.sasaran}</td>
-                            <td style={{ padding: "12px 10px", textAlign: "center", color: "#374151" }}>
-                              {row.target !== null ? row.target : <span style={{ color: "#9ca3af" }}>—</span>}
-                            </td>
-                            <td style={{ padding: "12px 10px", textAlign: "center", color: "#374151" }}>
-                              {row.realisasi !== null ? row.realisasi : <span style={{ color: "#9ca3af" }}>—</span>}
-                            </td>
-                            <td style={{ padding: "12px 10px", textAlign: "center", fontWeight: 700, color: capColor }}>
-                              {row.capaian !== null ? `${row.capaian.toFixed(1)}%` : "—"}
+                          <tr key={i} style={{ backgroundColor: "#1e3a5f" }}>
+                            <td colSpan={7} style={{ padding: "9px 14px" }}>
+                              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#93c5fd", marginRight: 8, fontWeight: 700 }}>{row.kode}</span>
+                              <span style={{ fontWeight: 700, color: "#ffffff", fontSize: 13 }}>{row.nama}</span>
                             </td>
                           </tr>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
-            </div>
+                      }
+
+                      const capColor =
+                        row.capaian === null
+                          ? "#9ca3af"
+                          : row.capaian >= 100
+                          ? "#16a34a"
+                          : row.capaian >= 76
+                          ? "#2563eb"
+                          : row.capaian >= 51
+                          ? "#d97706"
+                          : "#dc2626";
+
+                      return (
+                        <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: isL2 ? "#fafafa" : undefined }}>
+                          <td style={{ padding: "10px 14px", textAlign: "center", color: "#9ca3af", fontSize: isL2 ? 10 : 13 }}>
+                            {isL2 ? "↳" : l1Counter}
+                          </td>
+                          <td style={{ padding: "10px 14px", color: isL2 ? "#6b7280" : "#0284c7", fontWeight: 600, fontFamily: "monospace", fontSize: 11 }}>
+                            {row.kode}
+                          </td>
+                          <td style={{ padding: "10px 14px", paddingLeft: isL2 ? 28 : 14, color: isL2 ? "#6b7280" : "#1f2937", fontWeight: isL2 ? 400 : 500 }}>{row.nama}</td>
+                          <td style={{ padding: "10px 14px", color: "#6b7280", fontSize: 12 }}>{isL2 ? "" : row.sasaran}</td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
+                            {row.target !== null ? row.target : <span style={{ color: "#9ca3af" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
+                            {row.realisasi !== null ? row.realisasi : <span style={{ color: "#9ca3af" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: capColor }}>
+                            {row.capaian !== null ? `${row.capaian.toFixed(1)}%` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()
+                }
+              </tbody>
+            </table>
+          </div>
           </>
         )}
+
           {/* ── Monitoring Bawahan ── */}
-          {monitoringBawahan && hasBawahanTargets && (
+          {monitoringBawahan && (monitoringBawahan.bawahanList?.length ?? 0) > 0 && (
             <div style={{ marginTop: 32 }}>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
@@ -1051,13 +1185,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 600 + filteredBawahan.length * 130 }}>
                     <thead>
-                      <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb" }}>
-                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", width: 80 }}>No.</th>
-                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", minWidth: 180 }}>Sasaran Strategis</th>
-                        <th style={{ padding: "11px 10px", textAlign: "left", fontWeight: 600, color: "#475569", minWidth: 220 }}>Indikator</th>
-                        <th style={{ padding: "11px 10px", textAlign: "center", fontWeight: 600, color: "#475569", whiteSpace: "nowrap", minWidth: 100 }}>Target</th>
+                      <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", width: 80 }}>No.</th>
+                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", minWidth: 180 }}>Sasaran Strategis</th>
+                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", minWidth: 220 }}>Indikator</th>
+                        <th style={{ padding: "10px 14px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", minWidth: 100 }}>Target</th>
                         {filteredBawahan.map((b) => (
-                          <th key={b.id} style={{ padding: "11px 10px", textAlign: "center", fontWeight: 600, color: "#475569", minWidth: 130 }}>
+                          <th key={b.id} style={{ padding: "10px 14px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", minWidth: 130 }}>
                             <div style={{ fontWeight: 700, color: "#1f2937" }}>{b.nama}</div>
                             <div style={{ fontWeight: 400, color: "#9ca3af", fontSize: 11, marginTop: 2 }}>{b.roleName}</div>
                           </th>
@@ -1074,25 +1208,25 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             <tr key={row.leafId} style={{ borderBottom: "1px solid #f1f5f9" }}>
                               {rowIdx === 0 && (
                                 <>
-                                  <td rowSpan={groupRows.length} style={{ padding: "12px 10px", fontWeight: 700, color: "#0369a1", fontFamily: "monospace", fontSize: 11, verticalAlign: "top", borderRight: "1px solid #f1f5f9" }}>
+                                  <td rowSpan={groupRows.length} style={{ padding: "10px 14px", fontWeight: 700, color: "#0369a1", fontFamily: "monospace", fontSize: 11, verticalAlign: "top", borderRight: "1px solid #f1f5f9" }}>
                                     {row.groupKode}
                                   </td>
-                                  <td rowSpan={groupRows.length} style={{ padding: "12px 10px", color: "#334155", fontWeight: 500, verticalAlign: "top", borderRight: "1px solid #f1f5f9", lineHeight: 1.45 }}>
+                                  <td rowSpan={groupRows.length} style={{ padding: "10px 14px", color: "#334155", fontWeight: 500, verticalAlign: "top", borderRight: "1px solid #f1f5f9", lineHeight: 1.45 }}>
                                     {row.groupNama}
                                   </td>
                                 </>
                               )}
-                              <td style={{ padding: "12px 10px", color: "#374151", lineHeight: 1.45 }}>
+                              <td style={{ padding: "10px 14px", color: "#374151", lineHeight: 1.45 }}>
                                 <span style={{ color: "#9ca3af", marginRight: 6, fontFamily: "monospace", fontSize: 11 }}>{row.leafKode}</span>
                                 {row.leafNama}
                               </td>
-                              <td style={{ padding: "12px 10px", textAlign: "center", color: "#374151" }}>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
                                 {row.nilaiTarget !== null ? `${row.nilaiTarget}${row.satuan ? ` ${row.satuan}` : ""}` : "—"}
                               </td>
                               {filteredBawahan.map((b) => {
                                 const jumlah = row.disposisiByUser[b.id];
                                 return (
-                                  <td key={b.id} style={{ padding: "12px 10px", textAlign: "center" }}>
+                                  <td key={b.id} style={{ padding: "10px 14px", textAlign: "center" }}>
                                     {jumlah > 0 ? (
                                       <span style={{ fontWeight: 700, color: "#16a34a" }}>{jumlah}</span>
                                     ) : (

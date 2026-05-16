@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, Indikator } from "../../lib/api";
+import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, Indikator } from "../../lib/api";
 import { toast } from "sonner";
 
 
@@ -60,12 +60,22 @@ function blankGroup(): IndikatorGroupForm {
   };
 }
 
-const TAHUN_OPTIONS = [
-  new Date().getFullYear(),
-  new Date().getFullYear() + 1,
-  new Date().getFullYear() + 2,
+const TAHUN_OPTIONS_FALLBACK = [
+  String(new Date().getFullYear() - 1),
+  String(new Date().getFullYear()),
+  String(new Date().getFullYear() + 1),
 ];
 const TRIWULAN_OPTIONS = ["Triwulan 1", "Triwulan 2", "Triwulan 3", "Triwulan 4"];
+const SATUAN_OPTIONS = [
+  "%", "Mahasiswa", "Lulusan", "Dosen", "Artikel", "Judul", "Laporan", "Kegiatan",
+  "Buku", "Mata Kuliah", "Luaran/IA", "Unit Kerja", "Dokumen", "Dokumen per prodi valid",
+  "Laporan AMI valid per prodi", "Laporan per semester prodi", "Laporan per semester fakultas",
+  "PS", "Publikasi", "Inovasi", "Rp./Tahun", "% dari RPD/bulan", "Triwulan", "Surveyor",
+  "Kegiatan/semester", "% Total keg. lit per PS", "% Total keg. abdimas per PS",
+  "Kegiatan/Fakultas/Smt", "Kegiatan/Jurusan/Smt", "% Mhs Aktif", "MoA per Fakultas",
+  "IA per Fakultas", "Rp/Fakultas", "IA/PKS/LoA Per fakultas", "Publikasi/Fakultas",
+  "% dari jumlah prodi", "Kali/tahun/fakultas", "Judul/dosen", "Professor", "Keg/Smt", "Keg/Tahun",
+];
 
 const labelStyle = { fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inputStyle = { border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151", width: "100%" };
@@ -85,16 +95,24 @@ export default function MasterIndikatorContent() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  // Available years from DB (shared between form and edit modal)
+  const [availableYears, setAvailableYears] = useState<string[]>(TAHUN_OPTIONS_FALLBACK);
+
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editRow, setEditRow] = useState<Level0WithChildren | null>(null);
-  const [editTahun, setEditTahun] = useState(String(new Date().getFullYear()));
-  const [editTenggat, setEditTenggat] = useState("");
-  const [editTargetUniversitas, setEditTargetUniversitas] = useState("");
-  const [editLoading, setEditLoading] = useState(false);
+  const [editTahun, setEditTahun] = useState("");
+  const [editTenggat, setEditTenggat] = useState<string>('');
   const [editSaving, setEditSaving] = useState(false);
-  // sumberData per indikatorId (Level 1 and Level 2)
-  const [editSumberDataMap, setEditSumberDataMap] = useState<Record<number, string>>({});
+  // Single sumberData for all children
+  const [editSumberData, setEditSumberData] = useState<string>('repository');
+  // Leaf-level targets: indikatorId → target string
+  const [editLeafTargets, setEditLeafTargets] = useState<Record<number, string>>({});
+  // Leaf-level satuan: indikatorId → satuan string
+  const [editLeafSatuan, setEditLeafSatuan] = useState<Record<number, string>>({});
+  // L3 children for PK: l2Id → Indikator[]
+  const [editL3Map, setEditL3Map] = useState<Record<number, Indikator[]>>({});
+  const [editLeafLoading, setEditLeafLoading] = useState(false);
 
   // Form fields
   const [jenis, setJenis] = useState<"IKU" | "PK">("IKU");
@@ -102,7 +120,7 @@ export default function MasterIndikatorContent() {
   const [sasaranStrategis, setSasaranStrategis] = useState("");
   const [targetUniversitas, setTargetUniversitas] = useState("");
   const [tenggat, setTenggat] = useState("");
-  const [targetTahun, setTargetTahun] = useState(String(new Date().getFullYear()));
+  const [targetTahun, setTargetTahun] = useState("");
   const [selectedLevel0Id, setSelectedLevel0Id] = useState<number | "">("");
   const [groups, setGroups] = useState<IndikatorGroupForm[]>([blankGroup()]);
 
@@ -118,6 +136,19 @@ export default function MasterIndikatorContent() {
   }, []);
 
   useEffect(() => { refreshList(); }, [refreshList]);
+
+  useEffect(() => {
+    const cy = new Date().getFullYear();
+    getAvailableYears().then(dbYears => {
+      const merged = [...new Set([...dbYears, String(cy - 1), String(cy), String(cy + 1)])].sort();
+      setAvailableYears(merged);
+      const defaultYear = merged.includes("2026") ? "2026" : (merged[merged.length - 1] ?? "2026");
+      setTargetTahun(defaultYear);
+    }).catch(() => {
+      setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
+      setTargetTahun("2026");
+    });
+  }, []);
 
   // Fetch baseline when jenisData + targetTahun change
   const fetchBaseline = useCallback((subId: number, jenisDataVal: string, tahun: string) => {
@@ -368,64 +399,107 @@ export default function MasterIndikatorContent() {
     }
   };
 
-  const fetchEditTarget = async (indikatorId: number, tahun: string) => {
-    setEditLoading(true);
-    setEditTargetUniversitas("");
-    setEditTenggat("");
+  const fetchLeafTargets = async (row: Level0WithChildren, jenis: string, tahun: string, l3map: Record<number, Indikator[]>) => {
+    setEditLeafLoading(true);
+    setEditLeafTargets({});
+    setEditLeafSatuan({});
+    const targets: Record<number, string> = {};
+    const satuans: Record<number, string> = {};
     try {
-      const data = await getTargetUniversitas(indikatorId, tahun);
-      if (data) {
-        setEditTargetUniversitas(String(data.targetAngka));
+      for (const l1 of row.children) {
+        for (const l2 of l1.children) {
+          const l3s = l3map[l2.id] ?? [];
+          if (jenis === 'PK' && l3s.length > 0) {
+            for (const l3 of l3s) {
+              try {
+                const data = await getTargetUniversitas(l3.id, tahun);
+                if (data && data.targetAngka) {
+                  targets[l3.id] = String(data.targetAngka);
+                  satuans[l3.id] = data.satuan || '';
+                }
+              } catch { /* skip individual failure */ }
+            }
+          } else {
+            try {
+              const data = await getTargetUniversitas(l2.id, tahun);
+              if (data && data.targetAngka) {
+                targets[l2.id] = String(data.targetAngka);
+                satuans[l2.id] = data.satuan || '';
+              }
+            } catch { /* skip individual failure */ }
+          }
+        }
       }
-    } catch {
-      // no existing target
     } finally {
-      setEditLoading(false);
+      setEditLeafTargets(targets);
+      setEditLeafSatuan(satuans);
+      setEditLeafLoading(false);
     }
   };
 
   const handleEditClick = (row: Level0WithChildren) => {
     setEditRow(row);
-    const tahun = String(new Date().getFullYear());
+    const tahun = availableYears.includes("2026") ? "2026" : (availableYears[availableYears.length - 1] ?? "2026");
     setEditTahun(tahun);
-    setEditTenggat("");
-    // Populate sumberData map from current indikator list
-    const map: Record<number, string> = {};
-    for (const l1 of row.children) {
-      map[l1.record.id] = (l1.record as any).sumberData || 'repository';
-      for (const l2 of l1.children) {
-        map[l2.id] = (l2 as any).sumberData || 'repository';
+    setEditLeafTargets({});
+    setEditLeafSatuan({});
+    setEditTenggat('');
+
+    // Single sumberData from first L1 child (or default)
+    const firstL1 = row.children[0]?.record;
+    setEditSumberData((firstL1 as any)?.sumberData || 'repository');
+
+    // Build L3 map for PK
+    const l3map: Record<number, Indikator[]> = {};
+    if (filterJenis === 'PK') {
+      for (const l1 of row.children) {
+        for (const l2 of l1.children) {
+          l3map[l2.id] = indikatorList.filter(i => i.parentId === l2.id && i.level === 3);
+        }
       }
     }
-    setEditSumberDataMap(map);
+    setEditL3Map(l3map);
+
     setEditModalOpen(true);
-    fetchEditTarget(row.record.id, tahun);
+    fetchLeafTargets(row, filterJenis, tahun, l3map);
+    getTargetUniversitas(row.record.id, tahun).then(t => setEditTenggat(t?.tenggat || ''));
   };
 
   const handleEditTahunChange = (tahun: string) => {
     setEditTahun(tahun);
-    if (editRow) fetchEditTarget(editRow.record.id, tahun);
+    if (editRow) {
+      fetchLeafTargets(editRow, filterJenis, tahun, editL3Map);
+      getTargetUniversitas(editRow.record.id, tahun).then(t => setEditTenggat(t?.tenggat || ''));
+    }
   };
 
   const handleEditSave = async () => {
     if (!editRow) return;
-    if (!editTargetUniversitas || isNaN(Number(editTargetUniversitas))) {
-      toast.error("Target Universitas wajib diisi dengan angka."); return;
-    }
     setEditSaving(true);
     try {
-      // Save target universitas
-      await upsertTargetUniversitas(
-        editRow.record.id,
-        editTahun,
-        Number(editTargetUniversitas),
-        editTenggat || undefined
-      );
-      // Save sumberData for each changed indikator
-      const sumberDataUpdates = Object.entries(editSumberDataMap).map(([id, sumberData]) =>
-        updateIndikator(Number(id), { sumberData })
-      );
-      await Promise.all(sumberDataUpdates);
+      // Save leaf-level targets + satuan (tenggat NOT saved at leaf level — it lives at L0)
+      const leafUpdates = Object.entries(editLeafTargets)
+        .filter(([, v]) => v.trim() !== '' && !isNaN(Number(v)))
+        .map(([id, v]) => upsertTargetUniversitas(Number(id), editTahun, Number(v), undefined, editLeafSatuan[Number(id)] || undefined));
+      await Promise.all(leafUpdates);
+
+      // Save tenggat to L0 target_universitas (preserving existing persentase)
+      const l0Current = await getTargetUniversitas(editRow.record.id, editTahun);
+      await upsertTargetUniversitas(editRow.record.id, editTahun, l0Current?.targetAngka ?? 0, editTenggat || undefined, l0Current?.satuan || undefined);
+
+      // Apply single sumberData to all children (L1, L2, L3)
+      const allChildIds: number[] = [];
+      for (const l1 of editRow.children) {
+        allChildIds.push(l1.record.id);
+        for (const l2 of l1.children) {
+          allChildIds.push(l2.id);
+          for (const l3 of (editL3Map[l2.id] ?? [])) {
+            allChildIds.push(l3.id);
+          }
+        }
+      }
+      await Promise.all(allChildIds.map(id => updateIndikator(id, { sumberData: editSumberData })));
+
       toast.success("Indikator berhasil diperbarui.");
       setEditModalOpen(false);
       setEditRow(null);
@@ -484,6 +558,16 @@ export default function MasterIndikatorContent() {
   };
   const fLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 };
 
+  // Gabungkan tahun dari DB + range tahun di sekitar sekarang agar bisa pilih tahun yang belum ada datanya
+  const currentYear = new Date().getFullYear();
+  const editModalYears = [...new Set([
+    ...availableYears,
+    String(currentYear - 1),
+    String(currentYear),
+    String(currentYear + 1),
+    String(currentYear + 2),
+  ])].sort();
+
   return (
     <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
       {/* ── Confirm Dialogs ── */}
@@ -532,48 +616,58 @@ export default function MasterIndikatorContent() {
             </div>
 
             <div style={{ padding: "20px 28px" }}>
-              {/* Section: Target Universitas */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                  <span style={{ width: 3, height: 14, borderRadius: 2, background: "#FF7900", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Target Universitas</span>
+              {/* Tahun + Tenggat row */}
+              <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
+                <div>
+                  <label style={fLabel}>Tahun</label>
+                  <select value={editTahun} onChange={(e) => handleEditTahunChange(e.target.value)} style={{ ...fInput, maxWidth: 160 }}>
+                    {editModalYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                  <div>
-                    <label style={fLabel}>Tahun</label>
-                    <select value={editTahun} onChange={(e) => handleEditTahunChange(e.target.value)} style={fInput} disabled={editLoading}>
-                      {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={fLabel}>Tenggat</label>
-                    <select value={editTenggat} onChange={(e) => setEditTenggat(e.target.value)} style={fInput}>
-                      <option value="">— Tidak diubah —</option>
-                      {TRIWULAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={fLabel}>Angka Target</label>
-                    {editLoading ? (
-                      <div style={{ ...fInput, background: "#f9fafb", color: "#9ca3af" }}>Memuat…</div>
-                    ) : (
-                      <input type="number" min={0} value={editTargetUniversitas}
-                        onChange={(e) => setEditTargetUniversitas(e.target.value)}
-                        placeholder="contoh: 80" style={fInput} />
-                    )}
-                  </div>
+                <div>
+                  <label style={fLabel}>Tenggat (Batas Waktu)</label>
+                  <input
+                    type="date"
+                    value={editTenggat}
+                    onChange={(e) => setEditTenggat(e.target.value)}
+                    style={{ ...fInput, maxWidth: 200 }}
+                  />
                 </div>
               </div>
 
               {/* Divider */}
               <div style={{ borderTop: "1px solid #f3f4f6", marginBottom: 20 }} />
 
-              {/* Section: Sumber Data per Sub-Indikator */}
-              <div>
+              {/* Section: Sumber Data (single, for all children) */}
+              <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#6366f1", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data per Sub Indikator</span>
-                  <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>— ubah cara input realisasi</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data Realisasi</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <select
+                    value={editSumberData}
+                    onChange={(e) => setEditSumberData(e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
+                  >
+                    <option value="repository">Repository FIK</option>
+                    <option value="ikupk">IKU PK (Upload)</option>
+                  </select>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>Berlaku untuk semua sub-indikator</span>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div style={{ borderTop: "1px solid #f3f4f6", marginBottom: 20 }} />
+
+              {/* Section: Target per Leaf (L2 untuk IKU, L3 untuk PK) */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 3, height: 14, borderRadius: 2, background: "#059669", display: "inline-block" }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Target per {filterJenis === 'PK' ? 'Rincian (Level 3)' : 'Sub-Indikator (Level 2)'}
+                  </span>
+                  {editLeafLoading && <span style={{ fontSize: 11, color: "#9ca3af" }}>Memuat…</span>}
                 </div>
 
                 {editRow.children.length === 0 && (
@@ -581,66 +675,81 @@ export default function MasterIndikatorContent() {
                 )}
 
                 {editRow.children.map((l1) => (
-                  <div key={l1.record.id} style={{ marginBottom: l1.children.length > 0 ? 12 : 8 }}>
-                    {/* Level 1 row */}
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 10,
-                      background: "#f9fafb", border: "1px solid #e5e7eb",
-                      borderRadius: l1.children.length > 0 ? "8px 8px 0 0" : 8,
-                      padding: "10px 14px",
-                    }}>
+                  <div key={l1.record.id} style={{ marginBottom: 14 }}>
+                    {/* L1 header */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f9fafb", borderRadius: 8, marginBottom: 6, border: "1px solid #e5e7eb" }}>
                       <span style={{ width: 3, height: 12, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", flex: 1, lineHeight: 1.4 }}>
-                        {l1.record.kode} {l1.record.nama}
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        <label style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>Sumber Data:</label>
-                        <select
-                          value={editSumberDataMap[l1.record.id] ?? 'repository'}
-                          onChange={(e) => setEditSumberDataMap(prev => ({ ...prev, [l1.record.id]: e.target.value }))}
-                          style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
-                        >
-                          <option value="repository">Repository FIK</option>
-                          <option value="ikupk">IKU PK (Upload)</option>
-                        </select>
-                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#1f2937" }}>{l1.record.kode} {l1.record.nama}</span>
                     </div>
 
-                    {/* Level 2 rows */}
-                    {l1.children.map((l2, l2Idx) => (
-                      <div key={l2.id} style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        background: "#fff", border: "1px solid #e5e7eb", borderTop: "none",
-                        borderRadius: l2Idx === l1.children.length - 1 ? "0 0 8px 8px" : 0,
-                        padding: "9px 14px 9px 28px",
-                      }}>
-                        <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
-                        <span style={{ fontSize: 12, color: "#4b5563", flex: 1, lineHeight: 1.4 }}>
-                          {l2.kode} {l2.nama}
-                        </span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                          <label style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>Sumber Data:</label>
-                          <select
-                            value={editSumberDataMap[l2.id] ?? 'repository'}
-                            onChange={(e) => setEditSumberDataMap(prev => ({ ...prev, [l2.id]: e.target.value }))}
-                            style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
-                          >
-                            <option value="repository">Repository FIK</option>
-                            <option value="ikupk">IKU PK (Upload)</option>
-                          </select>
+                    {l1.children.length === 0 && (
+                      <p style={{ fontSize: 12, color: "#9ca3af", paddingLeft: 20, fontStyle: "italic" }}>Tidak ada sub-indikator level 2.</p>
+                    )}
+
+                    {l1.children.map((l2) => {
+                      const l3s = editL3Map[l2.id] ?? [];
+                      const showL3 = filterJenis === 'PK' && l3s.length > 0;
+                      return (
+                        <div key={l2.id} style={{ paddingLeft: 16, marginBottom: showL3 ? 10 : 0 }}>
+                          {showL3 ? (
+                            <>
+                              {/* L2 as group header for PK */}
+                              <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, padding: "6px 0 4px", borderBottom: "1px dashed #e5e7eb", marginBottom: 6 }}>
+                                {l2.kode} {l2.nama}
+                              </div>
+                              {l3s.map((l3) => (
+                                <div key={l3.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0 7px 14px" }}>
+                                  <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
+                                  <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l3.kode} {l3.nama}</span>
+                                  <input
+                                    type="number" min={0}
+                                    value={editLeafTargets[l3.id] ?? ''}
+                                    onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l3.id]: e.target.value }))}
+                                    placeholder="Target"
+                                    disabled={editLeafLoading}
+                                    style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
+                                  />
+                                  <select
+                                    value={editLeafSatuan[l3.id] ?? ''}
+                                    onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l3.id]: e.target.value }))}
+                                    disabled={editLeafLoading}
+                                    style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}
+                                  >
+                                    <option value="">— Satuan —</option>
+                                    {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                              ))}
+                            </>
+                          ) : (
+                            /* L2 as leaf (IKU) */
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0" }}>
+                              <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
+                              <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l2.kode} {l2.nama}</span>
+                              <input
+                                type="number" min={0}
+                                value={editLeafTargets[l2.id] ?? ''}
+                                onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l2.id]: e.target.value }))}
+                                placeholder="Target"
+                                disabled={editLeafLoading}
+                                style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
+                              />
+                              <select
+                                value={editLeafSatuan[l2.id] ?? ''}
+                                onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l2.id]: e.target.value }))}
+                                disabled={editLeafLoading}
+                                style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}
+                              >
+                                <option value="">— Satuan —</option>
+                                {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
-
-                {/* Legend */}
-                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 14px", marginTop: 12 }}>
-                  <p style={{ margin: 0, fontSize: 11, color: "#0369a1", lineHeight: 1.6 }}>
-                    <b>Repository FIK</b> — realisasi diambil otomatis dari sistem Repository.<br />
-                    <b>IKU PK (Upload)</b> — user upload file bukti langsung ke sistem IKU PK.
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -655,12 +764,12 @@ export default function MasterIndikatorContent() {
               </button>
               <button
                 onClick={handleEditSave}
-                disabled={editSaving || editLoading}
+                disabled={editSaving}
                 style={{
                   padding: "9px 22px", borderRadius: 8, border: "none",
-                  background: editSaving || editLoading ? "#d1d5db" : "#16a34a",
+                  background: editSaving ? "#d1d5db" : "#16a34a",
                   color: "#fff", fontSize: 13, fontWeight: 700,
-                  cursor: editSaving || editLoading ? "not-allowed" : "pointer",
+                  cursor: editSaving ? "not-allowed" : "pointer",
                   display: "flex", alignItems: "center", gap: 6,
                 }}
               >
@@ -894,7 +1003,7 @@ export default function MasterIndikatorContent() {
                 <div>
                   <label style={labelStyle}>Tahun Target</label>
                   <select value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)} style={inputStyle}>
-                    {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                    {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1003,7 +1112,7 @@ export default function MasterIndikatorContent() {
                 <div style={{ marginBottom: 16, maxWidth: 400 }}>
                   <label style={labelStyle}>Tahun (untuk baseline)</label>
                   <select value={targetTahun} onChange={(e) => setTargetTahun(e.target.value)} style={inputStyle}>
-                    {TAHUN_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+                    {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
                 <label style={labelStyle}>Pilih Sasaran Strategis (Level 0)</label>

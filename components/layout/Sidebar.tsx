@@ -56,11 +56,11 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
     }
 
     const resolvedAuthRole = (authRole || '').toLowerCase();
-    const isSuperAdminRole = isSuperAdmin && resolvedAuthRole === 'superadmin';
+    const isAdminRole = isSuperAdmin && (resolvedAuthRole === 'superadmin' || resolvedAuthRole === 'admin');
 
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard", icon: LayoutDashboard },
-      ...(isSuperAdminRole ? [
+      ...(isAdminRole ? [
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator", icon: Target },
         { key: "master_user", label: "Master User", href: "/admin/master-user", icon: UsersRound },
         { key: "master_data", label: "Master Data", href: "/admin/master-data", icon: Database },
