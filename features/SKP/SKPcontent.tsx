@@ -836,34 +836,6 @@ export default function SKPContent() {
                   Menunggu persetujuan atasan
                 </span>
               )}
-              {!isDosen && (
-                <>
-                  <button
-                    onClick={handleCetak}
-                    disabled={!allValidated}
-                    style={{
-                      padding: "10px 20px",
-                      borderRadius: 8,
-                      border: "none",
-                      backgroundColor: allValidated ? "#FF7900" : "#d1d5db",
-                      color: allValidated ? "white" : "#9ca3af",
-                      fontWeight: 600,
-                      fontSize: 13,
-                      cursor: allValidated ? "pointer" : "not-allowed",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    🖨️ Cetak / Unduh SKP
-                  </button>
-                  {!allValidated && (
-                    <span style={{ fontSize: 11, color: "#6b7280", textAlign: "right" }}>
-                      Tersedia setelah semua indikator diisi
-                    </span>
-                  )}
-                </>
-              )}
             </div>
           </div>
         </div>

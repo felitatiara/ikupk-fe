@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useEffect, useState } from 'react';
 import { AuthContextType, User, LoginResponse } from '@/types';
-import { login as apiLogin } from '@/lib/api';
+import { login as apiLogin, switchRole as apiSwitchRole } from '@/lib/api';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -65,6 +65,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     sessionStorage.removeItem('token');
   }, []);
 
+  const switchRole = useCallback(async (roleId: number): Promise<number> => {
+    if (!token) throw new Error('Not authenticated');
+    const result = await apiSwitchRole(roleId, token);
+    const newRole = result.user.roles?.find((r: any) => r.id === roleId);
+    const newLevel: number = newRole?.level ?? 4;
+    const mappedUser: User = {
+      ...result.user,
+      roleLevel: newLevel,
+    };
+    setUser(mappedUser);
+    setToken(result.token);
+    sessionStorage.setItem('user', JSON.stringify(mappedUser));
+    sessionStorage.setItem('token', result.token);
+    return newLevel;
+  }, [token]);
+
   const value: AuthContextType = {
     user,
     token,
@@ -73,6 +89,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     logout,
     setUser,
+    switchRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -9,8 +9,8 @@ interface TableColumn {
 
 interface TableProps {
   columns: TableColumn[];
-  data: Record<string, any>[];
-  onRowClick?: (row: Record<string, any>) => void;
+  data: Record<string, React.ReactNode>[];
+  onRowClick?: (row: Record<string, React.ReactNode>) => void;
   loading?: boolean;
   emptyMessage?: string;
 }
@@ -27,8 +27,8 @@ export default function Table({
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+    <div className="table-wrapper">
+      <table className="table-main">
         <thead>
           <tr style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
             {columns.map((col) => (

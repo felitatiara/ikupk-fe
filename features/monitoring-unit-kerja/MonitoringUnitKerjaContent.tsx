@@ -637,7 +637,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const personalChartHeight = Math.max(200, personalChartData.length * 64);
 
   return (
-    <div style={{ backgroundColor: "#ffffff", margin: "-24px -32px", minHeight: "calc(100vh - 64px)", padding: "24px 32px 40px" }}>
+    <div style={{ minHeight: "calc(100vh - 64px)", padding: "0 0 40px" }}>
       <PageTransition>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
           <div style={{ marginBottom: 18 }}>

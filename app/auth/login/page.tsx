@@ -45,11 +45,11 @@ export default function LoginPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-white">
-        <main className="mx-auto flex min-h-[calc(100vh-64px)] w-full max-w-[2000px] items-center justify-center py-8 sm:px-4 lg:px-6">
-              <section className="w-full max-w-[1040px] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+      <div className="login-page">
+        <main className="mx-auto flex min-h-screen w-full max-w-[2000px] items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+          <section className="login-card">
             <div className="grid min-h-[540px] lg:grid-cols-[1.05fr_0.95fr]">
-              <div className="relative hidden overflow-hidden bg-[#E07E26] lg:block">
+              <div className="relative hidden overflow-hidden bg-[#0f9f6e] lg:block">
                 <Image
                   src="/fik.png"
                   alt="Fakultas Ilmu Komputer"
@@ -58,9 +58,9 @@ export default function LoginPage() {
                   sizes="(min-width: 1024px) 540px, 100vw"
                   className="object-cover"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0b2f22]/90 via-[#0b2f22]/30 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#063524]/90 via-[#0b6044]/35 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-8">
-                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur" style={{ color: '#ffffff' }}>
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur" style={{ color: '#ffffff' }}>
                     <ShieldCheck size={16} />
                     Fakultas Ilmu Komputer
                   </div>
@@ -85,12 +85,12 @@ export default function LoginPage() {
                         sizes="(max-width: 1023px) 100vw, 0px"
                         className="object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#E07E26]/75 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0f9f6e]/80 to-transparent" />
                     </div>
                   </div>
 
                   <div className="mb-8">
-                    <div className="mb-2 text-xs font-bold uppercase tracking-[0.12em]" style={{ color: '#FF7900' }}>
+                    <div className="mb-2 text-xs font-bold uppercase tracking-[0.12em]" style={{ color: '#0f9f6e' }}>
                       Selamat Datang
                     </div>
                     <h2 className="mb-3 text-[28px] font-bold leading-tight text-gray-950">
@@ -103,8 +103,8 @@ export default function LoginPage() {
                       <label htmlFor="nip" className="mb-3 block text-xs font-bold uppercase tracking-[0.06em] text-gray-600">
                         NIP
                       </label>
-                      <div className="group flex h-11 items-center gap-3 rounded-lg border border-gray-300 bg-gray-50 px-3.5 transition hover:border-gray-400 focus-within:border-[#FF7900] focus-within:bg-white focus-within:ring-4 focus-within:ring-green-100/50 focus-within:shadow-sm">
-                        <IdCard size={18} className="shrink-0 text-gray-500 transition group-focus-within:text-[#FF7900]" />
+                      <div className="auth-input">
+                        <IdCard size={18} className="shrink-0 text-gray-500 transition group-focus-within:text-[#0f9f6e]" />
                         <input
                           id="nip"
                           type="text"
@@ -121,8 +121,8 @@ export default function LoginPage() {
                       <label htmlFor="password" className="mb-3 block text-xs font-bold uppercase tracking-[0.06em] text-gray-600">
                         Password
                       </label>
-                      <div className="group flex h-11 items-center gap-3 rounded-lg border border-gray-300 bg-gray-50 px-3.5 transition hover:border-gray-400 focus-within:border-[#FF7900] focus-within:bg-white focus-within:ring-4 focus-within:ring-green-100/50 focus-within:shadow-sm">
-                        <LockKeyhole size={18} className="shrink-0 text-gray-500 transition group-focus-within:text-[#FF7900]" />
+                      <div className="auth-input">
+                        <LockKeyhole size={18} className="shrink-0 text-gray-500 transition group-focus-within:text-[#0f9f6e]" />
                         <input
                           id="password"
                           type={showPassword ? 'text' : 'password'}
@@ -162,8 +162,8 @@ export default function LoginPage() {
                       {!loading && <ArrowRight size={18} className="transition group-hover:translate-x-1" />}
                     </button>
 
-                    <div className="rounded-lg border border-orange-100 bg-orange-50 px-4 py-3.5 mt-4">
-                      <div className="text-xs font-medium leading-5 text-orange-900" style={{ color: '#92400e' }}>
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3.5 mt-4">
+                      <div className="text-xs font-medium leading-5" style={{ color: '#066044' }}>
                         Pastikan NIP dan password sesuai dengan akun yang terdaftar pada sistem IKUPK.
                       </div>
                     </div>

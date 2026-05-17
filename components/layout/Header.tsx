@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   CheckCheck,
   ChevronDown,
   LogOut,
+  RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
 import {
@@ -23,10 +24,11 @@ export default function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [switchingRoleId, setSwitchingRoleId] = useState<number | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
-  const { logout, user, token } = useAuth();
+  const { logout, user, token, switchRole } = useAuth();
   const router = useRouter();
 
   const fetchNotifications = useCallback(async () => {
@@ -69,6 +71,25 @@ export default function Header() {
     window.location.replace('/auth/login');
   };
 
+  const handleSwitchRole = async (roleId: number) => {
+    setSwitchingRoleId(roleId);
+    try {
+      const newLevel = await switchRole(roleId);
+      setProfileOpen(false);
+      if (newLevel === 0) {
+        router.replace('/admin/dashboard');
+      } else if (newLevel === 1) {
+        router.replace('/pimpinan/dashboard');
+      } else {
+        router.replace('/user/dashboard');
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSwitchingRoleId(null);
+    }
+  };
+
   const handleMarkRead = async (id: number) => {
     if (!token) return;
     await markNotificationRead(id, token);
@@ -97,21 +118,18 @@ export default function Header() {
   };
 
   return (
-    <header
-      className="sticky top-0 z-[100] bg-white/95 shadow-[0_10px_30px_rgba(15,23,42,0.04)] backdrop-blur"
-      style={{ borderBottom: '1px solid #E07E26' }}
-    >
-      <div className="mx-auto flex h-20 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-8 lg:px-10">
+    <header className="app-header">
+      <div className="mx-auto flex h-[72px] w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-8 lg:px-10">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-orange-100 bg-orange-50">
+          <div className="brand-mark">
             <Image src="/logo-upnvj.webp" alt="UPN Logo" width={34} height={34} />
           </div>
           <div className="hidden h-9 w-px bg-gray-200 sm:block" />
           <div className="min-w-0">
-            <div className="truncate text-[15px] font-bold tracking-[-0.01em]" style={{ color: '#111827' }}>
+            <div className="truncate text-[15px] font-extrabold" style={{ color: '#101828' }}>
               Indikator Kinerja Utama &amp; Perjanjian Kinerja
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs font-bold" style={{ color: '#ff7900' }}>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs font-bold" style={{ color: '#0f9f6e' }}>
               <ShieldCheck size={13} />
               UPN Veteran Jakarta
             </div>
@@ -122,7 +140,7 @@ export default function Header() {
           <div className="flex items-center gap-2">
             <div ref={notifRef} className="relative">
               <button
-                className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 transition hover:border-orange-200 hover:bg-orange-50"
+                className="icon-button relative"
                 title="Notifikasi"
                 onClick={() => setNotifOpen((o) => !o)}
                 type="button"
@@ -139,7 +157,7 @@ export default function Header() {
               </button>
 
               {notifOpen && (
-                <div className="absolute right-0 top-[calc(100%+10px)] w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+                <div className="surface-popover absolute right-0 top-[calc(100%+10px)] w-[min(360px,calc(100vw-24px))] overflow-hidden">
                   <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3">
                     <div>
                       <div className="text-sm font-bold" style={{ color: '#111827' }}>
@@ -214,7 +232,7 @@ export default function Header() {
 
             <div ref={dropdownRef} className="relative">
               <button
-                className="flex h-10 items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 py-1 pl-1 pr-2 transition hover:border-orange-200 hover:bg-orange-50 sm:pr-3"
+                className="profile-trigger"
                 onClick={() => setProfileOpen((o) => !o)}
                 type="button"
               >
@@ -237,7 +255,7 @@ export default function Header() {
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 top-[calc(100%+10px)] w-[260px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+                <div className="surface-popover absolute right-0 top-[calc(100%+10px)] w-[260px] overflow-hidden">
                   <div className="bg-gradient-to-br from-orange-50 to-green-50 px-4 py-4 rounded-t-2xl">
                     <div className="flex items-center gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#ff7900] to-[#10b759] text-sm font-bold" style={{ color: '#ffffff' }}>
@@ -253,15 +271,58 @@ export default function Header() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-bold transition hover:bg-red-50"
-                    style={{ color: '#dc2626' }}
-                    type="button"
-                  >
-                    <LogOut size={17} />
-                    Keluar
-                  </button>
+                  {user.roles && user.roles.length > 1 && (
+                    <div className="border-t border-gray-100 px-4 py-3">
+                      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+                        Ganti Peran
+                      </div>
+                      <div className="space-y-1">
+                        {user.roles.map((r) => {
+                          const isActive = r.id === user.roleId;
+                          const isSwitching = switchingRoleId === r.id;
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              disabled={isActive || isSwitching}
+                              onClick={() => handleSwitchRole(r.id)}
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition"
+                              style={{
+                                background: isActive ? '#f0fdf4' : 'transparent',
+                                color: isActive ? '#15803d' : '#374151',
+                                cursor: isActive ? 'default' : 'pointer',
+                                border: isActive ? '1px solid #bbf7d0' : '1px solid transparent',
+                              }}
+                            >
+                              <RefreshCw size={13} className={isSwitching ? 'animate-spin' : ''} style={{ color: isActive ? '#15803d' : '#9ca3af', flexShrink: 0 }} />
+                              <div className="min-w-0">
+                                <div className="truncate capitalize">{r.name}</div>
+                                {r.unitNama && (
+                                  <div className="truncate text-[10px] font-normal" style={{ color: '#9ca3af' }}>{r.unitNama}</div>
+                                )}
+                              </div>
+                              {isActive && (
+                                <span className="ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ background: '#dcfce7', color: '#15803d' }}>
+                                  Aktif
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-100">
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-bold transition hover:bg-red-50"
+                      style={{ color: '#dc2626' }}
+                      type="button"
+                    >
+                      <LogOut size={17} />
+                      Keluar
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

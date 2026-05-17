@@ -5,11 +5,11 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   CheckCircle2,
-  ClipboardCheck,
   Database,
   FileSpreadsheet,
   LayoutDashboard,
   LucideIcon,
+  Sparkles,
   Target,
   UsersRound,
 } from "lucide-react";
@@ -86,11 +86,21 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
   const currentActive = getActiveKey();
 
   return (
-    <aside
-      className="sticky top-16 min-h-[calc(100vh-64px)] w-[68px] shrink-0 bg-white lg:w-[220px]"
-      style={{ borderRight: "1px solid #E07E26" }}
-    >
+    <aside className="app-sidebar">
       <div className="flex h-full flex-col">
+        <div className="sidebar-brand hidden lg:block">
+          <div className="sidebar-brand__eyebrow">
+            <Sparkles size={13} />
+            Workspace
+          </div>
+          <div className="sidebar-brand__title">
+            {role === 'user' ? 'Unit Kerja' : role === 'pimpinan' ? 'Pimpinan' : 'Admin'}
+          </div>
+          <div className="sidebar-brand__subtitle">
+            {role === 'user' ? 'Kelola capaian dan realisasi' : 'Pantau kinerja IKUPK'}
+          </div>
+        </div>
+
         <nav className="flex-1 space-y-1.5 px-2 py-3 lg:px-3">
           {menus.map((menu) => {
             const isActive = currentActive === menu.key;
@@ -100,20 +110,13 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
               <Link
                 key={menu.key}
                 href={menu.href}
-                className="group flex min-h-10 items-center justify-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium no-underline transition hover:bg-gray-50 lg:justify-start lg:px-2.5"
-                style={{
-                  color: isActive ? '#111827' : '#1f2937',
-                  backgroundColor: isActive ? '#f8fafc' : 'transparent',
-                  textDecoration: 'none',
-                }}
+                className={`sidebar-link ${isActive ? 'sidebar-link--active' : ''}`}
                 title={menu.label}
               >
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center"
-                >
-                  <Icon size={21} color="#ea580c" strokeWidth={2} />
+                <span className="sidebar-link__icon">
+                  <Icon size={19} strokeWidth={2.2} />
                 </span>
-                <span className="hidden min-w-0 flex-1 leading-5 lg:block" style={{ color: isActive ? '#111827' : '#1f2937' }}>
+                <span className="sidebar-link__label">
                   {menu.label}
                 </span>
               </Link>

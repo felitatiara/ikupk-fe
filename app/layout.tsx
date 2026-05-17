@@ -27,7 +27,7 @@ export default function RootLayout({
         style={{ fontFamily: "var(--font-nunito-sans)" }}
       >
         <AuthProvider>
-          <div style={{ minHeight: "100vh", backgroundColor: "#ffffff" }}>
+          <div className="app-root">
             {children}
           </div>
           <Toaster

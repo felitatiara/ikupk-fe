@@ -24,25 +24,9 @@ export default function UserLayout({
       <Header />
 
 
-      {/* PAGE CONTENT */}
-      <div
-        style={{
-          maxWidth: 1600,
-          margin: "0 auto",
-          padding: "0",
-          display: "flex",
-          gap: 0,
-          minHeight: "calc(100vh - 68px)",
-        }}
-      >
+      <div className="app-shell">
         <Sidebar role="user" unitNama={user?.unitNama} roleLevel={user?.roleLevel} />
-        <main
-          style={{
-            flex: 1,
-            padding: "24px 32px",
-            overflowY: "auto",
-          }}
-        >
+        <main className="app-main">
           {children}
         </main>
       </div>

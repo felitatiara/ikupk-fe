@@ -65,6 +65,7 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   setUser: (user: User | null) => void;
+  switchRole: (roleId: number) => Promise<number>;
 }
 
 // Target Context Types

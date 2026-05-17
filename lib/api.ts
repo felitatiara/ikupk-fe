@@ -1,5 +1,4 @@
 export const API_BASE_URL = 'http://localhost:4000';
-const REPOSITORY_API_URL = 'http://localhost:3000/api';
 
 export interface Indikator {
   id: number;
@@ -377,6 +376,16 @@ export async function upsertTargetFakultas(indikatorId: number, roleId: number, 
   return response.json();
 }
 
+
+export async function switchRole(roleId: number, token: string): Promise<{ token: string; user: any }> {
+  const res = await fetch(`${API_BASE_URL}/auth/switch-role`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ roleId }),
+  });
+  if (!res.ok) throw new Error('Gagal mengganti role');
+  return res.json();
+}
 
 export async function login(email: string, password: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -769,10 +778,8 @@ export async function submitFileRealisasi(data: {
 
 /** Fetch real files from Repository system matching a name */
 export async function fetchRepositoryFilesByName(name: string, email?: string): Promise<any[]> {
-  let url = `${REPOSITORY_API_URL}/integration/files/search?name=${encodeURIComponent(name)}`;
-  if (email) {
-    url += `&email=${encodeURIComponent(email)}`;
-  }
+  let url = `${API_BASE_URL}/integration/files/search?name=${encodeURIComponent(name)}`;
+  if (email) url += `&email=${encodeURIComponent(email)}`;
   const response = await fetch(url);
   if (!response.ok) return [];
   return response.json();
@@ -780,7 +787,7 @@ export async function fetchRepositoryFilesByName(name: string, email?: string): 
 
 /** Fetch accessible folders for a user from Repository system */
 export async function fetchRepositoryFolders(email: string): Promise<any[]> {
-  const url = `${REPOSITORY_API_URL}/integration/folders?email=${encodeURIComponent(email)}`;
+  const url = `${API_BASE_URL}/integration/folders?email=${encodeURIComponent(email)}`;
   const response = await fetch(url);
   if (!response.ok) return [];
   return response.json();
@@ -788,7 +795,7 @@ export async function fetchRepositoryFolders(email: string): Promise<any[]> {
 
 /** Fetch files from a specific folder in Repository system */
 export async function fetchRepositoryFilesByFolder(folderId: string, email: string): Promise<any[]> {
-  const url = `${REPOSITORY_API_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`;
+  const url = `${API_BASE_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`;
   const response = await fetch(url);
   if (!response.ok) return [];
   return response.json();
@@ -916,7 +923,7 @@ export interface RepoFile {
 
 export async function getRepoFolders(email: string): Promise<RepoFolder[]> {
   try {
-    const res = await fetch(`${REPOSITORY_API_URL}/integration/folders?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`${API_BASE_URL}/integration/folders?email=${encodeURIComponent(email)}`);
     if (!res.ok) return [];
     return res.json();
   } catch { return []; }
@@ -924,7 +931,7 @@ export async function getRepoFolders(email: string): Promise<RepoFolder[]> {
 
 export async function getRepoFiles(folderId: string, email: string): Promise<RepoFile[]> {
   try {
-    const res = await fetch(`${REPOSITORY_API_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`);
+    const res = await fetch(`${API_BASE_URL}/integration/files?folderId=${encodeURIComponent(folderId)}&email=${encodeURIComponent(email)}`);
     if (!res.ok) return [];
     return res.json();
   } catch { return []; }
@@ -932,7 +939,7 @@ export async function getRepoFiles(folderId: string, email: string): Promise<Rep
 
 export async function searchRepoFilesByFolderName(folderName: string, email: string): Promise<RepoFile[]> {
   try {
-    const res = await fetch(`${REPOSITORY_API_URL}/integration/files/search?name=${encodeURIComponent(folderName)}&email=${encodeURIComponent(email)}`);
+    const res = await fetch(`${API_BASE_URL}/integration/files/search?name=${encodeURIComponent(folderName)}&email=${encodeURIComponent(email)}`);
     if (!res.ok) return [];
     return res.json();
   } catch { return []; }
@@ -940,11 +947,10 @@ export async function searchRepoFilesByFolderName(folderName: string, email: str
 
 /**
  * Mengambil semua file dari sub-folder (level-2) di bawah parentFolderId.
- * Digunakan ketika user klik Input File pada sub-indikator level-1.
  */
 export async function getRepoFilesFromChildren(parentFolderId: string, email: string): Promise<RepoFile[]> {
   try {
-    const res = await fetch(`${REPOSITORY_API_URL}/integration/files/in-children?parentFolderId=${encodeURIComponent(parentFolderId)}&email=${encodeURIComponent(email)}`);
+    const res = await fetch(`${API_BASE_URL}/integration/files/in-children?parentFolderId=${encodeURIComponent(parentFolderId)}&email=${encodeURIComponent(email)}`);
     if (!res.ok) return [];
     return res.json();
   } catch { return []; }

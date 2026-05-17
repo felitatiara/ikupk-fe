@@ -15,13 +15,10 @@ export default function Card({
 }: CardProps) {
   return (
     <div
+      className="ui-card"
       style={{
-        backgroundColor: 'white',
-        borderRadius: 12,
         padding: `${padding}px`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         cursor: clickable ? 'pointer' : 'default',
-        transition: 'all 0.3s ease',
       }}
     >
       {title && (
