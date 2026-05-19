@@ -34,8 +34,21 @@ interface Level0WithChildren {
   record: Indikator;
   children: Array<{
     record: Indikator;
-    children: Indikator[];
+    children: Array<{
+      record: Indikator;
+      children: Indikator[];
+    }>;
   }>;
+}
+
+function naturalSortKode(a: string, b: string): number {
+  const ap = a.split('.').map(Number);
+  const bp = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
+    const diff = (ap[i] ?? 0) - (bp[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 // Utility functions (blankGroup, blankSub, etc.) should be defined above the component
@@ -213,16 +226,23 @@ export default function MasterIndikatorContent() {
   }, [targetTahun]);
 
   const buildHierarchy = (): Level0WithChildren[] => {
-    const filtered = indikatorList.filter((i) => i.jenis === filterJenis);
+    const filtered = [...indikatorList.filter((i) => i.jenis === filterJenis)]
+      .sort((a, b) => naturalSortKode(a.kode, b.kode));
     const level0 = filtered.filter((i) => i.level === 0);
     return level0.map((l0) => {
       const level1 = filtered.filter((i) => i.level === 1 && i.parentId === l0.id);
       return {
         record: l0,
-        children: level1.map((l1) => ({
-          record: l1,
-          children: filtered.filter((i) => i.level === 2 && i.parentId === l1.id),
-        })),
+        children: level1.map((l1) => {
+          const level2 = filtered.filter((i) => i.level === 2 && i.parentId === l1.id);
+          return {
+            record: l1,
+            children: level2.map((l2) => ({
+              record: l2,
+              children: filtered.filter((i) => i.level === 3 && i.parentId === l2.id),
+            })),
+          };
+        }),
       };
     });
   };
@@ -233,14 +253,19 @@ export default function MasterIndikatorContent() {
     : [];
 
   const rowsPerLevel0 = hierarchy.map((h) => {
-    const entries: { key: string; text: string; isLevel1: boolean }[] = [];
+    const entries: { key: string; text: string; level: 1 | 2 | 3 }[] = [];
     h.children.forEach((l1) => {
-      entries.push({ key: `l1-${l1.record.id}`, text: `${l1.record.kode} ${l1.record.nama}`, isLevel1: true });
+      entries.push({ key: `l1-${l1.record.id}`, text: `${l1.record.kode} ${l1.record.nama}`, level: 1 });
       l1.children.forEach((l2) => {
-        entries.push({ key: `l2-${l2.id}`, text: `${l2.kode} ${l2.nama}`, isLevel1: false });
+        entries.push({ key: `l2-${l2.record.id}`, text: `${l2.record.kode} ${l2.record.nama}`, level: 2 });
+        if (filterJenis === 'PK') {
+          l2.children.forEach((l3) => {
+            entries.push({ key: `l3-${l3.id}`, text: `${l3.kode} ${l3.nama}`, level: 3 });
+          });
+        }
       });
     });
-    if (entries.length === 0) entries.push({ key: `empty-${h.record.id}`, text: "-", isLevel1: false });
+    if (entries.length === 0) entries.push({ key: `empty-${h.record.id}`, text: "-", level: 2 });
     return { parent: h.record, entries };
   });
 
@@ -408,7 +433,7 @@ export default function MasterIndikatorContent() {
     try {
       for (const l1 of row.children) {
         for (const l2 of l1.children) {
-          const l3s = l3map[l2.id] ?? [];
+          const l3s = l3map[l2.record.id] ?? [];
           if (jenis === 'PK' && l3s.length > 0) {
             for (const l3 of l3s) {
               try {
@@ -421,10 +446,10 @@ export default function MasterIndikatorContent() {
             }
           } else {
             try {
-              const data = await getTargetUniversitas(l2.id, tahun);
+              const data = await getTargetUniversitas(l2.record.id, tahun);
               if (data && data.targetAngka) {
-                targets[l2.id] = String(data.targetAngka);
-                satuans[l2.id] = data.satuan || '';
+                targets[l2.record.id] = String(data.targetAngka);
+                satuans[l2.record.id] = data.satuan || '';
               }
             } catch { /* skip individual failure */ }
           }
@@ -454,7 +479,7 @@ export default function MasterIndikatorContent() {
     if (filterJenis === 'PK') {
       for (const l1 of row.children) {
         for (const l2 of l1.children) {
-          l3map[l2.id] = indikatorList.filter(i => i.parentId === l2.id && i.level === 3);
+          l3map[l2.record.id] = l2.children;
         }
       }
     }
@@ -492,8 +517,8 @@ export default function MasterIndikatorContent() {
       for (const l1 of editRow.children) {
         allChildIds.push(l1.record.id);
         for (const l2 of l1.children) {
-          allChildIds.push(l2.id);
-          for (const l3 of (editL3Map[l2.id] ?? [])) {
+          allChildIds.push(l2.record.id);
+          for (const l3 of (editL3Map[l2.record.id] ?? [])) {
             allChildIds.push(l3.id);
           }
         }
@@ -687,15 +712,15 @@ export default function MasterIndikatorContent() {
                     )}
 
                     {l1.children.map((l2) => {
-                      const l3s = editL3Map[l2.id] ?? [];
+                      const l3s = editL3Map[l2.record.id] ?? [];
                       const showL3 = filterJenis === 'PK' && l3s.length > 0;
                       return (
-                        <div key={l2.id} style={{ paddingLeft: 16, marginBottom: showL3 ? 10 : 0 }}>
+                        <div key={l2.record.id} style={{ paddingLeft: 16, marginBottom: showL3 ? 10 : 0 }}>
                           {showL3 ? (
                             <>
                               {/* L2 as group header for PK */}
                               <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, padding: "6px 0 4px", borderBottom: "1px dashed #e5e7eb", marginBottom: 6 }}>
-                                {l2.kode} {l2.nama}
+                                {l2.record.kode} {l2.record.nama}
                               </div>
                               {l3s.map((l3) => (
                                 <div key={l3.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0 7px 14px" }}>
@@ -725,18 +750,18 @@ export default function MasterIndikatorContent() {
                             /* L2 as leaf (IKU) */
                             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0" }}>
                               <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
-                              <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l2.kode} {l2.nama}</span>
+                              <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l2.record.kode} {l2.record.nama}</span>
                               <input
                                 type="number" min={0}
-                                value={editLeafTargets[l2.id] ?? ''}
-                                onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l2.id]: e.target.value }))}
+                                value={editLeafTargets[l2.record.id] ?? ''}
+                                onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l2.record.id]: e.target.value }))}
                                 placeholder="Target"
                                 disabled={editLeafLoading}
                                 style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
                               />
                               <select
-                                value={editLeafSatuan[l2.id] ?? ''}
-                                onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l2.id]: e.target.value }))}
+                                value={editLeafSatuan[l2.record.id] ?? ''}
+                                onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l2.record.id]: e.target.value }))}
                                 disabled={editLeafLoading}
                                 style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}
                               >
@@ -899,7 +924,7 @@ export default function MasterIndikatorContent() {
                         </td>
                       )}
                       <td style={{ padding: 0 }}>
-                        {entry.isLevel1 ? (
+                        {entry.level === 1 ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 11px 20px" }}>
                             <span style={{
                               width: 3, height: 14, borderRadius: 2, flexShrink: 0,
@@ -907,10 +932,15 @@ export default function MasterIndikatorContent() {
                             }} />
                             <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
                           </div>
-                        ) : (
+                        ) : entry.level === 2 ? (
                           <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 40px" }}>
                             <span style={{ color: "#d1d5db", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
                             <span style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 64px" }}>
+                            <span style={{ color: "#e5e7eb", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
+                            <span style={{ color: "#9ca3af", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
                           </div>
                         )}
                       </td>

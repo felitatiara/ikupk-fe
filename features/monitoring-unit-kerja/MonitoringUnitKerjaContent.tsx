@@ -356,9 +356,7 @@ function KpiCard({
         boxShadow: "0 10px 28px rgba(15, 23, 42, 0.075)",
       }}
     >
-      <div
-        className="position-absolute top-0 start-0 end-0"
-      />
+      <div className="position-absolute top-0 start-0 end-0" />
       <div className="card-body d-flex align-items-center justify-content-between gap-3 p-3">
         <div className="min-w-0">
           <div className="fw-semibold mb-2" style={{ fontSize: 13, color: accent }}>
@@ -396,7 +394,7 @@ function BarTooltip({ active, payload }: { active?: boolean; payload?: ChartTool
   const d = payload[0].payload;
   const isIku = d.jenis === "IKU";
   const unit = !isIku && d.satuan ? ` ${d.satuan}` : "";
-  const progressColor = d.status === "Done" ? "#16a34a" : "#ea580c";
+  const progressColor = d.status === "Done" ? "#16a34a" : "#FF7900";
   return (
     <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", boxShadow: "0 4px 16px rgba(0,0,0,0.1)", fontSize: 12, maxWidth: 280 }}>
       <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#1f2937" }}>[{d.kode}] {d.nama ?? d.kode}</p>
@@ -464,9 +462,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     return true;
   });
 
-  const hasBawahanTargets = (monitoringBawahan?.rows ?? []).some(row =>
-    Object.values(row.disposisiByUser).some(v => v > 0)
-  );
+
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user");
@@ -637,38 +633,27 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const personalChartHeight = Math.max(200, personalChartData.length * 64);
 
   return (
-    <div style={{ minHeight: "calc(100vh - 64px)", padding: "0 0 40px" }}>
+    <div>
       <PageTransition>
-        <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ color: "#ea580c", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-              Monitoring Unit Kerja
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-              <div>
-                <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: "#111827", letterSpacing: 0 }}>
-                  {isPimpinan ? "Monitoring Global Indikator" : "Monitoring Indikator Saya"}
-                </h1>
-                <div style={{ marginTop: 6, color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-                  Pantau target, realisasi, dan progres capaian indikator berdasarkan jenis dan tahun.
-                </div>
-              </div>
-            </div>
-          </div>
+        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
+          {isPimpinan ? "Monitoring Indikator" : "Monitoring Indikator Saya"}
+        </p>
 
           {/* ── Tab Switcher (pimpinan only) — di atas filter ── */}
           {isPimpinan && (
             <div style={{ marginBottom: 12 }}>
               <div style={{
                 display: "inline-flex",
-                backgroundColor: "#f1f5f9",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e5e7eb",
                 borderRadius: 10,
                 padding: 4,
                 gap: 4,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
               }}>
                 {([
-                  { key: "keseluruhan", label: "Monitoring Keseluruhan" },
-                  { key: "diterima", label: "Target yang Diterima" },
+                  { key: "keseluruhan", label: "Monitoring Indikator" },
+                  { key: "diterima", label: "Monitoring Target" },
                 ] as const).map((tab) => {
                   const isActive = activeTab === tab.key;
                   return (
@@ -679,12 +664,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         padding: "8px 20px",
                         fontSize: 13,
                         fontWeight: isActive ? 700 : 500,
-                        color: isActive ? "#ea580c" : "#64748b",
-                        background: isActive ? "#ffffff" : "transparent",
+                        color: isActive ? "#ffffff" : "#64748b",
+                        background: isActive ? "#FF7900" : "transparent",
                         border: "none",
                         borderRadius: 7,
                         cursor: "pointer",
-                        boxShadow: isActive ? "0 1px 4px rgba(0,0,0,0.12)" : "none",
+                        boxShadow: isActive ? "0 1px 4px rgba(255,121,0,0.3)" : "none",
                         transition: "all 0.15s",
                         whiteSpace: "nowrap",
                       }}
@@ -699,62 +684,38 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
           {/* Filters */}
           <div style={{
-            display: "flex",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
             gap: 12,
             marginBottom: 20,
-            padding: 14,
-            backgroundColor: "#ffffff",
+            background: "#ffffff",
             border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-            flexWrap: "wrap",
-            alignItems: "flex-end",
+            borderRadius: 10,
+            padding: "14px 16px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
           }}>
-            <div style={{ flex: "1 1 260px", maxWidth: 360 }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Jenis Indikator
               </label>
               <select
                 value={selectedJenis}
                 onChange={(e) => setSelectedJenis(e.target.value)}
-                style={{
-                  width: "100%",
-                  height: 40,
-                  padding: "0 12px",
-                  borderRadius: 8,
-                  border: "1px solid #dbe3ea",
-                  fontSize: 13,
-                  backgroundColor: "#ffffff",
-                  cursor: "pointer",
-                  color: "#111827",
-                  outline: "none",
-                }}
+                style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 13, background: "#fff", cursor: "pointer", color: "#111827", outline: "none" }}
               >
                 {jenisOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
-
-            <div style={{ width: 140 }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#475569" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Tahun
               </label>
               <select
                 value={selectedTahun}
                 onChange={(e) => setSelectedTahun(e.target.value)}
-                style={{
-                  width: "100%",
-                  height: 40,
-                  padding: "0 12px",
-                  borderRadius: 8,
-                  border: "1px solid #dbe3ea",
-                  fontSize: 13,
-                  backgroundColor: "#ffffff",
-                  cursor: "pointer",
-                  color: "#111827",
-                  outline: "none",
-                }}
+                style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 13, background: "#fff", cursor: "pointer", color: "#111827", outline: "none" }}
               >
                 {yearOptions.map((yr) => (
                   <option key={yr} value={yr}>{yr}</option>
@@ -766,15 +727,6 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         {/* ── PIMPINAN / ADMIN: Monitoring Keseluruhan ── */}
         {isPimpinan && activeTab === "keseluruhan" && (
           <>
-            {/* Section Header */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
-                Monitoring Keseluruhan
-              </div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>
-                Progres seluruh indikator {selectedJenis} tahun {selectedTahun}.
-              </div>
-            </div>
 
             {/* KPI Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
@@ -803,7 +755,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
                       <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                       {globalChartItems.map((entry, i) => (
-                        <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
+                        <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#FF7900"} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -815,7 +767,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   Tercapai
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6b7280" }}>
-                  <span style={{ width: 12, height: 8, borderRadius: 2, background: "#ea580c", display: "inline-block" }} />
+                  <span style={{ width: 12, height: 8, borderRadius: 2, background: "#FF7900", display: "inline-block" }} />
                   Proses
                 </span>
               </div>
@@ -823,7 +775,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
             <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 32 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>
                   Rangkuman Target & Realisasi
                 </div>
                 <div style={{ fontSize: 12, color: "#64748b" }}>
@@ -978,7 +930,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           {/* Section Header — hanya untuk non-pimpinan */}
           {!isPimpinan && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>
                 Target yang Diterima
               </div>
               <div style={{ fontSize: 13, color: "#6b7280" }}>
@@ -1011,7 +963,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
                     <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                     {personalChartData.map((entry, i) => (
-                      <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#ea580c"} />
+                      <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#FF7900"} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -1065,10 +1017,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
                       if (isL0) {
                         return (
-                          <tr key={i} style={{ backgroundColor: "#1e3a5f" }}>
-                            <td colSpan={7} style={{ padding: "9px 14px" }}>
-                              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#93c5fd", marginRight: 8, fontWeight: 700 }}>{row.kode}</span>
-                              <span style={{ fontWeight: 700, color: "#ffffff", fontSize: 13 }}>{row.nama}</span>
+                          <tr key={i} style={{ backgroundColor: "#f1f5f9" }}>
+                            <td colSpan={7} style={{ padding: "8px 14px", borderTop: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
+                              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#0369a1", background: "#dbeafe", padding: "1px 6px", borderRadius: 4, marginRight: 8, fontWeight: 700 }}>{row.kode}</span>
+                              <span style={{ fontWeight: 700, color: "#1e293b", fontSize: 13 }}>{row.nama}</span>
                             </td>
                           </tr>
                         );
@@ -1117,55 +1069,92 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
           {/* ── Monitoring Bawahan ── */}
           {monitoringBawahan && (monitoringBawahan.bawahanList?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 32 }}>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", marginBottom: 4 }}>
-                  Distribusi Target Bawahan
+            <div style={{ marginTop: 24, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+
+              {/* Section header */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 4, height: 20, borderRadius: 2, background: "#FF7900", flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>Distribusi Target Bawahan</div>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 1 }}>
+                      Jumlah target yang telah diterima masing-masing bawahan berdasarkan disposisi.
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, color: "#6b7280" }}>
-                  Jumlah target yang telah diterima masing-masing bawahan berdasarkan disposisi.
-                </div>
+                <button
+                  onClick={() => {
+                    const q = (v: string | number | null | undefined): string => {
+                      const s = String(v ?? "");
+                      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+                    };
+                    const rows = monitoringBawahan.rows;
+                    const users = filteredBawahan;
+                    const header = ["No", "Sasaran Strategis", "Kode", "Indikator", "Satuan", "Target", ...users.map((u) => q(u.nama))];
+                    const csvRows = rows.map((row, i) => [
+                      i + 1,
+                      q(row.groupNama),
+                      q(row.leafKode),
+                      q(row.leafNama),
+                      q(row.satuan ?? ""),
+                      row.nilaiTarget ?? "",
+                      ...users.map((u) => row.disposisiByUser[u.id] ?? ""),
+                    ]);
+                    const csv = [header, ...csvRows].map((r) => r.join(",")).join("\n");
+                    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `distribusi-target-bawahan-${bawahanJenis}-${bawahanTahun}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#0369a1", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                >
+                  ↓ Export CSV
+                </button>
               </div>
 
-              <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Target</label>
+              {/* Filters — 2 per row */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Target</label>
                   <select
                     value={bawahanJenis}
                     onChange={(e) => setBawahanJenis(e.target.value)}
-                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                    style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kinerja</option>
                   </select>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Tahun</label>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Tahun</label>
                   <select
                     value={bawahanTahun}
                     onChange={(e) => setBawahanTahun(e.target.value)}
-                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                    style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
                   >
                     {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>Jabatan</label>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Jabatan</label>
                   <select
                     value={bawahanFilterJabatan}
                     onChange={(e) => { setBawahanFilterJabatan(e.target.value); setBawahanFilterUser("all"); }}
-                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                    style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
                   >
                     <option value="all">Semua Jabatan</option>
                     {jabatanOptions.map((j) => <option key={j} value={j}>{j}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>User</label>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>User</label>
                   <select
                     value={bawahanFilterUser}
                     onChange={(e) => setBawahanFilterUser(e.target.value)}
-                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: "#374151", background: "#fff", cursor: "pointer" }}
+                    style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
                   >
                     <option value="all">Semua User</option>
                     {userOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.nama}</option>)}
@@ -1181,71 +1170,113 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Belum ada bawahan terkonfigurasi.</div>
               )}
 
-              {!monitoringBawahanLoading && monitoringBawahan.bawahanList.length > 0 && (
-                <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 600 + filteredBawahan.length * 130 }}>
-                    <thead>
-                      <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
-                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", width: 80 }}>No.</th>
-                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", minWidth: 180 }}>Sasaran Strategis</th>
-                        <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", minWidth: 220 }}>Indikator</th>
-                        <th style={{ padding: "10px 14px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", minWidth: 100 }}>Target</th>
-                        {filteredBawahan.map((b) => (
-                          <th key={b.id} style={{ padding: "10px 14px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", minWidth: 130 }}>
-                            <div style={{ fontWeight: 700, color: "#1f2937" }}>{b.nama}</div>
-                            <div style={{ fontWeight: 400, color: "#9ca3af", fontSize: 11, marginTop: 2 }}>{b.roleName}</div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const rows = monitoringBawahan.rows;
-                        const groupIds = [...new Set(rows.map((r) => r.groupId))];
-                        return groupIds.flatMap((groupId) => {
+              {!monitoringBawahanLoading && monitoringBawahan.bawahanList.length > 0 && (() => {
+                const rows = monitoringBawahan.rows;
+                const users = filteredBawahan;
+                const groupIds = [...new Set(rows.map((r) => r.groupId))];
+                let rowCounter = 0;
+                const NAVY = "#1e3a5f";
+                // All 4 fixed columns are sticky — only user columns scroll
+                const W_NO = 44, W_KODE = 88, W_IND = 260, W_TGT = 88;
+                const L_NO = 0, L_KODE = W_NO, L_IND = W_NO + W_KODE, L_TGT = W_NO + W_KODE + W_IND;
+                const USER_W = 130;
+                const tableW = L_TGT + W_TGT + users.length * USER_W;
+                const bNav = "1px solid #2d4f7c";
+                const bRow = "1px solid #eef2f7";
+                const bGroup = "2px solid #c7d9f5";
+                const shadowSep = "3px 0 6px rgba(0,0,0,0.1)";
+
+                // sticky th — always navy background
+                const th = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({
+                  position: "sticky", left, zIndex: 3, width: w,
+                  backgroundColor: NAVY, borderBottom: "2px solid #2d4f7c",
+                  padding: "10px 8px", verticalAlign: "middle", ...extra,
+                });
+                // sticky td — bg from row
+                const td = (left: number, w: number, bg: string, extra: React.CSSProperties = {}): React.CSSProperties => ({
+                  position: "sticky", left, zIndex: 2, width: w,
+                  backgroundColor: bg, ...extra,
+                });
+
+                return (
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #e2e8f0", boxShadow: "0 1px 6px rgba(15,23,42,0.07)" }}>
+                    <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: tableW, fontSize: 12 }}>
+                      <colgroup>
+                        <col style={{ width: W_NO }} />
+                        <col style={{ width: W_KODE }} />
+                        <col style={{ width: W_IND }} />
+                        <col style={{ width: W_TGT }} />
+                        {users.map((u) => <col key={u.id} style={{ width: USER_W }} />)}
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th style={th(L_NO, W_NO, { textAlign: "center", color: "#94a3b8", fontWeight: 600, fontSize: 11, borderRight: bNav })}>No</th>
+                          <th style={th(L_KODE, W_KODE, { textAlign: "left", color: "#93c5fd", fontWeight: 700, fontSize: 10, fontFamily: "monospace", borderRight: bNav })}>Kode</th>
+                          <th style={th(L_IND, W_IND, { textAlign: "left", color: "#e2e8f0", fontWeight: 700, fontSize: 12, borderRight: bNav })}>Indikator</th>
+                          <th style={th(L_TGT, W_TGT, { textAlign: "center", color: "#a5f3fc", fontWeight: 700, fontSize: 11, borderRight: "2px solid #4a7cbf", boxShadow: shadowSep })}>Target</th>
+                          {users.map((u) => (
+                            <th key={u.id} style={{ backgroundColor: NAVY, borderBottom: "2px solid #2d4f7c", padding: "8px 8px", textAlign: "center", fontWeight: 600, fontSize: 11, borderRight: bNav, verticalAlign: "middle", overflow: "hidden" }}>
+                              <div style={{ color: "#e2e8f0", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.nama.split(",")[0]}</div>
+                              <div style={{ fontSize: 10, color: "#7eb3e8", fontWeight: 400, marginTop: 2 }}>{u.roleName}</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupIds.map((groupId) => {
                           const groupRows = rows.filter((r) => r.groupId === groupId);
-                          return groupRows.map((row, rowIdx) => (
-                            <tr key={row.leafId} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                              {rowIdx === 0 && (
-                                <>
-                                  <td rowSpan={groupRows.length} style={{ padding: "10px 14px", fontWeight: 700, color: "#0369a1", fontFamily: "monospace", fontSize: 11, verticalAlign: "top", borderRight: "1px solid #f1f5f9" }}>
-                                    {row.groupKode}
-                                  </td>
-                                  <td rowSpan={groupRows.length} style={{ padding: "10px 14px", color: "#334155", fontWeight: 500, verticalAlign: "top", borderRight: "1px solid #f1f5f9", lineHeight: 1.45 }}>
-                                    {row.groupNama}
-                                  </td>
-                                </>
-                              )}
-                              <td style={{ padding: "10px 14px", color: "#374151", lineHeight: 1.45 }}>
-                                <span style={{ color: "#9ca3af", marginRight: 6, fontFamily: "monospace", fontSize: 11 }}>{row.leafKode}</span>
-                                {row.leafNama}
+                          const first = groupRows[0];
+                          const GBG = "#eef4ff";
+                          return [
+                            // Group header row: 4 sticky tds + 1 colSpan for user columns
+                            <tr key={`g-${groupId}`}>
+                              <td style={td(L_NO, W_NO, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })} />
+                              <td style={td(L_KODE, W_KODE, GBG, { padding: "6px 8px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#1d4ed8", fontFamily: "monospace", background: "#dbeafe", padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>{first.groupKode}</span>
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
-                                {row.nilaiTarget !== null ? `${row.nilaiTarget}${row.satuan ? ` ${row.satuan}` : ""}` : "—"}
+                              <td style={td(L_IND, W_IND, GBG, { padding: "6px 12px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: NAVY, overflow: "hidden", display: "block", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{first.groupNama}</span>
                               </td>
-                              {filteredBawahan.map((b) => {
-                                const jumlah = row.disposisiByUser[b.id];
-                                return (
-                                  <td key={b.id} style={{ padding: "10px 14px", textAlign: "center" }}>
-                                    {jumlah > 0 ? (
-                                      <span style={{ fontWeight: 700, color: "#16a34a" }}>{jumlah}</span>
-                                    ) : (
-                                      <span style={{ color: "#e5e7eb" }}>—</span>
-                                    )}
+                              <td style={td(L_TGT, W_TGT, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: "2px solid #c7d9f5", boxShadow: shadowSep })} />
+                              <td colSpan={users.length} style={{ backgroundColor: GBG, borderTop: bGroup, borderBottom: bGroup }} />
+                            </tr>,
+                            ...groupRows.map((row) => {
+                              rowCounter++;
+                              const bg = rowCounter % 2 === 0 ? "#f8fafc" : "#ffffff";
+                              return (
+                                <tr key={row.leafId}>
+                                  <td style={td(L_NO, W_NO, bg, { padding: "7px 6px", textAlign: "center", color: "#9ca3af", fontSize: 11, borderRight: bRow, borderBottom: bRow })}>{rowCounter}</td>
+                                  <td style={td(L_KODE, W_KODE, bg, { padding: "7px 8px", fontFamily: "monospace", fontSize: 10, color: "#0369a1", fontWeight: 700, whiteSpace: "nowrap", borderRight: bRow, borderBottom: bRow })}>{row.leafKode}</td>
+                                  <td style={td(L_IND, W_IND, bg, { padding: "7px 14px", color: "#1f2937", lineHeight: 1.45, borderRight: bRow, borderBottom: bRow, overflow: "hidden" })}>{row.leafNama}</td>
+                                  <td style={td(L_TGT, W_TGT, bg, { padding: "7px 8px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", borderRight: "2px solid #d1d5db", borderBottom: bRow, boxShadow: shadowSep })}>
+                                    {row.nilaiTarget !== null
+                                      ? <><span style={{ color: "#0369a1", fontWeight: 700 }}>{row.nilaiTarget}</span>{row.satuan && <span style={{ fontSize: 10, color: "#64748b", marginLeft: 2 }}>{row.satuan}</span>}</>
+                                      : <span style={{ color: "#d1d5db" }}>—</span>}
                                   </td>
-                                );
-                              })}
-                            </tr>
-                          ));
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                                  {users.map((u) => {
+                                    const val = row.disposisiByUser[u.id] ?? null;
+                                    return (
+                                      <td key={u.id} style={{ padding: "7px 8px", textAlign: "center", backgroundColor: bg, borderRight: bRow, borderBottom: bRow }}>
+                                        {val !== null && val > 0 ? (
+                                          <span style={{ display: "inline-block", background: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: 12, padding: "2px 8px", borderRadius: 5, border: "1px solid #bbf7d0" }}>
+                                            {val}{row.satuan && <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{row.satuan}</span>}
+                                          </span>
+                                        ) : <span style={{ color: "#d1d5db" }}>—</span>}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            }),
+                          ];
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           )}
-        </div>
       </PageTransition>
 
       {/* Detail Modal */}

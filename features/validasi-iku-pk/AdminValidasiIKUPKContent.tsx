@@ -137,10 +137,10 @@ export default function AdminValidasiIKUPKContent() {
             <div
               key={s.label}
               className="stat-card"
-              style={{ borderLeft: `4px solid ${s.color}` }}
+              style={{ background: `linear-gradient(135deg, ${s.bg} 0%, #ffffff 140%)` }}
             >
-              <p className="stat-card-label">{s.label}</p>
-              <p className="stat-card-value" style={{ color: s.color }}>{s.value}</p>
+              <p className="stat-card-label" style={{ color: s.color }}>{s.label}</p>
+              <p className="stat-card-value">{s.value}</p>
             </div>
           ))}
         </div>

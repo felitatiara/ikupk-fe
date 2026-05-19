@@ -117,11 +117,6 @@ export default function InputUserContent() {
     setSaving(true);
     try {
       const [primaryRoleId, ...extraRoleIds] = formData.roleIds;
-      const primaryRole = allRoles.find(r => r.id === primaryRoleId);
-      if (primaryRole && STRUCTURAL_ROLES.has(primaryRole.name.toLowerCase())) {
-        const dosenRole = allRoles.find(r => r.name.toLowerCase() === "dosen" && r.unitNama === primaryRole.unitNama);
-        if (dosenRole && !formData.roleIds.includes(dosenRole.id)) extraRoleIds.push(dosenRole.id);
-      }
       const payload: any = {
         nip: formData.nip.trim() || undefined, nama: formData.nama.trim(), email: formData.email.trim(),
         roleId: primaryRoleId, extraRoleIds, jenis: formData.jenis, atasanIds: formData.atasanIds,

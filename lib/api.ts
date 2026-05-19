@@ -703,13 +703,13 @@ export async function getDosenByUnit(unitNama: string): Promise<UnitUser[]> {
   return response.json();
 }
 
-export async function getIndikatorCascadeChain(id: number): Promise<number[]> {
+export async function getIndikatorCascadeChain(id: number): Promise<(number | number[])[]> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}/cascade-chain`);
   if (!response.ok) return [];
   return response.json();
 }
 
-export async function saveIndikatorCascadeChain(id: number, chain: number[]): Promise<void> {
+export async function saveIndikatorCascadeChain(id: number, chain: (number | number[])[]): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}/cascade-chain`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1001,6 +1001,27 @@ export async function getRealisasiFiles(
     return res.json();
   } catch {
     return { indikatorKode: '', indikatorNama: '', files: [] };
+  }
+}
+
+/**
+ * Ambil file milik sendiri berdasarkan nama/kode indikator langsung (tanpa indikatorId).
+ * Email otomatis dari JWT — tidak perlu di-pass secara eksplisit.
+ */
+export async function getMyFilesByIndikator(
+  params: { jenis: string; nama: string; kode?: string },
+  token: string,
+): Promise<RepoFile[]> {
+  try {
+    const q = new URLSearchParams({ jenis: params.jenis, nama: params.nama });
+    if (params.kode) q.set('kode', params.kode);
+    const res = await fetch(`${API_BASE_URL}/integration/my-files?${q.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
   }
 }
 

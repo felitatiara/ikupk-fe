@@ -126,29 +126,31 @@ const [tahun, setTahun] = useState("2026");
       // Cascade chain (role-based): ambil chain dari L0 indikator
       if (l0Id) {
         try {
-          const cascadeChain = await getIndikatorCascadeChain(l0Id); // [roleId, roleId, ...]
+          const cascadeChain = await getIndikatorCascadeChain(l0Id); // (number | number[])[]
           if (cascadeChain.length > 0) {
-            const normalizedChain = cascadeChain.map(Number);
-            let nextRoleId: number | null = null;
+            // Normalize each step to number[] for uniform handling
+            const normalizedChain: number[][] = cascadeChain.map(step =>
+              Array.isArray(step) ? step.map(Number) : [Number(step)]
+            );
+            let nextRoleIds: number[] = [];
 
             if (displayRole === 'admin') {
-              // Admin → kirim ke chain[0]
-              nextRoleId = normalizedChain[0];
+              nextRoleIds = normalizedChain[0] ?? [];
             } else if (authUser?.roleId) {
               const myRoleId = Number(authUser.roleId);
-              const currentIdx = normalizedChain.indexOf(myRoleId);
+              const currentIdx = normalizedChain.findIndex(step => step.includes(myRoleId));
               if (currentIdx >= 0 && currentIdx < normalizedChain.length - 1) {
-                // Role di tengah chain → kirim ke role berikutnya
-                nextRoleId = normalizedChain[currentIdx + 1];
+                nextRoleIds = normalizedChain[currentIdx + 1];
               } else if (currentIdx === -1 && isTopLevel) {
-                // isTopLevel tidak ada di chain → kirim ke chain[0]
-                nextRoleId = normalizedChain[0];
+                nextRoleIds = normalizedChain[0] ?? [];
               }
-              // currentIdx === chain.length - 1 → role terakhir, fall through ke bawahan logic
             }
 
-            if (nextRoleId !== null) {
-              users = await getUsersByRole(nextRoleId);
+            if (nextRoleIds.length > 0) {
+              const usersByRole = await Promise.all(nextRoleIds.map(rid => getUsersByRole(rid)));
+              const merged = usersByRole.flat();
+              const seen = new Set<number>();
+              users = merged.filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
               users = users.filter((u) => u.id !== authUser?.id);
               usedCascade = true;
             }

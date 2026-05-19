@@ -709,7 +709,7 @@ export default function SKPContent() {
   const thStyle: React.CSSProperties = {
     padding: "10px 12px",
     fontWeight: 700,
-    fontSize: 12,
+    fontSize: 13,
     color: "#374151",
     borderBottom: "1px solid #e5e7eb",
     backgroundColor: "#f9fafb",
@@ -718,7 +718,7 @@ export default function SKPContent() {
   };
   const tdStyle: React.CSSProperties = {
     padding: "10px 12px",
-    fontSize: 12,
+    fontSize: 13,
     color: "#374151",
     borderBottom: "1px solid #f3f4f6",
     verticalAlign: "top",
@@ -759,7 +759,7 @@ export default function SKPContent() {
             }}
           >
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1f2937", marginBottom: 16 }}>
                 Identitas Pegawai
               </h3>
               {[
@@ -850,7 +850,7 @@ export default function SKPContent() {
             marginBottom: 20,
           }}
         >
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 20 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1f2937", marginBottom: 20 }}>
             Rincian Sasaran Kinerja
           </h3>
 
@@ -918,7 +918,7 @@ export default function SKPContent() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 0 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1f2937", marginBottom: 0 }}>
                   Persetujuan SKP
                 </h3>
                 <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>

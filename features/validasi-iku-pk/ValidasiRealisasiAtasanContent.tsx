@@ -350,38 +350,31 @@ export default function ValidasiRealisasiAtasanContent() {
   return (
     <div>
       <PageTransition>
-        <p className="ikupk-header-text">Validasi Realisasi Bawahan</p>
-
-        <div className="info-banner-blue">
-          <span className="icon-lg">📋</span>
-          <p>
-            <strong>Validasi Realisasi</strong> — Periksa file yang diunggah bawahan, tetapkan jumlah file yang valid.
-          </p>
-        </div>
+        <p className="ikupk-header-text">Validasi Realisasi</p>
 
         {/* Statistik */}
         <div className="stats-grid">
-          <div className="stat-card" style={{ borderLeft: "4px solid #6366f1" }}>
-            <p className="stat-card-label">Total Dosen</p>
-            <p className="stat-card-value" style={{ color: "#6366f1" }}>{dosenGroups.length}</p>
+          <div className="stat-card" style={{ background: "linear-gradient(135deg, #eef2ff 0%, #ffffff 140%)" }}>
+            <p className="stat-card-label" style={{ color: "#6366f1" }}>Total Dosen</p>
+            <p className="stat-card-value">{dosenGroups.length}</p>
           </div>
-          <div className="stat-card" style={{ borderLeft: "4px solid #d97706" }}>
-            <p className="stat-card-label">Total Submission</p>
-            <p className="stat-card-value" style={{ color: "#d97706" }}>{totalSubmissions}</p>
+          <div className="stat-card" style={{ background: "linear-gradient(135deg, #fffbeb 0%, #ffffff 140%)" }}>
+            <p className="stat-card-label" style={{ color: "#d97706" }}>Total Submission</p>
+            <p className="stat-card-value">{totalSubmissions}</p>
           </div>
-          <div className="stat-card" style={{ borderLeft: "4px solid #16a34a" }}>
-            <p className="stat-card-label">Sudah Divalidasi</p>
-            <p className="stat-card-value" style={{ color: "#16a34a" }}>{totalValidated}</p>
+          <div className="stat-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #ffffff 140%)" }}>
+            <p className="stat-card-label" style={{ color: "#16a34a" }}>Sudah Divalidasi</p>
+            <p className="stat-card-value">{totalValidated}</p>
           </div>
-          <div className="stat-card" style={{ borderLeft: "4px solid #dc2626" }}>
-            <p className="stat-card-label">Belum Divalidasi</p>
-            <p className="stat-card-value" style={{ color: "#dc2626" }}>{totalSubmissions - totalValidated}</p>
+          <div className="stat-card" style={{ background: "linear-gradient(135deg, #fef2f2 0%, #ffffff 140%)" }}>
+            <p className="stat-card-label" style={{ color: "#dc2626" }}>Belum Divalidasi</p>
+            <p className="stat-card-value">{totalSubmissions - totalValidated}</p>
           </div>
         </div>
 
         {/* Filter */}
         <div className="filter-card">
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div className="filter-grid-2">
             <div>
               <label className="filter-label">Jenis</label>
               <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK")} className="filter-isi">
@@ -397,14 +390,14 @@ export default function ValidasiRealisasiAtasanContent() {
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-              <button onClick={exportToExcel} disabled={exporting} className="btn-green-sm">
-                {exporting ? "Mengekspor..." : "Export Validasi"}
-              </button>
-              <button onClick={exportLaporanIKUPK} disabled={exportingLaporan} className="btn-green-sm">
-                {exportingLaporan ? "Mengekspor..." : "Export Laporan IKU/PK"}
-              </button>
-            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={exportToExcel} disabled={exporting} className="btn-green-sm">
+              {exporting ? "Mengekspor..." : "Export Validasi"}
+            </button>
+            <button onClick={exportLaporanIKUPK} disabled={exportingLaporan} className="btn-green-sm">
+              {exportingLaporan ? "Mengekspor..." : "Export Laporan IKU/PK"}
+            </button>
           </div>
         </div>
 
