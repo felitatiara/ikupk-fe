@@ -1083,35 +1083,124 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    const q = (v: string | number | null | undefined): string => {
-                      const s = String(v ?? "");
-                      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
-                    };
+                  onClick={async () => {
+                    const ExcelJS = (await import("exceljs")).default;
                     const rows = monitoringBawahan.rows;
                     const users = filteredBawahan;
-                    const header = ["No", "Sasaran Strategis", "Kode", "Indikator", "Satuan", "Target", ...users.map((u) => q(u.nama))];
-                    const csvRows = rows.map((row, i) => [
-                      i + 1,
-                      q(row.groupNama),
-                      q(row.leafKode),
-                      q(row.leafNama),
-                      q(row.satuan ?? ""),
-                      row.nilaiTarget ?? "",
-                      ...users.map((u) => row.disposisiByUser[u.id] ?? ""),
-                    ]);
-                    const csv = [header, ...csvRows].map((r) => r.join(",")).join("\n");
-                    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+                    const fixedCols = 4;
+                    const totalCols = fixedCols + users.length;
+
+                    const HEADER_BG = "FF1F3864";
+                    const HEADER_FG = "FFFFFFFF";
+                    const GROUP_BG  = "FFBDD7EE";
+                    const GROUP_FG  = "FF1F3864";
+                    const BORDER    = "FFAAAAAA";
+
+                    const mkBorder = () => ({
+                      top:    { style: "thin" as const, color: { argb: BORDER } },
+                      bottom: { style: "thin" as const, color: { argb: BORDER } },
+                      left:   { style: "thin" as const, color: { argb: BORDER } },
+                      right:  { style: "thin" as const, color: { argb: BORDER } },
+                    });
+
+                    const styleCell = (
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      cell: any,
+                      fillArgb: string,
+                      fontArgb: string,
+                      bold: boolean,
+                      halign: "center" | "left",
+                      wrap = false,
+                    ) => {
+                      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillArgb } };
+                      cell.font = { bold, color: { argb: fontArgb }, size: 10, name: "Calibri" };
+                      cell.alignment = { horizontal: halign, vertical: "middle", wrapText: wrap };
+                      cell.border = mkBorder();
+                    };
+
+                    const wb = new ExcelJS.Workbook();
+                    const ws = wb.addWorksheet("Distribusi Target");
+
+                    // Freeze kolom A-D + 2 header rows
+                    ws.views = [{
+                      state: "frozen",
+                      xSplit: 4,
+                      ySplit: 2,
+                      topLeftCell: "E3",
+                    }];
+
+                    // Column widths
+                    ws.getColumn(1).width = 5;
+                    ws.getColumn(2).width = 12;
+                    ws.getColumn(3).width = 55;
+                    ws.getColumn(4).width = 10;
+                    users.forEach((_, i) => { ws.getColumn(5 + i).width = 18; });
+
+                    // Header row 1 — nama user
+                    const hRow1 = ws.addRow(["No", "Kode", "Indikator", "Target", ...users.map((u) => u.nama)]);
+                    hRow1.height = 32;
+                    for (let c = 1; c <= totalCols; c++) {
+                      styleCell(hRow1.getCell(c), HEADER_BG, HEADER_FG, true, "center");
+                    }
+
+                    // Header row 2 — role subtitle
+                    const hRow2 = ws.addRow(["", "", "", "", ...users.map((u) => u.roleName)]);
+                    hRow2.height = 20;
+                    for (let c = 1; c <= totalCols; c++) {
+                      styleCell(hRow2.getCell(c), HEADER_BG, HEADER_FG, true, "center");
+                    }
+
+                    // Merge No/Kode/Indikator/Target across 2 header rows
+                    ws.mergeCells(1, 1, 2, 1);
+                    ws.mergeCells(1, 2, 2, 2);
+                    ws.mergeCells(1, 3, 2, 3);
+                    ws.mergeCells(1, 4, 2, 4);
+
+                    let rowNo = 0;
+                    let currentGroupId: number | null = null;
+                    let groupNo = 0;
+
+                    for (const row of rows) {
+                      if (row.groupId !== currentGroupId) {
+                        currentGroupId = row.groupId;
+                        groupNo++;
+                        const gRow = ws.addRow([groupNo, row.groupNama, ...Array(totalCols - 2).fill("")]);
+                        gRow.height = 20;
+                        for (let c = 1; c <= totalCols; c++) {
+                          styleCell(gRow.getCell(c), GROUP_BG, GROUP_FG, true, c === 1 ? "center" : "left");
+                        }
+                        ws.mergeCells(gRow.number, 2, gRow.number, totalCols);
+                      }
+
+                      rowNo++;
+                      const dRow = ws.addRow([
+                        rowNo,
+                        row.leafKode,
+                        row.leafNama,
+                        row.nilaiTarget ?? "",
+                        ...users.map((u) => {
+                          const val = row.disposisiByUser[u.id];
+                          return val != null && val > 0 ? val : "";
+                        }),
+                      ]);
+                      dRow.height = 15;
+                      for (let c = 1; c <= totalCols; c++) {
+                        styleCell(dRow.getCell(c), "FFFFFFFF", "FF000000", false, c === 3 ? "left" : "center", c === 3);
+                      }
+                    }
+
+                    const buffer = await wb.xlsx.writeBuffer();
+                    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = `distribusi-target-bawahan-${bawahanJenis}-${bawahanTahun}.csv`;
+                    a.download = `distribusi-target-bawahan-${bawahanJenis}-${bawahanTahun}.xlsx`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#0369a1", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
                 >
-                  ↓ Export CSV
+                  ↓ Export Excel
                 </button>
               </div>
 
