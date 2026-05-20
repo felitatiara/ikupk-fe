@@ -165,6 +165,7 @@ export async function getIndikatorGroupedForUser(jenis: string, tahun: string, u
 export interface MonitoringBawahanUser {
   id: number;
   nama: string;
+  email: string;
   roleName: string;
   roleLevel: number;
   unitNama: string | null;
@@ -183,6 +184,7 @@ export interface MonitoringBawahanRow {
   nilaiTarget: number | null;
   satuan: string | null;
   disposisiByUser: Record<number, number>;
+  realisasiByUser: Record<number, number>;
 }
 
 export interface MonitoringBawahanResult {
