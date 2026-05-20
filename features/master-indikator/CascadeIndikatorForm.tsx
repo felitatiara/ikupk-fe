@@ -69,10 +69,10 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
 
   return (
     <PageTransition>
-      <div style={{ margin: "0", padding: "4px 0 80px", fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif", maxWidth: 680 }}>
+      <div style={{ padding: "4px 0 100px", fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
 
         {/* Breadcrumb */}
-        <nav style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, fontSize: 13 }}>
+        <nav style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 22, fontSize: 13 }}>
           <button onClick={() => router.push("/admin/master-indikator")}
             style={{ background: "none", border: "none", cursor: "pointer", color: "#FF7900", fontWeight: 600, padding: 0 }}>
             Master Indikator
@@ -82,140 +82,219 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
         </nav>
 
         {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ fontWeight: 800, fontSize: 22, color: "#111827", margin: "0 0 6px" }}>Alur Disposisi</h2>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: 0, lineHeight: 1.6 }}>
+        <div style={{ marginBottom: 28 }}>
+          <h2 style={{ fontWeight: 800, fontSize: 24, color: "#111827", margin: "0 0 6px" }}>Alur Disposisi</h2>
+          <p style={{ fontSize: 13.5, color: "#6b7280", margin: 0, lineHeight: 1.6 }}>
             Tentukan urutan penerima disposisi. Tiap langkah bisa memiliki lebih dari satu role.
           </p>
         </div>
 
         {/* L0 card */}
         {loadingInfo ? (
-          <div style={{ height: 56, background: "#f9fafb", borderRadius: 10, marginBottom: 24 }} />
+          <div style={{ height: 60, background: "#f3f4f6", borderRadius: 12, marginBottom: 28, animation: "pulse 1.5s infinite" }} />
         ) : l0 ? (
-          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "12px 16px", marginBottom: 28, display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#FF7900", padding: "2px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>
+          <div style={{
+            background: "linear-gradient(135deg, #fff7ed 0%, #fffbf5 100%)",
+            border: "1.5px solid #fed7aa", borderRadius: 14,
+            padding: "14px 20px", marginBottom: 32,
+            display: "flex", alignItems: "center", gap: 14,
+            boxShadow: "0 2px 8px rgba(255,121,0,0.08)",
+          }}>
+            <span style={{
+              fontSize: 10, fontWeight: 800, color: "#fff", background: "#FF7900",
+              padding: "3px 10px", borderRadius: 20, textTransform: "uppercase",
+              letterSpacing: "0.06em", flexShrink: 0, whiteSpace: "nowrap",
+            }}>
               {jenis} · {tahun}
             </span>
-            <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{l0.kode} — {l0.nama}</span>
+            <span style={{ fontWeight: 700, fontSize: 14, color: "#1c1917", lineHeight: 1.4 }}>
+              {l0.kode} — {l0.nama}
+            </span>
           </div>
         ) : (
-          <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "12px 16px", marginBottom: 28 }}>
+          <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "14px 20px", marginBottom: 28 }}>
             <span style={{ fontSize: 13, color: "#dc2626" }}>Indikator tidak ditemukan.</span>
           </div>
         )}
 
         {/* Timeline chain builder */}
-        <div style={{ marginBottom: 8 }}>
-          {chain.map((step, si) => (
-            <div key={si} style={{ display: "flex", gap: 16 }}>
-              {/* Left: number + connector */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 28 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: "50%",
-                  background: step.some(id => id > 0) ? "#FF7900" : "#e5e7eb",
-                  color: step.some(id => id > 0) ? "#fff" : "#9ca3af",
-                  fontSize: 12, fontWeight: 800,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "background 0.2s",
-                }}>
-                  {si + 1}
-                </div>
-                {si < chain.length - 1 && (
-                  <div style={{ width: 2, flex: 1, minHeight: 20, background: "#e5e7eb", margin: "6px 0" }} />
-                )}
-              </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {chain.map((step, si) => {
+            const isLast = si === chain.length - 1;
+            const filled = step.some(id => id > 0);
+            return (
+              <div key={si} style={{ display: "flex", gap: 0, alignItems: "stretch" }}>
 
-              {/* Right: content */}
-              <div style={{ flex: 1, paddingBottom: si < chain.length - 1 ? 20 : 8 }}>
-                {/* Step header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, height: 28 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
-                    Langkah {si + 1}
-                    {step.filter(id => id > 0).length > 1 && (
-                      <span style={{ marginLeft: 8, fontSize: 11, color: "#FF7900", fontWeight: 600 }}>
-                        {step.filter(id => id > 0).length} role
-                      </span>
-                    )}
-                  </span>
-                  {chain.length > 1 && (
-                    <button type="button" onClick={() => removeStep(si)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 12, fontWeight: 600, padding: "2px 0" }}>
-                      Hapus
-                    </button>
+                {/* ── Timeline rail (dot + line) ── */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 52, flexShrink: 0 }}>
+                  {/* Dot */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                    background: filled ? "#FF7900" : "#e5e7eb",
+                    color: filled ? "#fff" : "#9ca3af",
+                    fontSize: 13, fontWeight: 800,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: filled ? "0 0 0 4px rgba(255,121,0,0.15)" : "none",
+                    transition: "all 0.2s",
+                    zIndex: 1,
+                  }}>
+                    {si + 1}
+                  </div>
+                  {/* Connector */}
+                  {!isLast && (
+                    <div style={{ width: 3, flex: 1, minHeight: 24, background: filled ? "#fed7aa" : "#e5e7eb", borderRadius: 2, margin: "4px 0" }} />
                   )}
                 </div>
 
-                {/* Role selects */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {step.map((roleId, ri) => (
-                    <div key={ri} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <select
-                        value={roleId}
-                        onChange={e => updateRole(si, ri, Number(e.target.value))}
-                        style={{
-                          flex: 1, border: "1px solid #e5e7eb", borderRadius: 8,
-                          padding: "8px 12px", fontSize: 13, color: roleId === 0 ? "#9ca3af" : "#111827",
-                          outline: "none", background: "#fff", cursor: "pointer",
-                        }}
-                      >
-                        <option value={0} disabled>Pilih role...</option>
-                        {allRoles.map(r => (
-                          <option key={r.id} value={r.id}>{getRoleLabel(r)}</option>
-                        ))}
-                      </select>
-                      {step.length > 1 && (
-                        <button type="button" onClick={() => removeRoleFromStep(si, ri)}
-                          style={{
-                            width: 30, height: 30, borderRadius: 7, border: "1px solid #f3f4f6",
-                            background: "#f9fafb", color: "#9ca3af", fontSize: 16, lineHeight: 1,
-                            cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                {/* ── Step card ── */}
+                <div style={{ flex: 1, marginBottom: isLast ? 0 : 16, paddingBottom: 4 }}>
+                  <div style={{
+                    background: "#fff",
+                    border: filled ? "1.5px solid #fed7aa" : "1.5px solid #e5e7eb",
+                    borderRadius: 14,
+                    padding: "16px 18px",
+                    boxShadow: filled
+                      ? "0 2px 12px rgba(255,121,0,0.08), 0 1px 3px rgba(0,0,0,0.04)"
+                      : "0 1px 4px rgba(0,0,0,0.05)",
+                    transition: "border-color 0.2s, box-shadow 0.2s",
+                  }}>
+                    {/* Card header */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>Langkah {si + 1}</span>
+                        {step.filter(id => id > 0).length > 1 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "#FF7900",
+                            background: "#fff7ed", border: "1px solid #fed7aa",
+                            padding: "2px 8px", borderRadius: 20,
                           }}>
-                          ×
+                            {step.filter(id => id > 0).length} role
+                          </span>
+                        )}
+                      </div>
+                      {chain.length > 1 && (
+                        <button type="button" onClick={() => removeStep(si)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            padding: "4px 10px", borderRadius: 7,
+                            border: "1px solid #fecaca", background: "#fef2f2",
+                            color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                          }}>
+                          × Hapus
                         </button>
                       )}
                     </div>
-                  ))}
-                </div>
 
-                {/* Add role to this step */}
-                <button type="button" onClick={() => addRoleToStep(si)}
-                  style={{
-                    marginTop: 8, background: "none", border: "none", cursor: "pointer",
-                    color: "#FF7900", fontSize: 12, fontWeight: 600, padding: "2px 0",
-                  }}>
-                  + Tambah role lain di langkah ini
-                </button>
+                    {/* Role rows */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {step.map((roleId, ri) => (
+                        <div key={ri} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ flex: 1, position: "relative" }}>
+                            <select
+                              value={roleId}
+                              onChange={e => updateRole(si, ri, Number(e.target.value))}
+                              style={{
+                                width: "100%",
+                                border: `1.5px solid ${roleId > 0 ? "#fdba74" : "#e5e7eb"}`,
+                                borderRadius: 9,
+                                padding: "9px 36px 9px 14px",
+                                fontSize: 13,
+                                fontWeight: roleId > 0 ? 600 : 400,
+                                color: roleId === 0 ? "#9ca3af" : "#111827",
+                                outline: "none",
+                                background: roleId > 0 ? "#fffbf5" : "#fafafa",
+                                cursor: "pointer",
+                                appearance: "none",
+                                WebkitAppearance: "none",
+                                transition: "border-color 0.15s, background 0.15s",
+                              }}
+                            >
+                              <option value={0} disabled>Pilih role penerima…</option>
+                              {allRoles.map(r => (
+                                <option key={r.id} value={r.id}>{getRoleLabel(r)}</option>
+                              ))}
+                            </select>
+                            {/* Custom chevron */}
+                            <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#9ca3af", fontSize: 11 }}>▼</div>
+                          </div>
+                          {step.length > 1 && (
+                            <button type="button" onClick={() => removeRoleFromStep(si, ri)}
+                              style={{
+                                width: 34, height: 34, borderRadius: 8,
+                                border: "1.5px solid #fecaca", background: "#fef2f2",
+                                color: "#dc2626", fontSize: 18, lineHeight: 1,
+                                cursor: "pointer", flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontWeight: 700,
+                              }}>
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add role button */}
+                    <button type="button" onClick={() => addRoleToStep(si)}
+                      style={{
+                        marginTop: 12,
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        padding: "6px 12px", borderRadius: 7,
+                        border: "1.5px dashed #fdba74", background: "#fff7ed",
+                        color: "#FF7900", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      }}>
+                      + Tambah role lain di langkah ini
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Add step button */}
-        <button type="button" onClick={addStep}
-          style={{
-            marginLeft: 44, display: "flex", alignItems: "center", gap: 8,
-            padding: "8px 16px", borderRadius: 8, border: "1.5px dashed #d1d5db",
-            background: "#fafafa", color: "#6b7280", fontSize: 13, fontWeight: 600, cursor: "pointer",
-          }}>
-          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Tambah Langkah
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: 8 }}>
+          {/* Align with card (52px rail offset) */}
+          <div style={{ width: 52, flexShrink: 0, display: "flex", justifyContent: "center" }}>
+            <div style={{ width: 3, height: 24, background: "#e5e7eb", borderRadius: 2 }} />
+          </div>
+          <button type="button" onClick={addStep}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 10,
+              border: "1.5px dashed #d1d5db", background: "#fafafa",
+              color: "#6b7280", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#FF7900"; (e.currentTarget as HTMLButtonElement).style.color = "#FF7900"; (e.currentTarget as HTMLButtonElement).style.background = "#fff7ed"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#d1d5db"; (e.currentTarget as HTMLButtonElement).style.color = "#6b7280"; (e.currentTarget as HTMLButtonElement).style.background = "#fafafa"; }}
+          >
+            <span style={{ fontSize: 18, lineHeight: 1, fontWeight: 800 }}>+</span> Tambah Langkah
+          </button>
+        </div>
 
         {/* Preview */}
         {hasAnyValid && (
-          <div style={{ marginTop: 28, padding: "16px 20px", background: "#f9fafb", borderRadius: 10, border: "1px solid #f3f4f6" }}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>
+          <div style={{
+            marginTop: 28, padding: "16px 20px",
+            background: "linear-gradient(135deg, #f9fafb 0%, #fff 100%)",
+            borderRadius: 12, border: "1px solid #f3f4f6",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+          }}>
+            <p style={{ fontSize: 10, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 14px" }}>
               Preview Alur
             </p>
-            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
               <Chip label="Admin" color="orange" />
               {chain.map((step, i) => {
                 const valid = step.filter(id => id > 0);
                 if (valid.length === 0) return null;
                 const names = valid.map(rid => allRoles.find(r => r.id === rid)?.name ?? `Role ${rid}`);
                 return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ color: "#9ca3af", fontSize: 14 }}>→</span>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="18" height="10" viewBox="0 0 18 10" fill="none">
+                      <path d="M0 5h14M10 1l4 4-4 4" stroke="#d1d5db" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                     {names.length === 1
                       ? <Chip label={names[0]} color="gray" />
                       : <Chip label={names.join(" / ")} color="green" />
@@ -230,22 +309,29 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
         {/* Sticky footer */}
         <div style={{
           position: "sticky", bottom: 0,
-          background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)",
-          borderTop: "1px solid #f3f4f6", padding: "14px 0", marginTop: 24,
+          background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)",
+          borderTop: "1px solid #f3f4f6",
+          padding: "14px 0", marginTop: 28,
           display: "flex", gap: 10, justifyContent: "flex-end",
         }}>
           <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}
-            style={{ padding: "9px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            style={{
+              padding: "10px 22px", borderRadius: 9,
+              border: "1.5px solid #e5e7eb", background: "#fff",
+              color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>
             Batal
           </button>
           <button type="button" onClick={handleSubmit} disabled={submitLoading || !l0 || loadingInfo}
             style={{
-              padding: "9px 24px", borderRadius: 8, border: "none",
-              background: "#FF7900", color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: (submitLoading || !l0 || loadingInfo) ? "not-allowed" : "pointer",
-              opacity: (submitLoading || !l0 || loadingInfo) ? 0.6 : 1,
+              padding: "10px 28px", borderRadius: 9, border: "none",
+              background: submitLoading || !l0 || loadingInfo ? "#fdba74" : "#FF7900",
+              color: "#fff", fontSize: 13, fontWeight: 700,
+              cursor: submitLoading || !l0 || loadingInfo ? "not-allowed" : "pointer",
+              boxShadow: submitLoading || !l0 || loadingInfo ? "none" : "0 2px 8px rgba(255,121,0,0.35)",
+              transition: "background 0.2s, box-shadow 0.2s",
             }}>
-            {submitLoading ? "Menyimpan…" : "Simpan"}
+            {submitLoading ? "Menyimpan…" : "💾 Simpan Alur"}
           </button>
         </div>
       </div>
@@ -255,12 +341,12 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
 
 function Chip({ label, color }: { label: string; color: "orange" | "gray" | "green" }) {
   const styles: Record<string, React.CSSProperties> = {
-    orange: { background: "#fff7ed", color: "#FF7900", border: "1px solid #fed7aa" },
-    gray:   { background: "#f9fafb", color: "#374151", border: "1px solid #e5e7eb" },
-    green:  { background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" },
+    orange: { background: "#fff7ed", color: "#FF7900", border: "1.5px solid #fed7aa" },
+    gray:   { background: "#f3f4f6", color: "#374151", border: "1.5px solid #e5e7eb" },
+    green:  { background: "#f0fdf4", color: "#15803d", border: "1.5px solid #bbf7d0" },
   };
   return (
-    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, ...styles[color] }}>
+    <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 13px", borderRadius: 20, whiteSpace: "nowrap", ...styles[color] }}>
       {label}
     </span>
   );

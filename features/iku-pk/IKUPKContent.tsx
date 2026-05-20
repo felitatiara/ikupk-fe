@@ -406,29 +406,49 @@ const [tahun, setTahun] = useState("2026");
     setFileRepoChildren(children);
     setFileRepoModalOpen(true);
 
-    // Tentukan filter email bawahan berdasarkan user_relations.
-    // Untuk level-1 non-admin (Kabag): user_relations berisi Tendik → batasi tampilan file.
-    // Untuk Dekan/WD (tanpa user_relations): allowedEmails = undefined → tampilkan semua.
+    // Filter email bawahan: gunakan disposisi (siapa yang menerima dari user ini untuk indikator ini)
+    // sebagai sumber utama, bukan user_relations (struktur org).
     let allowedEmails: Set<string> | undefined;
     if (showAtasanView && authUser?.id && displayRole !== 'admin') {
       if (roleLevel >= 2) {
-        // Kajur (2), Kaprodi (3): filter ke bawahan langsung
+        // Kajur (2), Kaprodi (3): filter ke penerima disposisi untuk indikator ini
         try {
-          const bawahanUsers = await getRelatedUsersFor(authUser.id);
-          if (bawahanUsers.length > 0) {
-            allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+          const disposisiRecords = await getDisposisi(indikatorId, tahun, authUser.id);
+          if (disposisiRecords.length > 0) {
+            const emails = disposisiRecords
+              .map(d => d.toUser?.email ?? '')
+              .filter(Boolean)
+              .map(e => e.toLowerCase());
+            if (emails.length > 0) {
+              allowedEmails = new Set(emails);
+            } else {
+              // toUser.email not returned — fallback to UserRelation
+              const bawahanUsers = await getRelatedUsersFor(authUser.id);
+              if (bawahanUsers.length > 0) {
+                allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+              }
+            }
           }
-          // Dekan/WD (roleLevel <= 1) yang tidak masuk blok ini: allowedEmails undefined → tampilkan semua
+          // Dekan/WD (roleLevel <= 1): allowedEmails undefined → tampilkan semua
         } catch {
           // Gagal fetch → tidak batasi
         }
       }
     } else if (!showAtasanView && !isDosen && authUser?.id) {
-      // Non-dosen (misal Kabag) klik "Input File": fetch bawahan langsung agar file Tendik tampil
+      // Non-dosen klik "Input File": gunakan disposisi, fallback ke UserRelation
       try {
-        const bawahanUsers = await getRelatedUsersFor(authUser.id);
-        if (bawahanUsers.length > 0) {
-          allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+        const disposisiRecords = await getDisposisi(indikatorId, tahun, authUser.id);
+        const emails = disposisiRecords
+          .map(d => d.toUser?.email ?? '')
+          .filter(Boolean)
+          .map(e => e.toLowerCase());
+        if (emails.length > 0) {
+          allowedEmails = new Set(emails);
+        } else {
+          const bawahanUsers = await getRelatedUsersFor(authUser.id);
+          if (bawahanUsers.length > 0) {
+            allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
+          }
         }
       } catch { }
     }
@@ -527,7 +547,16 @@ const [tahun, setTahun] = useState("2026");
                     {rowIdx === 0 && (
                       <>
                         <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
-                        <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                        <td rowSpan={totalRowSpan} className="td-cell v-top">
+                          <div>{group.nama}</div>
+                          {group.fromUserNama && (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
+                                dari {group.fromUserNama}
+                              </span>
+                            </div>
+                          )}
+                        </td>
                       </>
                     )}
                     <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
@@ -540,14 +569,14 @@ const [tahun, setTahun] = useState("2026");
                       {row.isLeaf ? leafCapaianPct : ''}
                     </td>
                     <td className="action-cell">
-                      {row.isLeaf && !(row.actionSumberData === 'ikupk' && displayRole !== 'admin') && (
+                      {row.isLeaf && (
                         <button
                           onClick={() => row.actionSumberData === 'ikupk'
                             ? handleDirectInputClick(row.actionId, row.actionNama)
                             : handleInputFileClick(row.actionId, row.actionNama, Number(leafTarget || 0), [])}
                           className="btn-small btn-small--green"
                         >
-                          Input File
+                          {row.actionSumberData === 'ikupk' ? 'Input Data' : 'Input File'}
                         </button>
                       )}
                     </td>
@@ -682,14 +711,21 @@ const [tahun, setTahun] = useState("2026");
         {fileRepoModalOpen && createPortal(
           <div className="modal-overlay" onClick={() => setFileRepoModalOpen(false)}>
             <div className="modal-content modal-content--md" onClick={(e) => e.stopPropagation()}>
-              <h3 className="modal-title modal-title--mb8">
-                {fileRepoIsAtasan ? 'Progress Bawahan' : 'File Repository'} — {fileRepoNama}
-              </h3>
-              <p className="modal-subtitle">
-                {fileRepoIsAtasan
-                  ? 'Menampilkan semua file yang telah diunggah oleh bawahan untuk indikator ini.'
-                  : 'File di bawah diambil otomatis dari folder repository yang sesuai dengan indikator ini.'}
-              </p>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: fileRepoIsAtasan ? '#dcfce7' : '#eff6ff', color: fileRepoIsAtasan ? '#16a34a' : '#2563eb', borderRadius: 20, padding: '2px 10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {fileRepoIsAtasan ? 'Progress Bawahan' : 'File Repository'}
+                  </span>
+                </div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: '0 0 4px', lineHeight: 1.4 }}>
+                  {fileRepoNama}
+                </h3>
+                <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>
+                  {fileRepoIsAtasan
+                    ? 'Semua file yang diunggah bawahan untuk indikator ini.'
+                    : 'File diambil otomatis dari folder repository yang sesuai indikator ini.'}
+                </p>
+              </div>
 
               {/* Error state */}
               {fileRepoError && (
@@ -716,106 +752,142 @@ const [tahun, setTahun] = useState("2026");
                   {/* ── ATASAN: semua file bawahan, dikelompokkan per dosen ── */}
                   {fileRepoIsAtasan ? (
                     <>
-                      <div className="file-info-row">
-                        <span className="file-info-label">Total File Bawahan</span>
-                        <span className={fileRepoFiles.length > 0 ? 'file-count--green' : 'file-count--muted'}>
-                          {fileRepoFiles.length} File dari {new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName)).size} dosen
-                          {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
-                        </span>
+                      {/* Stats bar */}
+                      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                        <div style={{ flex: 1, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px' }}>
+                          <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Total File</div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: fileRepoFiles.length > 0 ? '#16a34a' : '#9ca3af' }}>{fileRepoFiles.length}</div>
+                        </div>
+                        <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
+                          <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Pengumpul</div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName)).size}</div>
+                        </div>
+                        {fileRepoTarget > 0 && (
+                          <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
+                            <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Target</div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{fileRepoTarget}</div>
+                          </div>
+                        )}
                       </div>
 
                       {fileRepoFiles.length > 0 ? (
-                        <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           {Array.from(new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName || 'Tidak diketahui'))).map((ownerKey) => {
                             const ownerFiles = fileRepoFiles.filter(f => (f.ownerEmail || f.ownerName || 'Tidak diketahui') === ownerKey);
                             const ownerName = ownerFiles[0]?.ownerName || ownerKey;
+                            const initials = ownerName.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
                             return (
-                              <div key={ownerKey} className="owner-group">
-                                <div className="owner-group-header">
-                                  {ownerName} — {ownerFiles.length} file
+                              <div key={ownerKey} style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+                                {/* Owner header */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #0f9f6e, #087a55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                    {initials}
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ownerName}</div>
+                                    <div style={{ fontSize: 11, color: '#6b7280' }}>{ownerFiles.length} file diunggah</div>
+                                  </div>
+                                  <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
+                                    {ownerFiles.length} file
+                                  </span>
                                 </div>
-                                <div className="file-table-wrapper" style={{ padding: 0 }}>
-                                  <table className="file-table" style={{ margin: 0 }}>
-                                    <tbody>
-                                      {ownerFiles.map((f, idx) => (
-                                        <tr key={idx}>
-                                          <td className="atasan-file-no">{idx + 1}</td>
-                                          <td className="atasan-file-name">
-                                            {f.previewUrl
-                                              ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a>
-                                              : f.namaFile}
-                                          </td>
-                                          <td className="atasan-file-date">{f.tanggal}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                {/* File list */}
+                                <div>
+                                  {ownerFiles.map((f, idx) => (
+                                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < ownerFiles.length - 1 ? '1px solid #f3f4f6' : 'none', background: '#fff' }}>
+                                      <span style={{ width: 20, fontSize: 11, color: '#9ca3af', textAlign: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f9f6e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                                      </svg>
+                                      <span style={{ flex: 1, fontSize: 13, color: '#374151', minWidth: 0 }}>
+                                        {f.previewUrl
+                                          ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#0f9f6e', textDecoration: 'none', fontWeight: 500 }}>{f.namaFile}</a>
+                                          : f.namaFile}
+                                      </span>
+                                      <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>{f.tanggal}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             );
                           })}
-                        </>
+                        </div>
                       ) : (
-                        <div className="file-empty">
-                          <div className="file-empty-icon">📂</div>
-                          <div className="file-empty-text">Belum ada file yang diupload bawahan untuk indikator ini</div>
+                        <div style={{ textAlign: 'center', padding: '32px 0', color: '#9ca3af' }}>
+                          <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                          <div style={{ fontSize: 14, fontWeight: 500 }}>Belum ada file yang diupload bawahan</div>
                         </div>
                       )}
                     </>
                   ) : (
                     /* ── DOSEN: file sendiri ── */
                     <>
+
+                      {/* Periode + Stats row */}
+                      <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginBottom: fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget ? 6 : 14 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>PERIODE</label>
+                          <select
+                            value={fileRepoPeriode}
+                            onChange={(e) => setFileRepoPeriode(e.target.value)}
+                            style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#111827', background: '#fff', outline: 'none', cursor: 'pointer' }}
+                          >
+                            {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                        {(() => {
+                          const isOk = fileRepoTarget <= 0 || fileRepoFiles.length >= fileRepoTarget;
+                          const isWarn = !isOk && fileRepoFiles.length > 0;
+                          const bg = isOk ? '#f0fdf4' : isWarn ? '#fff7ed' : '#f9fafb';
+                          const border = isOk ? '#bbf7d0' : isWarn ? '#fed7aa' : '#e5e7eb';
+                          const color = isOk ? '#16a34a' : isWarn ? '#d97706' : '#9ca3af';
+                          return (
+                            <div style={{ flexShrink: 0, background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '0 14px', textAlign: 'center', minWidth: 90, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                              <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500 }}>File / Target</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color }}>
+                                {fileRepoFiles.length} / {fileRepoTarget > 0 ? fileRepoTarget : '—'}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Inline warning */}
                       {fileRepoFiles.length > 0 && fileRepoFiles.length < fileRepoTarget && (
-                        <div className="alert-banner--warning-lg">
-                          Jumlah file ({fileRepoFiles.length}) kurang dari target ({fileRepoTarget}). Mohon tambahkan file melalui{" "}
-                          <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" className="repo-link">Repository.fik.upnvj.ac.id</a>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 14, fontSize: 12, color: '#d97706' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                          <span>Kurang {fileRepoTarget - fileRepoFiles.length} file — upload via <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: '#d97706', fontWeight: 600 }}>Repository FIK</a></span>
                         </div>
                       )}
 
-                      <div className="periode-group">
-                        <label className="periode-label">Pilih Periode</label>
-                        <select value={fileRepoPeriode} onChange={(e) => setFileRepoPeriode(e.target.value)} className="periode-select">
-                          {periodeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                      </div>
-
-                      <div className="file-info-row">
-                        <span className="file-info-label">File Ditemukan</span>
-                        <span className={fileRepoFiles.length >= fileRepoTarget && fileRepoTarget > 0 ? 'file-count--green' : fileRepoFiles.length > 0 ? 'file-count--amber' : 'file-count--muted'}>
-                          {fileRepoFiles.length > 0 ? `${fileRepoFiles.length} File` : "Tidak ada file"}
-                          {fileRepoTarget > 0 && ` / Target: ${fileRepoTarget}`}
-                        </span>
-                      </div>
-
+                      {/* File list */}
                       {fileRepoFiles.length > 0 ? (
-                        <div className="file-table-wrapper">
-                          <table className="file-table">
-                            <thead>
-                              <tr>
-                                <th className="col-no">No</th>
-                                <th className="text-left">Nama File</th>
-                                <th className="col-tanggal">Tanggal</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {fileRepoFiles.map((f) => (
-                                <tr key={f.no}>
-                                  <td className="text-center">{f.no}</td>
-                                  <td>{f.previewUrl ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer">{f.namaFile}</a> : f.namaFile}</td>
-                                  <td className="text-center">{f.tanggal}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+                          {fileRepoFiles.map((f, idx) => (
+                            <div key={f.no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: idx < fileRepoFiles.length - 1 ? '1px solid #f3f4f6' : 'none', background: '#fff' }}>
+                              <span style={{ width: 22, fontSize: 11, color: '#9ca3af', textAlign: 'center', flexShrink: 0 }}>{f.no}</span>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f9f6e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              <span style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+                                {f.previewUrl
+                                  ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#0f9f6e', textDecoration: 'none', fontWeight: 500 }}>{f.namaFile}</a>
+                                  : <span style={{ color: '#374151' }}>{f.namaFile}</span>}
+                              </span>
+                              <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>{f.tanggal}</span>
+                            </div>
+                          ))}
                         </div>
                       ) : (
-                        <div className="file-empty">
-                          <div className="file-empty-icon">📂</div>
-                          <div className="file-empty-text">Belum ada file di folder ini</div>
-                          <div className="file-empty-hint">
-                            Upload file di{" "}
-                            <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer">Repository FIK</a>
-                            {" "}pada folder dengan nama kode indikator ini
+                        <div style={{ textAlign: 'center', padding: '28px 0', color: '#9ca3af' }}>
+                          <div style={{ fontSize: 32, marginBottom: 8 }}>📂</div>
+                          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Belum ada file di folder ini</div>
+                          <div style={{ fontSize: 12 }}>
+                            Upload di{' '}
+                            <a href="https://repository.fik.upnvj.ac.id" target="_blank" rel="noopener noreferrer" style={{ color: '#0f9f6e', fontWeight: 600 }}>Repository FIK</a>
+                            {' '}pada folder dengan kode indikator ini
                           </div>
                         </div>
                       )}
@@ -1227,7 +1299,16 @@ const [tahun, setTahun] = useState("2026");
                                   {rowIdx === 0 && (
                                     <>
                                       <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
-                                      <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                                      <td rowSpan={totalRowSpan} className="td-cell v-top">
+                                        <div>{group.nama}</div>
+                                        {group.fromUserNama && (
+                                          <div style={{ marginTop: 4, fontSize: 11, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
+                                              dari {group.fromUserNama}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </td>
                                     </>
                                   )}
                                   <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>{row.kode} {row.nama}</td>

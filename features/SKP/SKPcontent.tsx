@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import PageTransition from "@/components/layout/PageTransition";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -76,6 +77,7 @@ function skpStatusBadge(status: 'approved' | 'rejected' | 'pending') {
 // ─────────────────────────────────────────────
 export default function SKPContent() {
   const { user, token } = useAuth();
+  const router = useRouter();
   const roleLevel = user?.roleLevel ?? 4;
   const isDosen = roleLevel >= 4;
   const isDekan = user?.role?.toLowerCase() === 'dekan' && roleLevel <= 1;
@@ -735,9 +737,12 @@ export default function SKPContent() {
   return (
     <div>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Sasaran Kinerja Pegawai (SKP)
-        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, margin: 0 }}>
+            Sasaran Kinerja Pegawai (SKP)
+          </p>
+          
+        </div>
 
         {/* ── Card identitas pegawai ── */}
         <div
@@ -777,25 +782,27 @@ export default function SKPContent() {
               ))}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-              <button
-                onClick={generateRencanaSKP}
-                disabled={rows.length === 0}
-                style={{
-                  padding: "10px 20px",
-                  borderRadius: 8,
-                  border: "none",
-                  backgroundColor: rows.length > 0 ? "#2563eb" : "#d1d5db",
-                  color: rows.length > 0 ? "white" : "#9ca3af",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: rows.length > 0 ? "pointer" : "not-allowed",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                🖨️ Cetak Rencana SKP
-              </button>
+             <button
+            onClick={() => {
+              const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
+              router.push(`${basePath}/skp/cetak`);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              border: "none",
+              borderRadius: 8,
+              background: "#1d4ed8",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            🖨️ Cetak Rencana SKP
+          </button>
               {rows.length === 0 && (
                 <span style={{ fontSize: 11, color: "#6b7280", textAlign: "right" }}>
                   Tersedia setelah target didisposisikan
