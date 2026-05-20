@@ -21,7 +21,7 @@ import {
   ProgressChartItem,
   IndikatorDetail,
 } from "@/services/monitoringService";
-import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, type RealisasiFileItem, type MonitoringBawahanResult } from "@/lib/api";
+import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, type RealisasiFileItem, type MonitoringBawahanResult, type MonitoringBawahanUser, type MonitoringBawahanRow } from "@/lib/api";
 import type { User } from "@/types";
 
 const jenisOptions = [
@@ -387,6 +387,121 @@ function KpiCard({
   );
 }
 
+// ── Bawahan Cell Modal ────────────────────────────────────────────────────────
+
+function BawahanCellModal({
+  user,
+  row,
+  target,
+  realisasi,
+  token,
+  onClose,
+}: {
+  user: MonitoringBawahanUser;
+  row: MonitoringBawahanRow;
+  target: number;
+  realisasi: number;
+  token: string;
+  onClose: () => void;
+}) {
+  const [files, setFiles] = useState<RealisasiFileItem[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoadingFiles(true);
+      try {
+        const result = await getAllRealisasiFiles(row.leafId, token);
+        setFiles(result.files.filter(f => {
+          const email = f.ownerEmail || f.owner?.email || "";
+          return email === user.email;
+        }));
+      } catch {
+        setFiles([]);
+      } finally {
+        setLoadingFiles(false);
+      }
+    }
+    load();
+  }, [row.leafId, user.email, token]);
+
+  const progress = target > 0 ? Math.min(100, Math.round((realisasi / target) * 100)) : 0;
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: "24px 16px" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg, #0f9f6e, #0d8c60)", padding: "18px 24px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{user.nama}</div>
+            <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 2 }}>{user.roleName}{user.unitNama ? ` · ${user.unitNama}` : ""}</div>
+            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 11, marginTop: 1 }}>{user.email}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", borderRadius: 8, padding: "4px 10px", color: "#fff", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Indicator */}
+        <div style={{ padding: "12px 24px", borderBottom: "1px solid #f0fdf4" }}>
+          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#065f46", fontWeight: 700, background: "#d1fae5", padding: "2px 6px", borderRadius: 4 }}>{row.leafKode}</span>
+          <div style={{ fontSize: 13, color: "#1f2937", fontWeight: 600, marginTop: 6 }}>{row.leafNama}</div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", borderBottom: "1px solid #f0fdf4" }}>
+          {([
+            { label: "Target Disposisi", value: `${target}${row.satuan ? " " + row.satuan : ""}`, color: "#065f46", bg: "#f0fdf4" },
+            { label: "Disubmit", value: `${realisasi}${row.satuan ? " " + row.satuan : ""}`, color: "#15803d", bg: "#f0fdf4" },
+            { label: "Progress", value: `${progress}%`, color: progress >= 100 ? "#15803d" : "#d97706", bg: progress >= 100 ? "#f0fdf4" : "#fffbeb" },
+          ] as const).map(({ label, value, color, bg }) => (
+            <div key={label} style={{ background: bg, padding: "14px 12px", textAlign: "center", borderRight: "1px solid #dcfce7" }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
+              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Files */}
+        <div style={{ padding: "14px 24px 20px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 10 }}>
+            File Bukti {!loadingFiles && <span style={{ color: "#6b7280", fontWeight: 400 }}>({files.length})</span>}
+          </div>
+          {loadingFiles ? (
+            <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 12, padding: "20px 0" }}>Memuat file...</div>
+          ) : files.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#d1d5db", fontSize: 12, padding: "20px 0" }}>Belum ada file yang disubmit</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+              {files.map((f) => (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#f8fafc", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb" }}>
+                  <span style={{ fontSize: 16 }}>📄</span>
+                  <div style={{ flex: 1, overflow: "hidden" }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                    <div style={{ fontSize: 10, color: "#9ca3af" }}>{new Date(f.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
+                  </div>
+                  <a href={f.preview_url || f.download_url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 11, color: "#0369a1", fontWeight: 600, textDecoration: "none", padding: "3px 8px", background: "#eff6ff", borderRadius: 5, border: "1px solid #bfdbfe", whiteSpace: "nowrap" }}>
+                    Lihat
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: "1px solid #dcfce7", padding: "12px 24px", textAlign: "right" }}>
+          <button onClick={onClose} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 20px", color: "#065f46", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Custom Bar Tooltip ────────────────────────────────────────────────────────
 
 function BarTooltip({ active, payload }: { active?: boolean; payload?: ChartTooltipItem[] }) {
@@ -438,6 +553,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [personalLoading, setPersonalLoading] = useState(false);
 
   const [detailItem, setDetailItem] = useState<ProgressChartItem | null>(null);
+  const [bawahanCellModal, setBawahanCellModal] = useState<{
+    user: MonitoringBawahanUser;
+    row: MonitoringBawahanRow;
+    target: number;
+    realisasi: number;
+  } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima">("keseluruhan");
 
@@ -547,8 +668,18 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           level: 0,
         });
         for (const sub of group.subIndikators) {
-          const target = sub.disposisiJumlah ?? null;
-          const realisasi = sub.realisasiJumlah ?? null;
+          // Aggregate target from children when sub has no direct disposisi
+          const childTarget = (sub.children ?? []).reduce((s, c) => {
+            const ct = c.disposisiJumlah ?? c.nilaiTarget ?? 0;
+            if (ct > 0) return s + ct;
+            return s + (c.children ?? []).reduce((gs, gc) => gs + (gc.disposisiJumlah ?? gc.nilaiTarget ?? 0), 0);
+          }, 0);
+          const childRealisasi = (sub.children ?? []).reduce((s, c) => s + (c.realisasiJumlah ?? 0), 0);
+
+          const target = sub.disposisiJumlah ?? (childTarget > 0 ? childTarget : null);
+          const realisasi = sub.realisasiJumlah !== null && sub.realisasiJumlah !== undefined
+            ? sub.realisasiJumlah
+            : (childRealisasi > 0 ? childRealisasi : null);
           const capaian =
             target !== null && target > 0 && realisasi !== null
               ? Math.min((realisasi / target) * 100, 100)
@@ -564,7 +695,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           });
           for (const child of (sub.children ?? [])) {
             const cTarget = child.disposisiJumlah ?? child.nilaiTarget ?? null;
-            const cRealisasi = null;
+            const cRealisasi = child.realisasiJumlah ?? null;
             const cCapaian =
               cTarget !== null && cTarget > 0 && cRealisasi !== null
                 ? Math.min((cRealisasi / cTarget) * 100, 100)
@@ -1175,21 +1306,21 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 const users = filteredBawahan;
                 const groupIds = [...new Set(rows.map((r) => r.groupId))];
                 let rowCounter = 0;
-                const NAVY = "#1e3a5f";
+                const HDR = "#0a7a54";
                 // All 4 fixed columns are sticky — only user columns scroll
                 const W_NO = 44, W_KODE = 88, W_IND = 260, W_TGT = 88;
                 const L_NO = 0, L_KODE = W_NO, L_IND = W_NO + W_KODE, L_TGT = W_NO + W_KODE + W_IND;
                 const USER_W = 130;
                 const tableW = L_TGT + W_TGT + users.length * USER_W;
-                const bNav = "1px solid #2d4f7c";
+                const bNav = "1px solid #087a55";
                 const bRow = "1px solid #eef2f7";
-                const bGroup = "2px solid #c7d9f5";
-                const shadowSep = "3px 0 6px rgba(0,0,0,0.1)";
+                const bGroup = "2px solid #bbf7d0";
+                const shadowSep = "3px 0 6px rgba(0,0,0,0.08)";
 
-                // sticky th — always navy background
+                // sticky th — always green header
                 const th = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({
                   position: "sticky", left, zIndex: 3, width: w,
-                  backgroundColor: NAVY, borderBottom: "2px solid #2d4f7c",
+                  backgroundColor: HDR, borderBottom: "2px solid #087a55",
                   padding: "10px 8px", verticalAlign: "middle", ...extra,
                 });
                 // sticky td — bg from row
@@ -1210,14 +1341,14 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       </colgroup>
                       <thead>
                         <tr>
-                          <th style={th(L_NO, W_NO, { textAlign: "center", color: "#94a3b8", fontWeight: 600, fontSize: 11, borderRight: bNav })}>No</th>
-                          <th style={th(L_KODE, W_KODE, { textAlign: "left", color: "#93c5fd", fontWeight: 700, fontSize: 10, fontFamily: "monospace", borderRight: bNav })}>Kode</th>
-                          <th style={th(L_IND, W_IND, { textAlign: "left", color: "#e2e8f0", fontWeight: 700, fontSize: 12, borderRight: bNav })}>Indikator</th>
-                          <th style={th(L_TGT, W_TGT, { textAlign: "center", color: "#a5f3fc", fontWeight: 700, fontSize: 11, borderRight: "2px solid #4a7cbf", boxShadow: shadowSep })}>Target</th>
+                          <th style={th(L_NO, W_NO, { textAlign: "center", color: "#a7f3d0", fontWeight: 600, fontSize: 11, borderRight: bNav })}>No</th>
+                          <th style={th(L_KODE, W_KODE, { textAlign: "left", color: "#a7f3d0", fontWeight: 700, fontSize: 10, fontFamily: "monospace", borderRight: bNav })}>Kode</th>
+                          <th style={th(L_IND, W_IND, { textAlign: "left", color: "#ecfdf5", fontWeight: 700, fontSize: 12, borderRight: bNav })}>Indikator</th>
+                          <th style={th(L_TGT, W_TGT, { textAlign: "center", color: "#ecfdf5", fontWeight: 700, fontSize: 11, borderRight: "2px solid #087a55", boxShadow: shadowSep })}>Target</th>
                           {users.map((u) => (
-                            <th key={u.id} style={{ backgroundColor: NAVY, borderBottom: "2px solid #2d4f7c", padding: "8px 8px", textAlign: "center", fontWeight: 600, fontSize: 11, borderRight: bNav, verticalAlign: "middle", overflow: "hidden" }}>
-                              <div style={{ color: "#e2e8f0", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.nama.split(",")[0]}</div>
-                              <div style={{ fontSize: 10, color: "#7eb3e8", fontWeight: 400, marginTop: 2 }}>{u.roleName}</div>
+                            <th key={u.id} style={{ backgroundColor: HDR, borderBottom: "2px solid #087a55", padding: "8px 8px", textAlign: "center", fontWeight: 600, fontSize: 11, borderRight: bNav, verticalAlign: "middle", overflow: "hidden" }}>
+                              <div style={{ color: "#ecfdf5", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.nama.split(",")[0]}</div>
+                              <div style={{ fontSize: 10, color: "#a7f3d0", fontWeight: 400, marginTop: 2 }}>{u.roleName}</div>
                             </th>
                           ))}
                         </tr>
@@ -1226,18 +1357,18 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         {groupIds.map((groupId) => {
                           const groupRows = rows.filter((r) => r.groupId === groupId);
                           const first = groupRows[0];
-                          const GBG = "#eef4ff";
+                          const GBG = "#f0fdf4";
                           return [
                             // Group header row: 4 sticky tds + 1 colSpan for user columns
                             <tr key={`g-${groupId}`}>
                               <td style={td(L_NO, W_NO, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })} />
                               <td style={td(L_KODE, W_KODE, GBG, { padding: "6px 8px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: "#1d4ed8", fontFamily: "monospace", background: "#dbeafe", padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>{first.groupKode}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#065f46", fontFamily: "monospace", background: "#d1fae5", padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>{first.groupKode}</span>
                               </td>
                               <td style={td(L_IND, W_IND, GBG, { padding: "6px 12px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: NAVY, overflow: "hidden", display: "block", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{first.groupNama}</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: "#065f46", overflow: "hidden", display: "block", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{first.groupNama}</span>
                               </td>
-                              <td style={td(L_TGT, W_TGT, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: "2px solid #c7d9f5", boxShadow: shadowSep })} />
+                              <td style={td(L_TGT, W_TGT, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: "2px solid #bbf7d0", boxShadow: shadowSep })} />
                               <td colSpan={users.length} style={{ backgroundColor: GBG, borderTop: bGroup, borderBottom: bGroup }} />
                             </tr>,
                             ...groupRows.map((row) => {
@@ -1254,13 +1385,22 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                       : <span style={{ color: "#d1d5db" }}>—</span>}
                                   </td>
                                   {users.map((u) => {
-                                    const val = row.disposisiByUser[u.id] ?? null;
+                                    const target = row.disposisiByUser[u.id] ?? null;
+                                    const real = row.realisasiByUser?.[u.id] ?? null;
                                     return (
                                       <td key={u.id} style={{ padding: "7px 8px", textAlign: "center", backgroundColor: bg, borderRight: bRow, borderBottom: bRow }}>
-                                        {val !== null && val > 0 ? (
-                                          <span style={{ display: "inline-block", background: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: 12, padding: "2px 8px", borderRadius: 5, border: "1px solid #bbf7d0" }}>
-                                            {val}{row.satuan && <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{row.satuan}</span>}
-                                          </span>
+                                        {target !== null && target > 0 ? (
+                                          <button
+                                            onClick={() => setBawahanCellModal({ user: u, row, target, realisasi: real ?? 0 })}
+                                            style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                                          >
+                                            <span style={{ display: "inline-block", background: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: 12, padding: "2px 8px", borderRadius: 5, border: "1px solid #bbf7d0" }}>
+                                              {target}{row.satuan && <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{row.satuan}</span>}
+                                            </span>
+                                            {real !== null && real > 0 && (
+                                              <span style={{ fontSize: 10, color: "#0369a1", fontWeight: 600 }}>{real} disubmit</span>
+                                            )}
+                                          </button>
                                         ) : <span style={{ color: "#d1d5db" }}>—</span>}
                                       </td>
                                     );
@@ -1286,6 +1426,18 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           tahun={selectedTahun}
           token={token}
           onClose={() => setDetailItem(null)}
+        />
+      )}
+
+      {/* Bawahan Cell Modal */}
+      {bawahanCellModal && (
+        <BawahanCellModal
+          user={bawahanCellModal.user}
+          row={bawahanCellModal.row}
+          target={bawahanCellModal.target}
+          realisasi={bawahanCellModal.realisasi}
+          token={token}
+          onClose={() => setBawahanCellModal(null)}
         />
       )}
     </div>

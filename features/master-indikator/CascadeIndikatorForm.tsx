@@ -149,14 +149,16 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
                 {/* ── Step card ── */}
                 <div style={{ flex: 1, marginBottom: isLast ? 0 : 16, paddingBottom: 4 }}>
                   <div style={{
-                    background: "#fff",
-                    border: filled ? "1.5px solid #fed7aa" : "1.5px solid #e5e7eb",
-                    borderRadius: 14,
-                    padding: "16px 18px",
+                    background: filled
+                      ? "linear-gradient(145deg, #fff 0%, #fff7ed 100%)"
+                      : "linear-gradient(145deg, #ffffff 0%, #f9fafb 100%)",
+                    border: filled ? "1.5px solid #fdba74" : "1.5px solid #e5e7eb",
+                    borderRadius: 16,
+                    padding: "18px 20px",
                     boxShadow: filled
-                      ? "0 2px 12px rgba(255,121,0,0.08), 0 1px 3px rgba(0,0,0,0.04)"
-                      : "0 1px 4px rgba(0,0,0,0.05)",
-                    transition: "border-color 0.2s, box-shadow 0.2s",
+                      ? "0 4px 20px rgba(255,121,0,0.10), 0 1px 4px rgba(0,0,0,0.04)"
+                      : "0 4px 14px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.03)",
+                    transition: "border-color 0.2s, box-shadow 0.2s, background 0.2s",
                   }}>
                     {/* Card header */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -196,17 +198,18 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
                               style={{
                                 width: "100%",
                                 border: `1.5px solid ${roleId > 0 ? "#fdba74" : "#e5e7eb"}`,
-                                borderRadius: 9,
-                                padding: "9px 36px 9px 14px",
+                                borderRadius: 10,
+                                padding: "10px 36px 10px 14px",
                                 fontSize: 13,
                                 fontWeight: roleId > 0 ? 600 : 400,
-                                color: roleId === 0 ? "#9ca3af" : "#111827",
+                                color: roleId === 0 ? "#9ca3af" : "#1c1917",
                                 outline: "none",
-                                background: roleId > 0 ? "#fffbf5" : "#fafafa",
+                                background: roleId > 0 ? "#fffbf5" : "#fff",
                                 cursor: "pointer",
                                 appearance: "none",
                                 WebkitAppearance: "none",
                                 transition: "border-color 0.15s, background 0.15s",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                               }}
                             >
                               <option value={0} disabled>Pilih role penerima…</option>
@@ -238,10 +241,12 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
                     <button type="button" onClick={() => addRoleToStep(si)}
                       style={{
                         marginTop: 12,
-                        display: "inline-flex", alignItems: "center", gap: 5,
-                        padding: "6px 12px", borderRadius: 7,
-                        border: "1.5px dashed #fdba74", background: "#fff7ed",
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "7px 14px", borderRadius: 8,
+                        border: "1.5px solid #fdba74", background: "#fff7ed",
                         color: "#FF7900", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        boxShadow: "0 1px 4px rgba(255,121,0,0.08)",
+                        transition: "background 0.15s, box-shadow 0.15s",
                       }}>
                       + Tambah role lain di langkah ini
                     </button>
@@ -254,7 +259,6 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
 
         {/* Add step button */}
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: 8 }}>
-          {/* Align with card (52px rail offset) */}
           <div style={{ width: 52, flexShrink: 0, display: "flex", justifyContent: "center" }}>
             <div style={{ width: 3, height: 24, background: "#e5e7eb", borderRadius: 2 }} />
           </div>
@@ -262,14 +266,16 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
             style={{
               display: "flex", alignItems: "center", gap: 8,
               padding: "10px 20px", borderRadius: 10,
-              border: "1.5px dashed #d1d5db", background: "#fafafa",
+              border: "1.5px solid #e5e7eb",
+              background: "linear-gradient(145deg, #ffffff 0%, #f9fafb 100%)",
               color: "#6b7280", fontSize: 13, fontWeight: 700, cursor: "pointer",
-              transition: "border-color 0.15s, background 0.15s",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+              transition: "all 0.15s",
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#FF7900"; (e.currentTarget as HTMLButtonElement).style.color = "#FF7900"; (e.currentTarget as HTMLButtonElement).style.background = "#fff7ed"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#d1d5db"; (e.currentTarget as HTMLButtonElement).style.color = "#6b7280"; (e.currentTarget as HTMLButtonElement).style.background = "#fafafa"; }}
+            onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "#FF7900"; b.style.color = "#FF7900"; b.style.background = "linear-gradient(145deg, #fff7ed 0%, #fff 100%)"; b.style.boxShadow = "0 4px 12px rgba(255,121,0,0.12)"; }}
+            onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "#e5e7eb"; b.style.color = "#6b7280"; b.style.background = "linear-gradient(145deg, #ffffff 0%, #f9fafb 100%)"; b.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)"; }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1, fontWeight: 800 }}>+</span> Tambah Langkah
+            <span style={{ fontSize: 16, lineHeight: 1, fontWeight: 800 }}>+</span> Tambah Langkah
           </button>
         </div>
 
@@ -309,8 +315,9 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
         {/* Sticky footer */}
         <div style={{
           position: "sticky", bottom: 0,
-          background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)",
-          borderTop: "1px solid #f3f4f6",
+          background: "rgba(255,255,255,0.97)", backdropFilter: "blur(12px)",
+          borderTop: "1px solid #e5e7eb",
+          boxShadow: "0 -4px 20px rgba(0,0,0,0.07)",
           padding: "14px 0", marginTop: 28,
           display: "flex", gap: 10, justifyContent: "flex-end",
         }}>
