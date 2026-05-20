@@ -40,13 +40,14 @@ export default function ValidasiRealisasiAtasanContent() {
   const [loading, setLoading] = useState(true);
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [jenisFilter, setJenisFilter] = useState<"IKU" | "PK">("IKU");
-  const [validInputs, setValidInputs] = useState<Record<number, string>>({});
-  const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [viewMode, setViewMode] = useState<"dosen" | "indikator">("dosen");
 
   // Detail modal
   const [detail, setDetail] = useState<DetailModal | null>(null);
   const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string }[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [checkedFiles, setCheckedFiles] = useState<Set<number>>(new Set());
+  const [savingModal, setSavingModal] = useState(false);
 
   // Export loading
   const [exporting, setExporting] = useState(false);
@@ -61,6 +62,7 @@ export default function ValidasiRealisasiAtasanContent() {
     if (!detail || !token) return;
     setDetailLoading(true);
     setDetailFiles([]);
+    setCheckedFiles(new Set());
     getAllRealisasiFiles(detail.submission.indikatorId, token)
       .then((result) => {
         const dosenEmailLower = detail.dosenEmail.toLowerCase();
@@ -75,6 +77,9 @@ export default function ValidasiRealisasiAtasanContent() {
           .filter(f => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
           .map(mapFile);
         setDetailFiles(filtered);
+        // Pre-check files based on saved validFileCount
+        const savedCount = detail.submission.validFileCount ?? 0;
+        setCheckedFiles(new Set(Array.from({ length: Math.min(savedCount, filtered.length) }, (_, i) => i)));
       })
       .catch(() => setDetailFiles([]))
       .finally(() => setDetailLoading(false));
@@ -85,13 +90,6 @@ export default function ValidasiRealisasiAtasanContent() {
     try {
       const data = await getSubmissionsForAtasan(user!.id, tahun);
       setRawGroups(data);
-      const inputs: Record<number, string> = {};
-      data.forEach((g) =>
-        g.submissions.forEach((s) => {
-          inputs[s.id] = s.validFileCount !== null ? String(s.validFileCount) : "";
-        })
-      );
-      setValidInputs(inputs);
     } catch (err) {
       console.error("Failed to fetch submissions:", err);
       setRawGroups([]);
@@ -120,31 +118,37 @@ export default function ValidasiRealisasiAtasanContent() {
     return Array.from(map.values()).sort((a, b) => a.dosenNama.localeCompare(b.dosenNama));
   })();
 
+  const indikatorGroups = rawGroups
+    .filter((g) => g.indikator.jenis.toUpperCase() === jenisFilter)
+    .slice()
+    .sort((a, b) => a.indikator.kode.localeCompare(b.indikator.kode));
+
   const totalSubmissions = rawGroups.reduce((n, g) => n + g.submissions.length, 0);
   const totalValidated = rawGroups.reduce(
     (n, g) => n + g.submissions.filter((s) => s.validFileCount !== null).length,
     0
   );
 
-  const handleSave = async (submissionId: number) => {
-    const val = parseInt(validInputs[submissionId] ?? "");
-    if (isNaN(val) || val < 0) return;
-    setSaving((prev) => ({ ...prev, [submissionId]: true }));
+  const handleSaveModal = async () => {
+    if (!detail || !token) return;
+    setSavingModal(true);
+    const val = checkedFiles.size;
     try {
-      await validateRealisasiAtasan(submissionId, val, token ?? undefined);
+      await validateRealisasiAtasan(detail.submission.id, val, token ?? undefined);
       setRawGroups((prev) =>
         prev.map((g) => ({
           ...g,
           submissions: g.submissions.map((s) =>
-            s.id === submissionId ? { ...s, validFileCount: val, status: "validated" } : s
+            s.id === detail.submission.id ? { ...s, validFileCount: val, status: "validated" } : s
           ),
         }))
       );
+      setDetail((prev) => prev ? { ...prev, submission: { ...prev.submission, validFileCount: val } } : prev);
       toast.success("Validasi berhasil disimpan.");
-    } catch (err) {
+    } catch {
       toast.error("Gagal menyimpan validasi.");
     } finally {
-      setSaving((prev) => ({ ...prev, [submissionId]: false }));
+      setSavingModal(false);
     }
   };
 
@@ -374,30 +378,42 @@ export default function ValidasiRealisasiAtasanContent() {
 
         {/* Filter */}
         <div className="filter-card">
-          <div className="filter-grid-2">
-            <div>
-              <label className="filter-label">Jenis</label>
-              <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK")} className="filter-isi">
-                <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-                <option value="PK">Perjanjian Kinerja (PK)</option>
-              </select>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <label className="filter-label">Jenis</label>
+                <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK")} className="filter-isi">
+                  <option value="IKU">Indikator Kinerja Utama (IKU)</option>
+                  <option value="PK">Perjanjian Kinerja (PK)</option>
+                </select>
+              </div>
+              <div>
+                <label className="filter-label">Tahun</label>
+                <select value={tahun} onChange={(e) => setTahun(e.target.value)} className="filter-isi">
+                  {[2023, 2024, 2025, 2026].map((y) => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="filter-label">Tampilan</label>
+                <div style={{ display: "flex", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", background: "#f9fafb", height: 36 }}>
+                  {(["dosen", "indikator"] as const).map((mode) => (
+                    <button key={mode} onClick={() => setViewMode(mode)} style={{ padding: "0 16px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: viewMode === mode ? "#0f9f6e" : "transparent", color: viewMode === mode ? "#fff" : "#6b7280", transition: "all 0.15s" }}>
+                      {mode === "dosen" ? "Per Dosen" : "Per Indikator"}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="filter-label">Tahun</label>
-              <select value={tahun} onChange={(e) => setTahun(e.target.value)} className="filter-isi">
-                {[2023, 2024, 2025, 2026].map((y) => (
-                  <option key={y} value={String(y)}>{y}</option>
-                ))}
-              </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={exportToExcel} disabled={exporting} className="btn-green-sm">
+                {exporting ? "Mengekspor..." : "Export Validasi"}
+              </button>
+              <button onClick={exportLaporanIKUPK} disabled={exportingLaporan} className="btn-green-sm">
+                {exportingLaporan ? "Mengekspor..." : "Export Laporan IKU/PK"}
+              </button>
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={exportToExcel} disabled={exporting} className="btn-green-sm">
-              {exporting ? "Mengekspor..." : "Export Validasi"}
-            </button>
-            <button onClick={exportLaporanIKUPK} disabled={exportingLaporan} className="btn-green-sm">
-              {exportingLaporan ? "Mengekspor..." : "Export Laporan IKU/PK"}
-            </button>
           </div>
         </div>
 
@@ -405,78 +421,105 @@ export default function ValidasiRealisasiAtasanContent() {
         {detail && createPortal(
           <div className="modal-overlay" onClick={() => setDetail(null)}>
             <div className="modal-content modal-content--md" onClick={e => e.stopPropagation()} style={{ padding: 0, display: "flex", flexDirection: "column", maxHeight: "85vh", overflow: "hidden" }}>
+
               {/* Header */}
-              <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <h3 className="modal-title" style={{ marginBottom: 4 }}>Detail Realisasi</h3>
-                  <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{detail.dosenNama} · {detail.dosenEmail}</p>
+              <div style={{ padding: "18px 24px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg, #0f9f6e, #087a55)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+                  {detail.dosenNama.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
                 </div>
-                <button
-                  onClick={() => setDetail(null)}
-                  style={{ background: "#f3f4f6", border: "none", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280", fontSize: 14, flexShrink: 0, marginLeft: 12 }}
-                >
-                  ✕
-                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{detail.dosenNama}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>{detail.dosenEmail}</div>
+                </div>
+                <button onClick={() => setDetail(null)} style={{ background: "#f3f4f6", border: "none", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280", fontSize: 13, flexShrink: 0 }}>✕</button>
               </div>
 
-              {/* Info cards */}
-              <div style={{ padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px" }}>
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Indikator</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "3px 0 0" }}>
-                      {detail.submission.indikatorKode} — {detail.submission.indikatorNama}
-                    </p>
+              {/* Info section */}
+              <div style={{ padding: "14px 24px", borderBottom: "1px solid #f3f4f6" }}>
+                {/* Indikator */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Indikator</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>
+                    {detail.submission.indikatorKode} — {detail.submission.indikatorNama}
                   </div>
-                  <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
-                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Diunggah</p>
-                    <p style={{ fontSize: 20, fontWeight: 700, color: "#1f2937", margin: "2px 0 0" }}>{detail.submission.fileCount}</p>
+                </div>
+
+                {/* Stats row */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, marginBottom: 2 }}>File Diunggah</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#15803d" }}>{detail.submission.fileCount}</div>
                   </div>
-                  <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
-                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>File Valid</p>
-                    <p style={{ fontSize: 20, fontWeight: 700, color: detail.submission.validFileCount !== null ? "#16a34a" : "#9ca3af", margin: "2px 0 0" }}>
-                      {detail.submission.validFileCount !== null ? detail.submission.validFileCount : "—"}
-                    </p>
+                  <div style={{ background: checkedFiles.size > 0 ? "#f0fdf4" : "#f9fafb", border: `1px solid ${checkedFiles.size > 0 ? "#bbf7d0" : "#e5e7eb"}`, borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, marginBottom: 2 }}>File Valid</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: checkedFiles.size > 0 ? "#15803d" : "#9ca3af" }}>
+                      {checkedFiles.size > 0 ? checkedFiles.size : "—"}
+                    </div>
                   </div>
-                  <div>
-                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Target Dosen</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "3px 0 0" }}>
+                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, marginBottom: 2 }}>Target</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#374151" }}>
                       {detail.submission.targetDosen !== null ? detail.submission.targetDosen : "—"}
-                    </p>
+                    </div>
                   </div>
-                  <div>
-                    <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>Periode</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#1f2937", margin: "3px 0 0" }}>{detail.submission.periode ?? "—"}</p>
+                  <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, marginBottom: 2 }}>Periode</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#374151", lineHeight: 1.4, marginTop: 4 }}>
+                      {detail.submission.periode ?? "—"}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* File list — scrollable */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Daftar File {!detailLoading && detailFiles.length > 0 && <span style={{ color: "#6b7280", fontWeight: 400 }}>({detailFiles.length} file)</span>}
-                </p>
+              {/* File list */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "14px 24px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Daftar File</span>
+                  {!detailLoading && detailFiles.length > 0 && (
+                    <span style={{ fontSize: 11, background: "#f3f4f6", color: "#6b7280", borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{detailFiles.length}</span>
+                  )}
+                </div>
+
                 {detailLoading ? (
-                  <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 13 }}>Memuat file…</div>
+                  <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", fontSize: 13 }}>Memuat file…</div>
                 ) : detailFiles.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "32px 0", color: "#9ca3af", fontSize: 13 }}>Tidak ada file ditemukan.</div>
+                  <div style={{ textAlign: "center", padding: "28px 0", color: "#9ca3af" }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
+                    <div style={{ fontSize: 13 }}>Tidak ada file ditemukan</div>
+                  </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
                     {detailFiles.map((f, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "#e0e7ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 14 }}>
-                          📄
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: i < detailFiles.length - 1 ? "1px solid #f3f4f6" : "none", background: checkedFiles.has(i) ? "#f0fdf4" : "#fff", transition: "background 0.15s" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f9f6e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           {f.previewUrl
-                            ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#2563eb", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+                            ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#0f9f6e", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
                             : <span style={{ fontSize: 13, fontWeight: 500, color: "#1f2937", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
                           }
                           {f.ownerName && (
-                            <p style={{ fontSize: 11, color: "#6b7280", margin: "2px 0 0" }}>{f.ownerName}{f.ownerEmail ? ` · ${f.ownerEmail}` : ""}</p>
+                            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{f.ownerName}{f.ownerEmail ? ` · ${f.ownerEmail}` : ""}</div>
                           )}
                         </div>
-                        <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{f.tanggal}</span>
+                        <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0, marginRight: 6 }}>{f.tanggal}</span>
+                        <button
+                          onClick={() => setCheckedFiles((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(i)) next.delete(i); else next.add(i);
+                            return next;
+                          })}
+                          style={{ width: 22, height: 22, borderRadius: 6, border: checkedFiles.has(i) ? "none" : "2px solid #d1d5db", background: checkedFiles.has(i) ? "#0f9f6e" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.15s", padding: 0 }}
+                        >
+                          {checkedFiles.has(i) && (
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <polyline points="2,6 5,9 10,3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -484,13 +527,15 @@ export default function ValidasiRealisasiAtasanContent() {
               </div>
 
               {/* Footer */}
-              <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", background: "#f9fafb", borderRadius: "0 0 12px 12px" }}>
-                <button
-                  onClick={() => setDetail(null)}
-                  style={{ padding: "8px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "1px solid #d1d5db", background: "white", cursor: "pointer", color: "#374151" }}
-                >
+              <div style={{ padding: "12px 24px", borderTop: "1px solid #f3f4f6", display: "flex", justifyContent: "flex-end", gap: 8, background: "#fafafa", borderRadius: "0 0 16px 16px" }}>
+                <button onClick={() => setDetail(null)} style={{ padding: "7px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", color: "#374151" }}>
                   Tutup
                 </button>
+                {!detailLoading && detailFiles.length > 0 && (
+                  <button onClick={handleSaveModal} disabled={savingModal} style={{ padding: "7px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", background: savingModal ? "#9ca3af" : "#0f9f6e", color: "#fff", cursor: savingModal ? "not-allowed" : "pointer" }}>
+                    {savingModal ? "Menyimpan…" : "Simpan Validasi"}
+                  </button>
+                )}
               </div>
             </div>
           </div>,
@@ -500,94 +545,147 @@ export default function ValidasiRealisasiAtasanContent() {
         {/* Content */}
         {loading ? (
           <p className="text-loading text-center" style={{ padding: 40 }}>Memuat data…</p>
-        ) : dosenGroups.length === 0 ? (
+        ) : (viewMode === "dosen" ? dosenGroups.length === 0 : indikatorGroups.length === 0) ? (
           <p className="text-empty">Tidak ada submission {jenisFilter} dari bawahan Anda untuk tahun {tahun}.</p>
         ) : (
-          dosenGroups.map((dg) => (
-            <div key={dg.dosenId} className="table-section-card" style={{ marginBottom: 16 }}>
-              <div className="table-section-header">
-                <div>
-                  <h3 className="table-section-title">{dg.dosenNama}</h3>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6b7280" }}>{dg.dosenEmail}</p>
-                </div>
-                <span style={{ fontSize: 12, color: "#6b7280" }}>
-                  {dg.submissions.filter(s => s.validFileCount !== null).length}/{dg.submissions.length} divalidasi
-                </span>
-              </div>
-
-              <div className="table-wrapper">
+          <div className="table-section-card" style={{ overflow: "hidden", padding: 0 }}>
+            <div className="table-wrapper" style={{ margin: 0 }}>
+              {viewMode === "dosen" ? (
                 <table className="atasan-table">
                   <thead>
                     <tr>
-                      <th className="text-left">Indikator</th>
+                      <th className="text-left" style={{ width: "22%", paddingLeft: 16 }}>Dosen</th>
+                      <th className="text-left" style={{ width: "30%" }}>Indikator</th>
                       <th className="text-center">Periode</th>
                       <th className="text-center">Target</th>
-                      <th className="text-center">File Diunggah</th>
-                      <th className="text-center">File Valid</th>
+                      <th className="text-center">File</th>
                       <th className="text-center">Status</th>
                       <th className="text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {dg.submissions.map((s) => (
-                      <tr key={s.id}>
-                        <td>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{s.indikatorKode}</div>
-                          <div style={{ fontSize: 11, color: "#6b7280" }}>{s.indikatorNama}</div>
-                        </td>
-                        <td className="text-center" style={{ fontSize: 12 }}>{s.periode ?? "-"}</td>
-                        <td className="text-center" style={{ fontSize: 13, fontWeight: 600 }}>
-                          {s.targetDosen !== null ? s.targetDosen : "-"}
-                        </td>
-                        <td className="text-center">
-                          <span className={s.fileCount > 0 ? "file-count-green" : "file-count-gray"}>
-                            {s.fileCount} file
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            max={s.fileCount}
-                            value={validInputs[s.id] ?? ""}
-                            onChange={(e) =>
-                              setValidInputs((prev) => ({ ...prev, [s.id]: e.target.value }))
-                            }
-                            className="valid-input"
-                            placeholder="0"
-                          />
-                        </td>
-                        <td className="text-center">
-                          {s.validFileCount !== null ? (
-                            <span className="status-validated">{s.validFileCount} valid</span>
-                          ) : (
-                            <span className="badge-pending">Belum</span>
+                    {dosenGroups.map((dg, gi) => {
+                      const validCount = dg.submissions.filter((s) => s.validFileCount !== null).length;
+                      return (
+                        <>
+                          <tr key={`gh-${dg.dosenId}`} style={{ background: "#f8fafc" }}>
+                            <td colSpan={7} style={{ padding: "8px 16px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #0f9f6e, #087a55)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                                  {dg.dosenNama.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()}
+                                </div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{dg.dosenNama}</span>
+                                <span style={{ fontSize: 11, color: "#9ca3af" }}>{dg.dosenEmail}</span>
+                                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: validCount === dg.submissions.length ? "#16a34a" : "#6b7280" }}>
+                                  {validCount}/{dg.submissions.length} divalidasi
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          {dg.submissions.map((s) => (
+                            <tr key={s.id}>
+                              <td style={{ paddingLeft: 52 }} />
+                              <td>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{s.indikatorKode}</div>
+                                <div style={{ fontSize: 11, color: "#6b7280" }}>{s.indikatorNama}</div>
+                              </td>
+                              <td className="text-center" style={{ fontSize: 12 }}>{s.periode ?? "-"}</td>
+                              <td className="text-center" style={{ fontSize: 13, fontWeight: 600 }}>{s.targetDosen ?? "-"}</td>
+                              <td className="text-center">
+                                <span className={s.fileCount > 0 ? "file-count-green" : "file-count-gray"}>{s.fileCount} file</span>
+                              </td>
+                              <td className="text-center">
+                                {s.validFileCount !== null ? (
+                                  <span className="status-validated">{s.validFileCount} valid</span>
+                                ) : (
+                                  <span className="badge-pending">Belum</span>
+                                )}
+                              </td>
+                              <td className="text-center">
+                                <button
+                                  onClick={() => setDetail({ dosenNama: dg.dosenNama, dosenEmail: dg.dosenEmail, submission: s })}
+                                  style={{ padding: "5px 14px", fontSize: 12, fontWeight: 600, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", color: "#374151" }}
+                                >
+                                  Detail
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {gi < dosenGroups.length - 1 && (
+                            <tr key={`sep-${dg.dosenId}`}><td colSpan={7} style={{ padding: 0, height: 6, background: "#f0f2f5" }} /></tr>
                           )}
-                        </td>
-                        <td className="text-center">
-                          <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
-                            <button
-                              onClick={() => handleSave(s.id)}
-                              disabled={saving[s.id] || validInputs[s.id] === ""}
-                              className="btn-validasi-save"
-                            >
-                              {saving[s.id] ? "…" : "Simpan"}
-                            </button>
-                            <button
-                              onClick={() => setDetail({ dosenNama: dg.dosenNama, dosenEmail: dg.dosenEmail, submission: s })}
-                              style={{ padding: "5px 10px", fontSize: 12, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", color: "#374151" }}
-                            >
-                              Detail
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                        </>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </div>
+              ) : (
+                <table className="atasan-table">
+                  <thead>
+                    <tr>
+                      <th className="text-left" style={{ width: "32%", paddingLeft: 16 }}>Indikator</th>
+                      <th className="text-left" style={{ width: "22%" }}>Dosen</th>
+                      <th className="text-center">Periode</th>
+                      <th className="text-center">Target</th>
+                      <th className="text-center">File</th>
+                      <th className="text-center">Status</th>
+                      <th className="text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {indikatorGroups.map((g, gi) => {
+                      const validCount = g.submissions.filter((s) => s.validFileCount !== null).length;
+                      return (
+                        <>
+                          <tr key={`gh-${g.indikator.id}`} style={{ background: "#f8fafc" }}>
+                            <td colSpan={7} style={{ padding: "8px 16px" }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{g.indikator.kode}</span>
+                              <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>{g.indikator.nama}</span>
+                              <span style={{ float: "right", fontSize: 11, fontWeight: 600, color: validCount === g.submissions.length ? "#16a34a" : "#6b7280" }}>
+                                {validCount}/{g.submissions.length} divalidasi
+                              </span>
+                            </td>
+                          </tr>
+                          {g.submissions.map((s) => (
+                            <tr key={s.id}>
+                              <td style={{ paddingLeft: 16 }} />
+                              <td>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{s.dosenNama}</div>
+                                <div style={{ fontSize: 11, color: "#6b7280" }}>{s.dosenEmail}</div>
+                              </td>
+                              <td className="text-center" style={{ fontSize: 12 }}>{s.periode ?? "-"}</td>
+                              <td className="text-center" style={{ fontSize: 13, fontWeight: 600 }}>{s.targetDosen ?? "-"}</td>
+                              <td className="text-center">
+                                <span className={s.fileCount > 0 ? "file-count-green" : "file-count-gray"}>{s.fileCount} file</span>
+                              </td>
+                              <td className="text-center">
+                                {s.validFileCount !== null ? (
+                                  <span className="status-validated">{s.validFileCount} valid</span>
+                                ) : (
+                                  <span className="badge-pending">Belum</span>
+                                )}
+                              </td>
+                              <td className="text-center">
+                                <button
+                                  onClick={() => setDetail({ dosenNama: s.dosenNama, dosenEmail: s.dosenEmail, submission: { ...s, indikatorId: g.indikator.id, indikatorKode: g.indikator.kode, indikatorNama: g.indikator.nama } })}
+                                  style={{ padding: "5px 14px", fontSize: 12, fontWeight: 600, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", color: "#374151" }}
+                                >
+                                  Detail
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {gi < indikatorGroups.length - 1 && (
+                            <tr key={`sep-${g.indikator.id}`}><td colSpan={7} style={{ padding: 0, height: 6, background: "#f0f2f5" }} /></tr>
+                          )}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
-          ))
+          </div>
         )}
       </PageTransition>
     </div>

@@ -93,6 +93,7 @@ export interface IndikatorGrouped {
   satuan?: string | null;
   tenggat: string | null;
   baselineJumlah: number | null;
+  fromUserNama?: string | null;
   subIndikators: IndikatorGroupedSub[];
 }
 
@@ -600,7 +601,7 @@ export interface DisposisiItem {
   toUserId: number;
   jumlahTarget: number;
   fromUserId?: number | null;
-  toUser?: { id: number; nama: string; role: string };
+  toUser?: { id: number; nama: string; role: string; email?: string };
 }
 
 export async function getDisposisi(indikatorId: number, tahun: string, fromUserId?: number | null): Promise<DisposisiItem[]> {
