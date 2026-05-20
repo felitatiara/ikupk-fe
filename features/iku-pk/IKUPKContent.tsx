@@ -160,9 +160,8 @@ const [tahun, setTahun] = useState("2026");
 
       if (!usedCascade) {
         if (displayRole === 'admin') {
-          // Admin: semua user di unit
-          const allUsers = await getUsersByRole(unitId);
-          users = allUsers.filter((u) => u.id !== authUser?.id);
+          // Admin: disposisi ke Dekan/WD (level 1) sebagai default
+          users = await getUsersByLevel(1);
         } else if (roleLevel <= 2) {
           // Level 1 (Dekan/WD/Kabag) DAN level 2 (Kajur): coba bawahan langsung dulu.
           const directBawahan = await getRelatedUsersFor(authUser.id);
