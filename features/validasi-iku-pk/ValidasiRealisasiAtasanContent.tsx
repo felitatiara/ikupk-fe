@@ -6,7 +6,9 @@ import * as XLSX from "xlsx";
 import PageTransition from "@/components/layout/PageTransition";
 import {
   getSubmissionsForAtasan,
+  getSubmissionsForWD2,
   validateRealisasiAtasan,
+  validateWD2Batch,
   getAllRealisasiFiles,
   getLaporanWithRealisasi,
   SubmissionPerIndikator,
@@ -41,6 +43,14 @@ export default function ValidasiRealisasiAtasanContent() {
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [jenisFilter, setJenisFilter] = useState<"IKU" | "PK">("IKU");
   const [viewMode, setViewMode] = useState<"dosen" | "indikator">("dosen");
+
+  // WD2 state
+  const roleName = (user?.role ?? "").toLowerCase();
+  const isWD2 = roleName.includes("wakil dekan 2") || roleName.includes("wd2") || roleName.includes("wakil dekan ii");
+
+  type WD2UserGroup = { userId: number; nama: string; email: string; realisasi: { id: number; kodeIndikator: string; namaIndikator: string; realisasiAngka: number; validFileCount: number | null; status: string; periode: string | null }[] };
+  const [wd2Groups, setWd2Groups] = useState<WD2UserGroup[]>([]);
+  const [validatingWD2, setValidatingWD2] = useState<number | null>(null);
 
   // Detail modal
   const [detail, setDetail] = useState<DetailModal | null>(null);
@@ -88,15 +98,34 @@ export default function ValidasiRealisasiAtasanContent() {
   async function fetchData() {
     setLoading(true);
     try {
-      const data = await getSubmissionsForAtasan(user!.id, tahun);
-      setRawGroups(data);
+      if (isWD2) {
+        const data = await getSubmissionsForWD2(tahun);
+        setWd2Groups(data);
+      } else {
+        const data = await getSubmissionsForAtasan(user!.id, tahun);
+        setRawGroups(data);
+      }
     } catch (err) {
       console.error("Failed to fetch submissions:", err);
       setRawGroups([]);
+      setWd2Groups([]);
     } finally {
       setLoading(false);
     }
   }
+
+  const handleValidasiWD2 = async (userId: number) => {
+    setValidatingWD2(userId);
+    try {
+      await validateWD2Batch(userId, tahun);
+      toast.success("Validasi final berhasil.");
+      setWd2Groups((prev) => prev.filter((g) => g.userId !== userId));
+    } catch {
+      toast.error("Gagal melakukan validasi final.");
+    } finally {
+      setValidatingWD2(null);
+    }
+  };
 
   // Transform indikator-grouped → dosen-grouped
   const dosenGroups: DosenGroup[] = (() => {
@@ -222,7 +251,7 @@ export default function ValidasiRealisasiAtasanContent() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Validasi Realisasi");
       XLSX.writeFile(wb, `Validasi_Realisasi_${tahun}.xlsx`);
-    } catch (err) {
+    } catch {
       toast.error("Gagal mengekspor data.");
     } finally {
       setExporting(false);
@@ -542,8 +571,58 @@ export default function ValidasiRealisasiAtasanContent() {
           document.body
         )}
 
-        {/* Content */}
-        {loading ? (
+        {/* Content — WD2 view */}
+        {isWD2 && (
+          loading ? (
+            <p className="text-loading text-center" style={{ padding: 40 }}>Memuat data…</p>
+          ) : wd2Groups.length === 0 ? (
+            <p className="text-empty">Tidak ada realisasi yang sudah divalidasi atasan untuk tahun {tahun}.</p>
+          ) : (
+            <div className="table-section-card" style={{ overflow: "hidden", padding: 0 }}>
+              <div className="table-wrapper" style={{ margin: 0 }}>
+                <table className="atasan-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 40, paddingLeft: 16 }}>No</th>
+                      <th className="text-left">Nama</th>
+                      <th className="text-left">Email</th>
+                      <th className="text-center">Indikator</th>
+                      <th className="text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wd2Groups.map((g, i) => (
+                      <tr key={g.userId}>
+                        <td className="text-center" style={{ paddingLeft: 16, color: "#6b7280", fontSize: 12 }}>{i + 1}</td>
+                        <td>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{g.nama}</div>
+                        </td>
+                        <td style={{ fontSize: 12, color: "#6b7280" }}>{g.email}</td>
+                        <td className="text-center">
+                          <span style={{ background: "#eff6ff", color: "#2563eb", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>
+                            {g.realisasi.length} indikator
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <button
+                            onClick={() => handleValidasiWD2(g.userId)}
+                            disabled={validatingWD2 === g.userId}
+                            style={{ padding: "5px 14px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: validatingWD2 === g.userId ? "#9ca3af" : "#0f9f6e", color: "#fff", cursor: validatingWD2 === g.userId ? "not-allowed" : "pointer" }}
+                          >
+                            {validatingWD2 === g.userId ? "Memvalidasi…" : "Validasi Final"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Content — Atasan view */}
+        {!isWD2 && (loading ? (
           <p className="text-loading text-center" style={{ padding: 40 }}>Memuat data…</p>
         ) : (viewMode === "dosen" ? dosenGroups.length === 0 : indikatorGroups.length === 0) ? (
           <p className="text-empty">Tidak ada submission {jenisFilter} dari bawahan Anda untuk tahun {tahun}.</p>
@@ -686,7 +765,7 @@ export default function ValidasiRealisasiAtasanContent() {
               )}
             </div>
           </div>
-        )}
+        ))}
       </PageTransition>
     </div>
   );

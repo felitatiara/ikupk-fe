@@ -1292,7 +1292,7 @@ export async function deleteIkupkFile(id: number, token: string): Promise<void> 
   if (!res.ok) throw new Error('Gagal menghapus file');
 }
 
-/** Approve atau reject semua realisasi bawahan untuk tahun tertentu */
+/** Approve atau reject semua realisasi validated_wd2 bawahan (Dekan) */
 export async function approveBawahanSkp(
   userId: number,
   action: 'approved' | 'rejected',
@@ -1304,4 +1304,25 @@ export async function approveBawahanSkp(
     body: JSON.stringify({ action, tahun }),
   });
   if (!res.ok) throw new Error('Failed to approve/reject SKP bawahan');
+}
+
+/** WD2: semua user yang punya realisasi validated_atasan */
+export async function getSubmissionsForWD2(tahun: string): Promise<any[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/realisasi/submissions-for-wd2?tahun=${encodeURIComponent(tahun)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/** WD2: validasi semua realisasi validated_atasan milik seorang user → validated_wd2 */
+export async function validateWD2Batch(userId: number, tahun: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/skp-wd2/${userId}/validate`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tahun }),
+  });
+  if (!res.ok) throw new Error('Failed to validate WD2');
 }

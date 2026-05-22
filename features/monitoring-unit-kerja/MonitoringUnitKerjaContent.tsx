@@ -560,25 +560,21 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     realisasi: number;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima">("keseluruhan");
+  const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima" | "bawahan">(
+    role === "pimpinan" || role === "admin" ? "keseluruhan" : "diterima"
+  );
 
   const [monitoringBawahan, setMonitoringBawahan] = useState<MonitoringBawahanResult | null>(null);
   const [monitoringBawahanLoading, setMonitoringBawahanLoading] = useState(false);
   const [bawahanJenis, setBawahanJenis] = useState("IKU");
   const [bawahanTahun, setBawahanTahun] = useState(DEFAULT_TAHUN);
-  const [bawahanFilterJabatan, setBawahanFilterJabatan] = useState("all");
   const [bawahanFilterUser, setBawahanFilterUser] = useState("all");
 
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
   const canViewDetail = roleStr === "dekan" || roleStr.includes("wakil dekan");
 
-  const jabatanOptions = [...new Set((monitoringBawahan?.bawahanList ?? []).map(b => b.roleName))];
-  const userOptions = (monitoringBawahan?.bawahanList ?? []).filter(
-    b => bawahanFilterJabatan === "all" || b.roleName === bawahanFilterJabatan
-  );
   const filteredBawahan = (monitoringBawahan?.bawahanList ?? []).filter(b => {
-    if (bawahanFilterJabatan !== "all" && b.roleName !== bawahanFilterJabatan) return false;
     if (bawahanFilterUser !== "all" && String(b.id) !== bawahanFilterUser) return false;
     return true;
   });
@@ -677,9 +673,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           const childRealisasi = (sub.children ?? []).reduce((s, c) => s + (c.realisasiJumlah ?? 0), 0);
 
           const target = sub.disposisiJumlah ?? (childTarget > 0 ? childTarget : null);
-          const realisasi = sub.realisasiJumlah !== null && sub.realisasiJumlah !== undefined
-            ? sub.realisasiJumlah
-            : (childRealisasi > 0 ? childRealisasi : null);
+          // Take max of sub-level and children in case backend doesn't aggregate up
+          const subReal = sub.realisasiJumlah ?? 0;
+          const aggReal = Math.max(subReal, childRealisasi);
+          const realisasi = sub.realisasiJumlah !== null ? aggReal : (aggReal > 0 ? aggReal : null);
           const capaian =
             target !== null && target > 0 && realisasi !== null
               ? Math.min((realisasi / target) * 100, 100)
@@ -767,54 +764,59 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          {isPimpinan ? "Monitoring Indikator" : "Monitoring Indikator Saya"}
+          Monitoring Indikator
         </p>
 
-          {/* ── Tab Switcher (pimpinan only) — di atas filter ── */}
-          {isPimpinan && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{
-                display: "inline-flex",
-                backgroundColor: "#ffffff",
-                border: "1px solid #e5e7eb",
-                borderRadius: 10,
-                padding: 4,
-                gap: 4,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              }}>
-                {([
-                  { key: "keseluruhan", label: "Monitoring Indikator" },
-                  { key: "diterima", label: "Monitoring Target" },
-                ] as const).map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      style={{
-                        padding: "8px 20px",
-                        fontSize: 13,
-                        fontWeight: isActive ? 700 : 500,
-                        color: isActive ? "#ffffff" : "#64748b",
-                        background: isActive ? "#FF7900" : "transparent",
-                        border: "none",
-                        borderRadius: 7,
-                        cursor: "pointer",
-                        boxShadow: isActive ? "0 1px 4px rgba(255,121,0,0.3)" : "none",
-                        transition: "all 0.15s",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
+          {/* ── Tab Switcher ── */}
+          {(() => {
+            const hasBawahan = (monitoringBawahan?.bawahanList?.length ?? 0) > 0;
+            const tabs = [
+              ...(isPimpinan ? [{ key: "keseluruhan" as const, label: "Monitoring Keseluruhan" }] : []),
+              { key: "diterima" as const, label: "Target Saya" },
+              ...(hasBawahan ? [{ key: "bawahan" as const, label: "Distribusi Target Dosen" }] : []),
+            ];
+            if (tabs.length <= 1) return null;
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{
+                  display: "inline-flex",
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 10,
+                  padding: 3,
+                  gap: 2,
+                }}>
+                  {tabs.map((tab) => {
+                    const isActive = activeTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        style={{
+                          padding: "7px 18px",
+                          fontSize: 13,
+                          fontWeight: isActive ? 700 : 500,
+                          color: isActive ? "#ffffff" : "#64748b",
+                          background: isActive ? "#0f9f6e" : "transparent",
+                          border: "none",
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          boxShadow: isActive ? "0 1px 4px rgba(15,159,110,0.25)" : "none",
+                          transition: "all 0.15s",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
-          {/* Filters */}
-          <div style={{
+          {/* Filters — hidden on bawahan tab (has its own filters) */}
+          {activeTab !== "bawahan" && <div style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
             gap: 12,
@@ -853,7 +855,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 ))}
               </select>
             </div>
-          </div>
+          </div>}
 
         {/* ── PIMPINAN / ADMIN: Monitoring Keseluruhan ── */}
         {isPimpinan && activeTab === "keseluruhan" && (
@@ -927,7 +929,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         { label: "Status", w: "9%" },
                         { label: "Aksi", w: "8%" },
                       ].map((h) => (
-                        <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5e7eb", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
+                        <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
                           {h.label}
                         </th>
                       ))}
@@ -1056,19 +1058,14 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         )}
 
         {/* ── Target yang Diterima — non-pimpinan always; pimpinan when tab active ── */}
-        {(!isPimpinan || activeTab === "diterima") && (
+        {(activeTab === "diterima") && (
           <>
           {/* Section Header — hanya untuk non-pimpinan */}
-          {!isPimpinan && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>
-                Target yang Diterima
-              </div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>
-                Target {selectedJenis} tahun {selectedTahun} yang diterima melalui alur cascade atau disposisi.
-              </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>
+              Target {selectedJenis} tahun {selectedTahun} yang diterima melalui disposisi.
             </div>
-          )}
+          </div>
 
           {/* KPI Cards */}
           {personalRows.length > 0 && (
@@ -1106,7 +1103,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
-                <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+                <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
                   {["No", "Kode", "Nama Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)"].map((h) => (
                     <th
                       key={h}
@@ -1115,9 +1112,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         padding: "10px 14px",
                         fontSize: 11,
                         fontWeight: 700,
-                        color: "#64748b",
+                        color: "#374151",
                         textTransform: "uppercase",
-                        letterSpacing: "0.05em",
+                        letterSpacing: "0.04em",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -1199,18 +1196,15 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         )}
 
           {/* ── Monitoring Bawahan ── */}
-          {monitoringBawahan && (monitoringBawahan.bawahanList?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 24, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          {activeTab === "bawahan" && monitoringBawahan && (monitoringBawahan.bawahanList?.length ?? 0) > 0 && (
+            <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
 
               {/* Section header */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 4, height: 20, borderRadius: 2, background: "#FF7900", flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>Distribusi Target Bawahan</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 1 }}>
-                      Jumlah target yang telah diterima masing-masing bawahan berdasarkan disposisi.
-                    </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Distribusi Target Dosen</div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                    Jumlah target yang diterima masing-masing dosen berdasarkan disposisi.
                   </div>
                 </div>
                 <button
@@ -1335,10 +1329,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 </button>
               </div>
 
-              {/* Filters — 2 per row */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {/* Filters */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Target</label>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Jenis</label>
                   <select
                     value={bawahanJenis}
                     onChange={(e) => setBawahanJenis(e.target.value)}
@@ -1359,25 +1353,14 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Jabatan</label>
-                  <select
-                    value={bawahanFilterJabatan}
-                    onChange={(e) => { setBawahanFilterJabatan(e.target.value); setBawahanFilterUser("all"); }}
-                    style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
-                  >
-                    <option value="all">Semua Jabatan</option>
-                    {jabatanOptions.map((j) => <option key={j} value={j}>{j}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>User</label>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Dosen</label>
                   <select
                     value={bawahanFilterUser}
                     onChange={(e) => setBawahanFilterUser(e.target.value)}
                     style={{ width: "100%", height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 10px", fontSize: 13, color: "#111827", background: "#fff", cursor: "pointer", outline: "none" }}
                   >
-                    <option value="all">Semua User</option>
-                    {userOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.nama}</option>)}
+                    <option value="all">Semua Dosen</option>
+                    {(monitoringBawahan?.bawahanList ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.nama}</option>)}
                   </select>
                 </div>
               </div>
@@ -1391,114 +1374,85 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               )}
 
               {!monitoringBawahanLoading && monitoringBawahan.bawahanList.length > 0 && (() => {
-                const rows = monitoringBawahan.rows;
+                const allRows = monitoringBawahan.rows;
                 const users = filteredBawahan;
-                const groupIds = [...new Set(rows.map((r) => r.groupId))];
-                let rowCounter = 0;
-                const HDR = "#0a7a54";
-                // All 4 fixed columns are sticky — only user columns scroll
-                const W_NO = 44, W_KODE = 88, W_IND = 260, W_TGT = 88;
-                const L_NO = 0, L_KODE = W_NO, L_IND = W_NO + W_KODE, L_TGT = W_NO + W_KODE + W_IND;
-                const USER_W = 130;
-                const tableW = L_TGT + W_TGT + users.length * USER_W;
-                const bNav = "1px solid #087a55";
-                const bRow = "1px solid #eef2f7";
-                const bGroup = "2px solid #bbf7d0";
-                const shadowSep = "3px 0 6px rgba(0,0,0,0.08)";
-
-                // sticky th — always green header
-                const th = (left: number, w: number, extra: React.CSSProperties = {}): React.CSSProperties => ({
-                  position: "sticky", left, zIndex: 3, width: w,
-                  backgroundColor: HDR, borderBottom: "2px solid #087a55",
-                  padding: "10px 8px", verticalAlign: "middle", ...extra,
-                });
-                // sticky td — bg from row
-                const td = (left: number, w: number, bg: string, extra: React.CSSProperties = {}): React.CSSProperties => ({
-                  position: "sticky", left, zIndex: 2, width: w,
-                  backgroundColor: bg, ...extra,
-                });
 
                 return (
-                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #e2e8f0", boxShadow: "0 1px 6px rgba(15,23,42,0.07)" }}>
-                    <table style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", width: tableW, fontSize: 12 }}>
-                      <colgroup>
-                        <col style={{ width: W_NO }} />
-                        <col style={{ width: W_KODE }} />
-                        <col style={{ width: W_IND }} />
-                        <col style={{ width: W_TGT }} />
-                        {users.map((u) => <col key={u.id} style={{ width: USER_W }} />)}
-                      </colgroup>
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 + users.length * 140 }}>
                       <thead>
-                        <tr>
-                          <th style={th(L_NO, W_NO, { textAlign: "center", color: "#a7f3d0", fontWeight: 600, fontSize: 11, borderRight: bNav })}>No</th>
-                          <th style={th(L_KODE, W_KODE, { textAlign: "left", color: "#a7f3d0", fontWeight: 700, fontSize: 10, fontFamily: "monospace", borderRight: bNav })}>Kode</th>
-                          <th style={th(L_IND, W_IND, { textAlign: "left", color: "#ecfdf5", fontWeight: 700, fontSize: 12, borderRight: bNav })}>Indikator</th>
-                          <th style={th(L_TGT, W_TGT, { textAlign: "center", color: "#ecfdf5", fontWeight: 700, fontSize: 11, borderRight: "2px solid #087a55", boxShadow: shadowSep })}>Target</th>
+                        <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 40, whiteSpace: "nowrap" }}>No</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 88, whiteSpace: "nowrap" }}>Kode</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>Indikator</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 80, whiteSpace: "nowrap" }}>Target</th>
                           {users.map((u) => (
-                            <th key={u.id} style={{ backgroundColor: HDR, borderBottom: "2px solid #087a55", padding: "8px 8px", textAlign: "center", fontWeight: 600, fontSize: 11, borderRight: bNav, verticalAlign: "middle", overflow: "hidden" }}>
-                              <div style={{ color: "#ecfdf5", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.nama.split(",")[0]}</div>
-                              <div style={{ fontSize: 10, color: "#a7f3d0", fontWeight: 400, marginTop: 2 }}>{u.roleName}</div>
+                            <th key={u.id} style={{ padding: "10px 12px", textAlign: "center", width: 140, minWidth: 120, borderLeft: "1px solid #e2e8f0" }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>{u.nama}</div>
+                              <div style={{ fontSize: 10, fontWeight: 400, color: "#9ca3af", marginTop: 1 }}>{u.roleName}</div>
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {groupIds.map((groupId) => {
-                          const groupRows = rows.filter((r) => r.groupId === groupId);
-                          const first = groupRows[0];
-                          const GBG = "#f0fdf4";
-                          return [
-                            // Group header row: 4 sticky tds + 1 colSpan for user columns
-                            <tr key={`g-${groupId}`}>
-                              <td style={td(L_NO, W_NO, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })} />
-                              <td style={td(L_KODE, W_KODE, GBG, { padding: "6px 8px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: "#065f46", fontFamily: "monospace", background: "#d1fae5", padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>{first.groupKode}</span>
-                              </td>
-                              <td style={td(L_IND, W_IND, GBG, { padding: "6px 12px", borderTop: bGroup, borderBottom: bGroup, borderRight: bRow })}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: "#065f46", overflow: "hidden", display: "block", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{first.groupNama}</span>
-                              </td>
-                              <td style={td(L_TGT, W_TGT, GBG, { borderTop: bGroup, borderBottom: bGroup, borderRight: "2px solid #bbf7d0", boxShadow: shadowSep })} />
-                              <td colSpan={users.length} style={{ backgroundColor: GBG, borderTop: bGroup, borderBottom: bGroup }} />
-                            </tr>,
-                            ...groupRows.map((row) => {
-                              rowCounter++;
-                              const bg = rowCounter % 2 === 0 ? "#f8fafc" : "#ffffff";
-                              return (
-                                <tr key={row.leafId}>
-                                  <td style={td(L_NO, W_NO, bg, { padding: "7px 6px", textAlign: "center", color: "#9ca3af", fontSize: 11, borderRight: bRow, borderBottom: bRow })}>{rowCounter}</td>
-                                  <td style={td(L_KODE, W_KODE, bg, { padding: "7px 8px", fontFamily: "monospace", fontSize: 10, color: "#0369a1", fontWeight: 700, whiteSpace: "nowrap", borderRight: bRow, borderBottom: bRow })}>{row.leafKode}</td>
-                                  <td style={td(L_IND, W_IND, bg, { padding: "7px 14px", color: "#1f2937", lineHeight: 1.45, borderRight: bRow, borderBottom: bRow, overflow: "hidden" })}>{row.leafNama}</td>
-                                  <td style={td(L_TGT, W_TGT, bg, { padding: "7px 8px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", borderRight: "2px solid #d1d5db", borderBottom: bRow, boxShadow: shadowSep })}>
-                                    {row.nilaiTarget !== null
-                                      ? <><span style={{ color: "#0369a1", fontWeight: 700 }}>{row.nilaiTarget}</span>{row.satuan && <span style={{ fontSize: 10, color: "#64748b", marginLeft: 2 }}>{row.satuan}</span>}</>
-                                      : <span style={{ color: "#d1d5db" }}>—</span>}
+                        {(() => {
+                          const tableRows: React.ReactNode[] = [];
+                          let currentGroupId: number | null = null;
+                          let groupNo = 0;
+                          for (const row of allRows) {
+                            if (row.groupId !== currentGroupId) {
+                              currentGroupId = row.groupId;
+                              groupNo++;
+                              tableRows.push(
+                                <tr key={`g-${row.groupId}`} style={{ background: "#f1f5f9", borderTop: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
+                                  <td style={{ padding: "8px 12px", textAlign: "center", fontWeight: 700, color: "#374151", fontSize: 13, width: 40 }}>{groupNo}</td>
+                                  <td colSpan={3 + users.length} style={{ padding: "8px 14px" }}>
+                                    <span style={{ fontWeight: 700, color: "#1e293b", fontSize: 13 }}>{row.groupNama}</span>
                                   </td>
-                                  {users.map((u) => {
-                                    const target = row.disposisiByUser[u.id] ?? null;
-                                    const real = row.realisasiByUser?.[u.id] ?? null;
-                                    return (
-                                      <td key={u.id} style={{ padding: "7px 8px", textAlign: "center", backgroundColor: bg, borderRight: bRow, borderBottom: bRow }}>
-                                        {target !== null && target > 0 ? (
-                                          <button
-                                            onClick={() => setBawahanCellModal({ user: u, row, target, realisasi: real ?? 0 })}
-                                            style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}
-                                          >
-                                            <span style={{ display: "inline-block", background: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: 12, padding: "2px 8px", borderRadius: 5, border: "1px solid #bbf7d0" }}>
-                                              {target}{row.satuan && <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{row.satuan}</span>}
-                                            </span>
-                                            {real !== null && real > 0 && (
-                                              <span style={{ fontSize: 10, color: "#0369a1", fontWeight: 600 }}>{real} disubmit</span>
-                                            )}
-                                          </button>
-                                        ) : <span style={{ color: "#d1d5db" }}>—</span>}
-                                      </td>
-                                    );
-                                  })}
                                 </tr>
                               );
-                            }),
-                          ];
-                        })}
+                            }
+                            tableRows.push(
+                              <tr key={row.leafId} style={{ borderBottom: "1px solid #f1f5f9", background: "#fff" }}>
+                                <td style={{ padding: "10px 12px", textAlign: "center", color: "#d1d5db", fontSize: 12 }}>—</td>
+                                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#6b7280", fontWeight: 600 }}>{row.leafKode}</td>
+                                <td style={{ padding: "10px 12px", color: "#1f2937", fontWeight: 500, lineHeight: 1.4 }}>{row.leafNama}</td>
+                                <td style={{ padding: "10px 12px", textAlign: "center", color: "#374151", fontWeight: 600 }}>
+                                  {row.nilaiTarget != null
+                                    ? <>{row.nilaiTarget}{row.satuan ? <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 3 }}>{row.satuan}</span> : null}</>
+                                    : <span style={{ color: "#d1d5db" }}>—</span>}
+                                </td>
+                                {users.map((u) => {
+                                  const target = row.disposisiByUser[u.id] ?? 0;
+                                  const real = row.realisasiByUser?.[u.id] ?? 0;
+                                  return (
+                                    <td key={u.id} style={{ padding: "10px 12px", textAlign: "center", borderLeft: "1px solid #f1f5f9" }}>
+                                      {target > 0 ? (
+                                        <button
+                                          onClick={() => setBawahanCellModal({ user: u, row, target, realisasi: real })}
+                                          style={{
+                                            display: "inline-flex", flexDirection: "column", alignItems: "center",
+                                            gap: 1, padding: "4px 10px", borderRadius: 7,
+                                            border: "1px solid #e5e7eb", background: "#fafafa",
+                                            cursor: "pointer", minWidth: 48,
+                                          }}
+                                        >
+                                          <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{target}</span>
+                                          {real > 0 && (
+                                            <span style={{ fontSize: 10, color: "#0f9f6e", fontWeight: 600 }}>↑{real}</span>
+                                          )}
+                                        </button>
+                                      ) : (
+                                        <span style={{ color: "#e5e7eb" }}>—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          }
+                          return tableRows;
+                        })()}
                       </tbody>
                     </table>
                   </div>

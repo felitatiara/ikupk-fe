@@ -1130,7 +1130,9 @@ const [tahun, setTahun] = useState("2026");
                         <th colSpan={2} className="text-center">Target Universitas</th>
                         <th rowSpan={2} className="text-center min-w100">Target</th>
 
-                        <th rowSpan={2} className="col-w10 text-center">Disposisi</th>
+                        {displayRole !== 'admin' && (
+                          <th rowSpan={2} className="col-w10 text-center">Disposisi</th>
+                        )}
                       </tr>
                       <tr>
                         <th className="text-center min-w100">Kuantitas</th>
@@ -1215,28 +1217,28 @@ const [tahun, setTahun] = useState("2026");
                                   : '-'}
                               </td>
 
-                              {/* Disposisi — per leaf row (L2 untuk IKU, L3 untuk PK) */}
-                              {isLeaf ? (
-                                <td className="action-cell">
-                                  <div className="action-cell-inner">
-                                    <button
-                                      onClick={() => handleGroupedDisposisiClick(row.id, leafTarget, authUser?.id, group.id)}
-                                      className="btn-small btn-small--green btn-small--w100"
-                                    >
-                                      Disposisi
-                                    </button>
-                                    {displayRole !== 'admin' && (
+                              {/* Disposisi — hanya untuk Dekan, bukan Admin */}
+                              {displayRole !== 'admin' && (
+                                isLeaf ? (
+                                  <td className="action-cell">
+                                    <div className="action-cell-inner">
+                                      <button
+                                        onClick={() => handleGroupedDisposisiClick(row.id, leafTarget, authUser?.id, group.id)}
+                                        className="btn-small btn-small--green btn-small--w100"
+                                      >
+                                        Disposisi
+                                      </button>
                                       <button
                                         onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)}
                                         className="btn-small btn-small--outline btn-small--w100"
                                       >
                                         Lihat Progress
                                       </button>
-                                    )}
-                                  </div>
-                                </td>
-                              ) : (
-                                <td className="td-cell" />
+                                    </div>
+                                  </td>
+                                ) : (
+                                  <td className="td-cell" />
+                                )
                               )}
                             </tr>
                           );

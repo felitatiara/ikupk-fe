@@ -314,20 +314,18 @@ export default function UserTargetContent() {
 
           {!loading && (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, border: "1px solid #e5e7eb" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, borderRadius: 10, overflow: "hidden", border: "1px solid #e2e8f0" }}>
                 <thead>
-                  <tr style={{ backgroundColor: "#f9fafb" }}>
-                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Waktu Capaian</th>
-                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Target</th>
-                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Sasaran Strategis</th>
-                    <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Status</th>
-                    <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb" }}>Aksi</th>
+                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                    {["Waktu Capaian", "Target", "Sasaran Strategis", "Status", "Aksi"].map((h, i) => (
+                      <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 11, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i >= 3 ? "center" : "left", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length > 0 ? (
                     filteredRows.map((row) => (
-                      <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: "#fff" }}>
                         <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.waktuCapaian}</td>
                         <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
                         <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>
