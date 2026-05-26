@@ -47,13 +47,15 @@ function nilaiCapaian(persen: number | null): { nilai: string; predikat: string;
   return { nilai: persen.toFixed(1), predikat: "Kurang", color: "#dc2626" };
 }
 
-function skpStatusBadge(status: 'approved' | 'rejected' | 'pending') {
-  const map = {
-    pending: { label: "Menunggu Persetujuan", bg: "#fef9c3", color: "#854d0e", border: "#fde047" },
-    approved: { label: "Disetujui", bg: "#dcfce7", color: "#166534", border: "#86efac" },
-    rejected: { label: "Ditolak", bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
+function skpStatusBadge(status: string) {
+  const map: Record<string, { label: string; bg: string; color: string; border: string }> = {
+    pending:           { label: "Menunggu Validasi",      bg: "#fef9c3", color: "#854d0e", border: "#fde047" },
+    validated_atasan:  { label: "Divalidasi Atasan",      bg: "#eff6ff", color: "#1d4ed8", border: "#93c5fd" },
+    validated_wd2:     { label: "Validasi Final WD2",     bg: "#f5f3ff", color: "#6d28d9", border: "#c4b5fd" },
+    approved:          { label: "Disetujui Dekan",        bg: "#dcfce7", color: "#166534", border: "#86efac" },
+    rejected:          { label: "Ditolak",                bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
   };
-  const s = map[status];
+  const s = map[status] ?? { label: status, bg: "#f3f4f6", color: "#6b7280", border: "#e5e7eb" };
   return (
     <span
       style={{
@@ -709,20 +711,22 @@ export default function SKPContent() {
 
   // ─────────────── Styles ───────────────
   const thStyle: React.CSSProperties = {
-    padding: "10px 12px",
+    padding: "10px 14px",
     fontWeight: 700,
-    fontSize: 13,
+    fontSize: 11,
     color: "#374151",
-    borderBottom: "1px solid #e5e7eb",
-    backgroundColor: "#f9fafb",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    borderBottom: "2px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
     textAlign: "left",
     whiteSpace: "nowrap",
   };
   const tdStyle: React.CSSProperties = {
-    padding: "10px 12px",
+    padding: "10px 14px",
     fontSize: 13,
     color: "#374151",
-    borderBottom: "1px solid #f3f4f6",
+    borderBottom: "1px solid #f1f5f9",
     verticalAlign: "top",
   };
 
