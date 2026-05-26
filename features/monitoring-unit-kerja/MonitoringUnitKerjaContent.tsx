@@ -569,6 +569,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [bawahanJenis, setBawahanJenis] = useState("IKU");
   const [bawahanTahun, setBawahanTahun] = useState(DEFAULT_TAHUN);
   const [bawahanFilterUser, setBawahanFilterUser] = useState("all");
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const [expandedLeaves, setExpandedLeaves] = useState<Set<number>>(new Set());
 
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
@@ -1377,80 +1379,125 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 const allRows = monitoringBawahan.rows;
                 const users = filteredBawahan;
 
+                const groupMap = new Map<number, { groupId: number; groupNama: string; leaves: MonitoringBawahanRow[] }>();
+                for (const row of allRows) {
+                  if (!groupMap.has(row.groupId)) {
+                    groupMap.set(row.groupId, { groupId: row.groupId, groupNama: row.groupNama, leaves: [] });
+                  }
+                  groupMap.get(row.groupId)!.leaves.push(row);
+                }
+                const groups = [...groupMap.values()];
+
                 return (
-                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 + users.length * 140 }}>
+                  <div style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
                           <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 40, whiteSpace: "nowrap" }}>No</th>
                           <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 88, whiteSpace: "nowrap" }}>Kode</th>
-                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>Indikator</th>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 80, whiteSpace: "nowrap" }}>Target</th>
-                          {users.map((u) => (
-                            <th key={u.id} style={{ padding: "10px 12px", textAlign: "center", width: 140, minWidth: 120, borderLeft: "1px solid #e2e8f0" }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 130 }}>{u.nama}</div>
-                              <div style={{ fontSize: 10, fontWeight: 400, color: "#9ca3af", marginTop: 1 }}>{u.roleName}</div>
-                            </th>
-                          ))}
+                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>Indikator / Dosen</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 100, whiteSpace: "nowrap" }}>Target</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 100, whiteSpace: "nowrap" }}>Realisasi</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(() => {
                           const tableRows: React.ReactNode[] = [];
-                          let currentGroupId: number | null = null;
-                          let groupNo = 0;
-                          for (const row of allRows) {
-                            if (row.groupId !== currentGroupId) {
-                              currentGroupId = row.groupId;
-                              groupNo++;
-                              tableRows.push(
-                                <tr key={`g-${row.groupId}`} style={{ background: "#f1f5f9", borderTop: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
-                                  <td style={{ padding: "8px 12px", textAlign: "center", fontWeight: 700, color: "#374151", fontSize: 13, width: 40 }}>{groupNo}</td>
-                                  <td colSpan={3 + users.length} style={{ padding: "8px 14px" }}>
-                                    <span style={{ fontWeight: 700, color: "#1e293b", fontSize: 13 }}>{row.groupNama}</span>
-                                  </td>
-                                </tr>
-                              );
-                            }
+                          groups.forEach((group, gi) => {
+                            const isOpen = expandedGroups.has(group.groupId);
                             tableRows.push(
-                              <tr key={row.leafId} style={{ borderBottom: "1px solid #f1f5f9", background: "#fff" }}>
-                                <td style={{ padding: "10px 12px", textAlign: "center", color: "#d1d5db", fontSize: 12 }}>—</td>
-                                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#6b7280", fontWeight: 600 }}>{row.leafKode}</td>
-                                <td style={{ padding: "10px 12px", color: "#1f2937", fontWeight: 500, lineHeight: 1.4 }}>{row.leafNama}</td>
-                                <td style={{ padding: "10px 12px", textAlign: "center", color: "#374151", fontWeight: 600 }}>
-                                  {row.nilaiTarget != null
-                                    ? <>{row.nilaiTarget}{row.satuan ? <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 3 }}>{row.satuan}</span> : null}</>
-                                    : <span style={{ color: "#d1d5db" }}>—</span>}
-                                </td>
-                                {users.map((u) => {
-                                  const target = row.disposisiByUser[u.id] ?? 0;
-                                  const real = row.realisasiByUser?.[u.id] ?? 0;
-                                  return (
-                                    <td key={u.id} style={{ padding: "10px 12px", textAlign: "center", borderLeft: "1px solid #f1f5f9" }}>
-                                      {target > 0 ? (
-                                        <button
-                                          onClick={() => setBawahanCellModal({ user: u, row, target, realisasi: real })}
-                                          style={{
-                                            display: "inline-flex", flexDirection: "column", alignItems: "center",
-                                            gap: 1, padding: "4px 10px", borderRadius: 7,
-                                            border: "1px solid #e5e7eb", background: "#fafafa",
-                                            cursor: "pointer", minWidth: 48,
-                                          }}
-                                        >
-                                          <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{target}</span>
-                                          {real > 0 && (
-                                            <span style={{ fontSize: 10, color: "#0f9f6e", fontWeight: 600 }}>↑{real}</span>
-                                          )}
-                                        </button>
-                                      ) : (
-                                        <span style={{ color: "#e5e7eb" }}>—</span>
-                                      )}
-                                    </td>
-                                  );
+                              <tr
+                                key={`g-${group.groupId}`}
+                                style={{ background: "#f1f5f9", borderTop: gi > 0 ? "2px solid #e2e8f0" : undefined, borderBottom: "1px solid #e2e8f0", cursor: "pointer", userSelect: "none" }}
+                                onClick={() => setExpandedGroups(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(group.groupId)) next.delete(group.groupId); else next.add(group.groupId);
+                                  return next;
                                 })}
+                              >
+                                <td style={{ padding: "8px 12px", textAlign: "center", fontWeight: 700, color: "#374151", fontSize: 13, width: 40 }}>{gi + 1}</td>
+                                <td colSpan={4} style={{ padding: "8px 14px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontSize: 11, color: "#64748b", display: "inline-block", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", lineHeight: 1 }}>▶</span>
+                                    <span style={{ fontWeight: 700, color: "#1e293b", fontSize: 13 }}>{group.groupNama}</span>
+                                    <span style={{ fontSize: 11, color: "#94a3b8" }}>({group.leaves.length} indikator)</span>
+                                  </div>
+                                </td>
                               </tr>
                             );
-                          }
+                            if (isOpen) {
+                              for (const leaf of group.leaves) {
+                                const isLeafOpen = expandedLeaves.has(leaf.leafId);
+                                const usersWithData = users.filter(u => (leaf.disposisiByUser[u.id] ?? 0) > 0 || (leaf.realisasiByUser?.[u.id] ?? 0) > 0);
+                                tableRows.push(
+                                  <tr
+                                    key={`leaf-${leaf.leafId}`}
+                                    style={{ background: "#fff", borderBottom: "1px solid #f1f5f9", cursor: "pointer", userSelect: "none" }}
+                                    onClick={() => setExpandedLeaves(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(leaf.leafId)) next.delete(leaf.leafId); else next.add(leaf.leafId);
+                                      return next;
+                                    })}
+                                  >
+                                    <td style={{ padding: "10px 12px", textAlign: "center", color: "#d1d5db", fontSize: 12 }}>—</td>
+                                    <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#6b7280", fontWeight: 600 }}>{leaf.leafKode}</td>
+                                    <td style={{ padding: "10px 12px", lineHeight: 1.4 }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        <span style={{ fontSize: 10, color: "#94a3b8", display: "inline-block", transform: isLeafOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", lineHeight: 1 }}>▶</span>
+                                        <span style={{ color: "#1f2937", fontWeight: 600 }}>{leaf.leafNama}</span>
+                                        <span style={{ fontSize: 10, color: "#94a3b8" }}>({usersWithData.length} dosen)</span>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: "10px 12px", textAlign: "center", color: "#374151", fontWeight: 600 }}>
+                                      {leaf.nilaiTarget != null
+                                        ? <>{leaf.nilaiTarget}{leaf.satuan ? <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 3 }}>{leaf.satuan}</span> : null}</>
+                                        : <span style={{ color: "#d1d5db" }}>—</span>}
+                                    </td>
+                                    <td style={{ padding: "10px 12px", textAlign: "center", color: "#d1d5db", fontSize: 12 }}>—</td>
+                                  </tr>
+                                );
+                                if (isLeafOpen) {
+                                  if (usersWithData.length === 0) {
+                                    tableRows.push(
+                                      <tr key={`leaf-${leaf.leafId}-empty`} style={{ background: "#fafafa", borderBottom: "1px solid #f8fafc" }}>
+                                        <td colSpan={5} style={{ padding: "6px 28px", color: "#cbd5e1", fontSize: 11, fontStyle: "italic" }}>Belum ada disposisi</td>
+                                      </tr>
+                                    );
+                                  } else {
+                                    for (const u of usersWithData) {
+                                      const target = leaf.disposisiByUser[u.id] ?? 0;
+                                      const real = leaf.realisasiByUser?.[u.id] ?? 0;
+                                      tableRows.push(
+                                        <tr key={`leaf-${leaf.leafId}-user-${u.id}`} style={{ background: "#fafafa", borderBottom: "1px solid #f8fafc" }}>
+                                          <td style={{ padding: "6px 12px" }} />
+                                          <td style={{ padding: "6px 12px" }} />
+                                          <td style={{ padding: "6px 16px 6px 36px" }}>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); setBawahanCellModal({ user: u, row: leaf, target, realisasi: real }); }}
+                                              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px 3px 8px", borderRadius: 20, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer" }}
+                                            >
+                                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#94a3b8", display: "inline-block", flexShrink: 0 }} />
+                                              <span style={{ fontSize: 12, color: "#374151", fontWeight: 500 }}>{u.nama}</span>
+                                              <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 2 }}>{u.roleName}</span>
+                                            </button>
+                                          </td>
+                                          <td style={{ padding: "6px 12px", textAlign: "center" }}>
+                                            <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{target}</span>
+                                            {leaf.satuan && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 2 }}>{leaf.satuan}</span>}
+                                          </td>
+                                          <td style={{ padding: "6px 12px", textAlign: "center" }}>
+                                            {real > 0
+                                              ? <span style={{ fontSize: 13, fontWeight: 700, color: "#0f9f6e" }}>{real}</span>
+                                              : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          });
                           return tableRows;
                         })()}
                       </tbody>
