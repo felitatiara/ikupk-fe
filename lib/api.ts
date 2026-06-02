@@ -222,7 +222,9 @@ export async function updateIndikator(id: number, data: Partial<{ jenis: string;
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error('Failed to update indikator');
-  return response.json();
+  const text = await response.text();
+  if (!text || text.trim() === '' || text.trim() === 'null') return { id } as Indikator;
+  return JSON.parse(text);
 }
 
 export async function deleteIndikator(id: number): Promise<void> {
@@ -339,7 +341,9 @@ export interface TargetUniversitasData {
 export async function getTargetUniversitas(indikatorId: number, tahun: string): Promise<TargetUniversitasData | null> {
   const response = await fetch(`${API_BASE_URL}/targets/target-universitas?indikatorId=${indikatorId}&tahun=${tahun}`);
   if (!response.ok) throw new Error('Failed to fetch target universitas');
-  return response.json();
+  const text = await response.text();
+  if (!text || text.trim() === '' || text.trim() === 'null') return null;
+  return JSON.parse(text);
 }
 
 export async function saveTargetUniversitas(indikatorId: number, tahun: string, targetAngka: number): Promise<TargetUniversitasData> {

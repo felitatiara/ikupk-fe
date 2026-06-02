@@ -646,6 +646,310 @@ export default function SKPContent() {
     win.print();
   }
 
+  function generateEvaluasiKinerjaPegawai() {
+    const nama = user?.nama ?? "—";
+    const nip = user?.nip ?? "—";
+    const jabatan = user?.role ?? "—";
+    const unitKerja = user?.unitNama ?? "Fakultas Ilmu Komputer";
+    const atasanNama = mySkpStatus?.atasan?.nama ?? "—";
+    const atasanNip = mySkpStatus?.atasan?.nip ?? "—";
+    const periodePenilaian = `02 JANUARI S.D. 31 DESEMBER TAHUN ${tahun}`;
+
+    function hasilKerja(capaian: number | null) {
+      if (capaian === null) return { label: "SESUAI EKSPEKTASI", angka: 2 };
+      if (capaian >= 100) return { label: "DI ATAS EKSPEKTASI", angka: 3 };
+      if (capaian >= 76) return { label: "SESUAI EKSPEKTASI", angka: 2 };
+      return { label: "DI BAWAH EKSPEKTASI", angka: 1 };
+    }
+
+    const validRows = rows.filter(r => r.capaianPersen !== null);
+    const avgCapaian = validRows.length > 0
+      ? validRows.reduce((s, r) => s + r.capaianPersen!, 0) / validRows.length : null;
+    const ratingHK = hasilKerja(avgCapaian);
+    const predikat = !avgCapaian ? "BAIK"
+      : avgCapaian >= 90 ? "SANGAT BAIK"
+      : avgCapaian >= 76 ? "BAIK" : "CUKUP";
+
+    const perilakuItems = [
+      { nama: "Berorientasi pelayanan", bullets: ["Memahami dan memenuhi kebutuhan masyarakat", "Ramah, cekatan, solutif, dan dapat diandalkan", "Melakukan perbaikan tiada henti"] },
+      { nama: "Akuntabel", bullets: ["Melaksanakan tugas dengan jujur, bertanggungjawab, cermat, disiplin dan berintegritas tinggi", "Menggunakan kekayaan dan barang milik negara secara bertanggungjawab, efektif, dan efisien", "Tidak menyalahgunakan kewenangan jabatan"] },
+      { nama: "Kompeten", bullets: ["Meningkatkan kompetensi diri untuk menjawab tantangan yang selalu berubah", "Membantu orang lain belajar", "Melaksanakan tugas dengan kualitas terbaik"] },
+      { nama: "Harmonis", bullets: ["Menghargai setiap orang apapun latar belakangnya", "Suka menolong orang lain", "Membangun lingkungan kerja yang kondusif"] },
+      { nama: "Loyal", bullets: ["Memegang teguh ideologi Pancasila, Undang-Undang Dasar Negara Republik Indonesia Tahun 1945, setia kepada Negara Kesatuan Republik Indonesia serta pemerintahan yang sah", "Menjaga nama baik sesama ASN, Pimpinan, Instansi, dan Negara", "Menjaga rahasia jabatan dan negara"] },
+      { nama: "Adaptif", bullets: ["Cepat menyesuaikan diri menghadapi perubahan", "Terus berinovasi dan mengembangkan kreativitas", "Bertindak proaktif"] },
+      { nama: "Kolaboratif", bullets: ["Memberi kesempatan kepada berbagai pihak untuk berkontribusi", "Terbuka dalam bekerja sama untuk menghasilkan nilai tambah", "Menggerakkan pemanfaatan berbagai sumberdaya untuk tujuan bersama"] },
+    ];
+
+    const bellSvg = `<svg width="300" height="110" viewBox="0 0 300 110" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:4px auto">
+      <line x1="28" y1="90" x2="290" y2="90" stroke="#333" stroke-width="0.8"/>
+      <line x1="28" y1="5" x2="28" y2="90" stroke="#333" stroke-width="0.8"/>
+      <text x="18" y="93" font-size="7" text-anchor="middle" font-family="serif">0</text>
+      <text x="18" y="73" font-size="7" text-anchor="middle" font-family="serif">20</text>
+      <text x="18" y="52" font-size="7" text-anchor="middle" font-family="serif">40</text>
+      <text x="18" y="30" font-size="7" text-anchor="middle" font-family="serif">60</text>
+      <text x="7" y="55" font-size="6" text-anchor="middle" font-family="serif" transform="rotate(-90,7,55)">FREKUENSI PEGAWAI</text>
+      <path d="M28,89 C50,89 70,89 95,75 C115,60 130,25 155,8 C180,25 195,60 215,75 C240,89 260,89 290,89" fill="none" stroke="#333" stroke-width="1.2"/>
+      <text x="40" y="102" font-size="6.5" text-anchor="middle" font-family="serif">Sangat</text>
+      <text x="40" y="109" font-size="6.5" text-anchor="middle" font-family="serif">Kurang</text>
+      <text x="95" y="102" font-size="6.5" text-anchor="middle" font-family="serif">Kurang/</text>
+      <text x="95" y="109" font-size="6.5" text-anchor="middle" font-family="serif">Misconduct</text>
+      <text x="155" y="102" font-size="6.5" text-anchor="middle" font-family="serif">Butuh</text>
+      <text x="155" y="109" font-size="6.5" text-anchor="middle" font-family="serif">Perbaikan</text>
+      <text x="215" y="102" font-size="6.5" text-anchor="middle" font-family="serif">Baik</text>
+      <text x="275" y="102" font-size="6.5" text-anchor="middle" font-family="serif">Sangat</text>
+      <text x="275" y="109" font-size="6.5" text-anchor="middle" font-family="serif">Baik</text>
+    </svg>`;
+
+    const infoRow = (label: string, val: string) =>
+      `<tr><td style="padding:2px 6px;width:160px">${label}</td><td style="padding:2px 4px;width:8px">:</td><td style="padding:2px 6px">${val}</td></tr>`;
+
+    const hasilKerjaRows = rows.map((row, i) => {
+      const hk = hasilKerja(row.capaianPersen);
+      return `<tr>
+        <td style="text-align:center;vertical-align:top;padding:4px 5px">${i + 1}</td>
+        <td style="vertical-align:top;padding:4px 6px">
+          <div style="font-weight:bold;margin-bottom:4px">${row.kodeIndikator ? `${row.kodeIndikator} ` : ""}${row.namaIndikator}</div>
+          <div style="font-size:8pt">Ukuran keberhasilan/Indikator Kinerja Individu, Target:</div>
+          <div style="font-size:8pt">• Tersedianya ${row.targetKuantitas ?? "—"} yang memenuhi ${row.namaIndikator.toLowerCase()}</div>
+        </td>
+        <td style="text-align:center;vertical-align:middle;padding:4px 5px;font-size:8pt">${row.realisasiKuantitas != null ? `${row.realisasiKuantitas}` : "—"}</td>
+        <td style="vertical-align:middle;padding:4px 5px;font-size:8pt"></td>
+        <td style="vertical-align:middle;padding:4px 5px;font-size:8pt">${hk.label}</td>
+        <td style="text-align:center;vertical-align:middle;padding:4px 5px;font-weight:bold">${hk.angka}</td>
+      </tr>`;
+    }).join("");
+
+    const perilakuKerjaRowsKuantitatif = perilakuItems.map((p, i) => `<tr>
+      <td style="vertical-align:top;padding:4px 6px">
+        <div style="font-weight:bold;margin-bottom:3px">${i + 1} ${p.nama}</div>
+        ${p.bullets.map(b => `<div style="font-size:8pt">- ${b}</div>`).join("")}
+      </td>
+      <td style="vertical-align:middle;padding:4px 6px;font-size:8pt;font-style:italic">Ekspektasi Khusus Pimpinan:</td>
+      <td style="vertical-align:middle;padding:4px 6px;font-size:8pt">sudah sesuai</td>
+      <td style="vertical-align:middle;padding:4px 5px;font-size:8pt">SESUAI EKSPEKTASI</td>
+      <td style="text-align:center;vertical-align:middle;padding:4px 5px;font-weight:bold">2</td>
+    </tr>`).join("");
+
+    const kualitatifHasilKerjaRows = rows.map((row, i) => `<tr>
+      <td style="vertical-align:top;padding:5px 6px;width:40px">${i + 1}</td>
+      <td style="vertical-align:top;padding:5px 6px">
+        <div style="font-weight:bold;font-style:italic;margin-bottom:4px">${row.kodeIndikator ? `${row.kodeIndikator} ` : ""}${row.namaIndikator}</div>
+        <div style="font-size:8.5pt">Ukuran keberhasilan/Indikator Kinerja Individu, Target:</div>
+        <div style="font-size:8.5pt">• Tersedianya ${row.targetKuantitas ?? "—"} yang memenuhi ${row.namaIndikator.toLowerCase()}</div>
+      </td>
+      <td style="vertical-align:middle;padding:5px 6px;font-size:8.5pt;font-style:italic">Ekspektasi Khusus Pimpinan:</td>
+    </tr>`).join("");
+
+    const perilakuKerjaRowsKualitatif = perilakuItems.map((p, i) => `<tr>
+      <td style="vertical-align:top;padding:4px 6px">
+        <div style="font-weight:bold;margin-bottom:3px">${p.nama}</div>
+        ${p.bullets.map(b => `<div style="font-size:8pt">- ${b}</div>`).join("")}
+      </td>
+      <td style="vertical-align:top;padding:4px 6px;font-size:8pt;font-style:italic">Ekspektasi Khusus Pimpinan:</td>
+    </tr>`).join("");
+
+    const garuda = `<div style="text-align:center;font-size:48pt;margin-bottom:4px">🦅</div>`;
+
+    const coverPage = `<div class="page">
+  ${garuda}
+  <p style="text-align:center;font-size:11pt;font-weight:bold;margin:0 0 2px">DOKUMEN EVALUASI KINERJA PEGAWAI</p>
+  <p style="text-align:center;font-size:10pt;margin:0 0 10px">PERIODE*: <span style="text-decoration:line-through">TRIWULAN I/II/III/IV-</span>AKHIR**</p>
+  <table class="main-table">
+    <tr>
+      <td style="padding:4px 8px;width:50%;vertical-align:top;border-bottom:none">KEMENTERIAN PENDIDIKAN, KEBUDAYAAN,<br>RISET, DAN TEKNOLOGI</td>
+      <td style="padding:4px 8px;width:50%;vertical-align:top;border-bottom:none">PERIODE PENILAIAN:<br>${periodePenilaian}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:0;border:none">
+        <table class="main-table">
+          <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">1</td>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">PEGAWAI YANG DINILAI</td></tr>
+          ${infoRow("NAMA", nama)}${infoRow("NIP", nip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", jabatan)}${infoRow("UNIT KERJA", unitKerja)}
+          <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">2</td>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">PEJABAT PENILAI KINERJA</td></tr>
+          ${infoRow("NAMA", atasanNama)}${infoRow("NIP", atasanNip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", "—")}${infoRow("UNIT KERJA", unitKerja)}
+          <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">3</td>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">ATASAN PEJABAT PENILAI KINERJA</td></tr>
+          ${infoRow("NAMA", "—")}${infoRow("NIP", "—")}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", "—")}${infoRow("UNIT KERJA", unitKerja)}
+          <tr><td rowspan="2" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">4</td>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">EVALUASI KINERJA</td></tr>
+          <tr><td colspan="3" style="padding:3px 6px">
+            <table style="width:100%;border-collapse:collapse">
+              <tr><td style="padding:1px 6px">CAPAIAN KINERJA ORGANISASI</td><td style="padding:1px 4px">:</td><td style="padding:1px 6px;font-weight:bold">BAIK</td></tr>
+              <tr><td style="padding:1px 6px">PREDIKAT KINERJA PEGAWAI</td><td style="padding:1px 4px">:</td><td style="padding:1px 6px;font-weight:bold">${predikat}</td></tr>
+            </table>
+          </td></tr>
+          <tr><td style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">5</td>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">CATATAN/ REKOMENDASI</td></tr>
+          <tr><td></td><td colspan="3" style="padding:40px 6px"></td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-top:24px">
+    <tr>
+      <td style="width:50%;text-align:center;vertical-align:top;border:none;padding:0">
+        <p style="margin:0">7. Jakarta, ${tanggalCetak}</p>
+        <p style="margin:0">Pegawai yang dinilai</p>
+        <div style="height:56px"></div>
+        <p style="margin:0;font-weight:bold">${nama}</p>
+        <p style="margin:0;font-size:8.5pt">NIP ${nip}</p>
+      </td>
+      <td style="width:50%;text-align:center;vertical-align:top;border:none;padding:0">
+        <p style="margin:0">6. Jakarta, ${tanggalCetak}</p>
+        <p style="margin:0">Pejabat Penilai Kinerja,</p>
+        <div style="height:56px"></div>
+        <p style="margin:0;font-weight:bold">${atasanNama}</p>
+        <p style="margin:0;font-size:8.5pt">NIP ${atasanNip}</p>
+      </td>
+    </tr>
+  </table>
+</div>`;
+
+    const kuantitatifPage = `<div class="page">
+  <p style="text-align:center;font-size:10pt;font-weight:bold;margin:0">EVALUASI KINERJA PEGAWAI</p>
+  <p style="text-align:center;font-size:10pt;font-weight:bold;margin:0">PENDEKATAN HASIL KERJA KUANTITATIF</p>
+  <p style="text-align:center;font-size:9pt;font-weight:bold;margin:0 0 6px">BAGI PEJABAT ADMINISTRASI DAN PEJABAT FUNGSIONAL</p>
+  <p style="text-align:center;font-size:9pt;margin:0 0 6px">PERIODE: <span style="text-decoration:line-through">TRIWULAN I/II/III/IV-</span>AKHIR*</p>
+  <table class="main-table" style="margin-bottom:4px">
+    <tr>
+      <td colspan="3" style="padding:3px 6px;border-bottom:none">UPN "VETERAN" JAKARTA</td>
+      <td colspan="3" style="padding:3px 6px;border-bottom:none">PERIODE PENILAIAN: ${periodePenilaian}</td>
+    </tr>
+    <tr>
+      <td style="padding:2px 4px;width:20px;font-size:8pt">NO.</td>
+      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEGAWAI YANG DINILAI</td>
+      <td style="padding:2px 4px;width:20px;font-size:8pt">NO.</td>
+      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEJABAT PENILAI KINERJA</td>
+    </tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${nama}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${atasanNama}</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP</td><td style="padding:2px 5px;font-size:8pt">${nip}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP</td><td style="padding:2px 5px;font-size:8pt">${atasanNip}</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">3</td><td style="padding:2px 5px;font-size:8pt">PANGKAT/GOL. RUANG</td><td style="padding:2px 5px;font-size:8pt">—</td><td style="padding:2px 4px;text-align:center;font-size:8pt">3</td><td style="padding:2px 5px;font-size:8pt">PANGKAT/GOL. RUANG</td><td style="padding:2px 5px;font-size:8pt">—</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">4</td><td style="padding:2px 5px;font-size:8pt">JABATAN</td><td style="padding:2px 5px;font-size:8pt">${jabatan}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">4</td><td style="padding:2px 5px;font-size:8pt">JABATAN</td><td style="padding:2px 5px;font-size:8pt">—</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">5</td><td style="padding:2px 5px;font-size:8pt">UNIT KERJA</td><td style="padding:2px 5px;font-size:8pt">${unitKerja}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">5</td><td style="padding:2px 5px;font-size:8pt">INSTANSI</td><td style="padding:2px 5px;font-size:8pt">${unitKerja}</td></tr>
+    <tr><td colspan="6" style="padding:2px 6px;font-weight:bold;font-size:8pt">CAPAIAN KINERJA ORGANISASI*</td></tr>
+    <tr><td colspan="6" style="padding:2px 6px;font-weight:bold;font-size:8pt">BAIK</td></tr>
+    <tr><td colspan="6" style="padding:2px 6px;font-weight:bold;font-size:8pt">POLA DISTRIBUSI:</td></tr>
+    <tr><td colspan="6" style="padding:4px;text-align:center">${bellSvg}</td></tr>
+  </table>
+  <table class="main-table">
+    <tr style="background:#e8e8e8">
+      <td rowspan="2" style="text-align:center;font-weight:bold;font-size:8pt;padding:4px 5px;width:36%">HASIL KERJA</td>
+      <td rowspan="2" style="text-align:center;font-weight:bold;font-size:8pt;padding:4px 5px;width:13%">REALISASI BERDASARKAN BUKTI DUKUNG</td>
+      <td rowspan="2" style="text-align:center;font-weight:bold;font-size:8pt;padding:4px 5px;width:18%">UMPAN BALIK BERKELANJUTAN BERDASARKAN BUKTI DUKUNG</td>
+      <td colspan="2" style="text-align:center;font-weight:bold;font-size:8pt;padding:4px 5px">HASIL KERJA</td>
+    </tr>
+    <tr style="background:#e8e8e8">
+      <td style="text-align:center;font-size:7.5pt;padding:3px 5px">1-Dibawah Ekspektasi<br>2-Sesuai Ekspektasi<br>3-diatas Ekspektasi</td>
+      <td style="text-align:center;font-weight:bold;font-size:8pt;padding:4px 5px">Angka</td>
+    </tr>
+    <tr><td colspan="5" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">A. UTAMA</td></tr>
+    ${hasilKerjaRows}
+    <tr><td colspan="5" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">B. TAMBAHAN</td></tr>
+    <tr><td colspan="5" style="padding:20px 6px"></td></tr>
+    <tr style="background:#e8e8e8">
+      <td colspan="2" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">RATING HASIL KERJA*</td>
+      <td style="padding:3px 6px"></td>
+      <td style="font-weight:bold;padding:3px 6px;font-size:8.5pt">${ratingHK.label}</td>
+      <td style="text-align:center;font-weight:bold;padding:3px 6px">${ratingHK.angka}</td>
+    </tr>
+    <tr style="background:#e8e8e8"><td colspan="4" style="font-weight:bold;padding:2px 6px;font-size:8pt">PERILAKU KERJA</td><td></td></tr>
+    ${perilakuKerjaRowsKuantitatif}
+    <tr style="background:#e8e8e8">
+      <td colspan="2" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">RATING PERILAKU KERJA*</td>
+      <td style="padding:3px 6px"></td>
+      <td style="font-weight:bold;padding:3px 6px;font-size:8.5pt">DI ATAS EKSPEKTASI</td>
+      <td style="text-align:center;font-weight:bold;padding:3px 6px">2</td>
+    </tr>
+    <tr style="background:#e8e8e8"><td colspan="4" style="font-weight:bold;padding:2px 6px;font-size:8.5pt">PREDIKAT KINERJA PEGAWAI*</td><td></td></tr>
+    <tr style="background:#e8e8e8"><td colspan="4" style="font-weight:bold;padding:2px 6px;font-size:8.5pt">${predikat}</td><td></td></tr>
+  </table>
+  <div style="text-align:right;margin-top:20px">
+    <p style="margin:0">Jakarta, ${tanggalCetak}</p>
+    <p style="margin:0">Pejabat Penilai Kinerja</p>
+    <div style="height:52px"></div>
+    <p style="margin:0;font-weight:bold">${atasanNama}</p>
+    <p style="margin:0;font-size:8.5pt">NIP ${atasanNip}</p>
+  </div>
+</div>`;
+
+    const kualitatifPage = `<div class="page">
+  <p style="text-align:center;font-size:10pt;font-weight:bold;margin:0">SASARAN KINERJA PEGAWAI</p>
+  <p style="text-align:center;font-size:10pt;font-weight:bold;margin:0">PENDEKATAN HASIL KERJA KUALITATIF</p>
+  <p style="text-align:center;font-size:9pt;font-weight:bold;margin:0 0 6px">BAGI PEJABAT ADMINISTRASI / FUNGSIONAL</p>
+  <table class="main-table" style="margin-bottom:4px">
+    <tr>
+      <td style="padding:2px 4px;width:20px;font-size:8pt">NO</td>
+      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEGAWAI YANG DINILAI</td>
+      <td style="padding:2px 4px;width:20px;font-size:8pt">NO</td>
+      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEJABAT PENILAI KINERJA</td>
+    </tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${nama}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${atasanNama}</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP.</td><td style="padding:2px 5px;font-size:8pt">${nip}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP.</td><td style="padding:2px 5px;font-size:8pt">${atasanNip}</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">3</td><td style="padding:2px 5px;font-size:8pt">PANGKAT/ GOL. RUANG</td><td style="padding:2px 5px;font-size:8pt">—</td><td style="padding:2px 4px;text-align:center;font-size:8pt">3</td><td style="padding:2px 5px;font-size:8pt">PANGKAT/ GOL. RUANG</td><td style="padding:2px 5px;font-size:8pt">—</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">4</td><td style="padding:2px 5px;font-size:8pt">JABATAN</td><td style="padding:2px 5px;font-size:8pt">${jabatan}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">4</td><td style="padding:2px 5px;font-size:8pt">JABATAN</td><td style="padding:2px 5px;font-size:8pt">—</td></tr>
+    <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">5</td><td style="padding:2px 5px;font-size:8pt">UNIT KERJA</td><td style="padding:2px 5px;font-size:8pt">${unitKerja}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">5</td><td style="padding:2px 5px;font-size:8pt">UNIT KERJA</td><td style="padding:2px 5px;font-size:8pt">${unitKerja}</td></tr>
+    <tr><td colspan="6" style="padding:2px 6px;font-size:8pt">PERIODE PENILAIAN: SAMPAI DENGAN 31 DESEMBER TAHUN ${tahun}</td></tr>
+  </table>
+  <table class="main-table">
+    <tr style="background:#e8e8e8"><td colspan="3" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">HASIL KERJA</td></tr>
+    <tr><td colspan="3" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">A. UTAMA</td></tr>
+    ${kualitatifHasilKerjaRows}
+    <tr style="background:#e8e8e8"><td colspan="3" style="font-weight:bold;padding:3px 6px;font-size:8.5pt">PERILAKU KERJA*</td></tr>
+    <tr style="background:#e8e8e8">
+      <td style="font-weight:bold;padding:3px 6px;font-size:8pt">Berorientasi pelayanan</td>
+      <td colspan="2" style="font-size:8pt;padding:3px 6px"></td>
+    </tr>
+    ${perilakuKerjaRowsKualitatif}
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-top:20px">
+    <tr>
+      <td style="width:50%;text-align:center;vertical-align:top;border:none;padding:0">
+        <p style="margin:0">Pegawai yang Dinilai</p>
+        <div style="height:56px"></div>
+        <p style="margin:0;font-weight:bold">${nama}</p>
+        <p style="margin:0;font-size:8.5pt">NIP. ${nip}</p>
+      </td>
+      <td style="width:50%;text-align:center;vertical-align:top;border:none;padding:0">
+        <p style="margin:0">Jakarta, ${tanggalCetak}</p>
+        <p style="margin:0">Pejabat Penilai Kinerja</p>
+        <div style="height:56px"></div>
+        <p style="margin:0;font-weight:bold">${atasanNama}</p>
+        <p style="margin:0;font-size:8.5pt">NIP. ${atasanNip}</p>
+      </td>
+    </tr>
+  </table>
+</div>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Evaluasi Kinerja Pegawai – ${nama} – ${tahun}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm 12mm 15mm 15mm; }
+    body { font-family: 'Times New Roman', serif; font-size: 9pt; color: #000; margin: 0; padding: 0; }
+    .page { page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+    .main-table { width: 100%; border-collapse: collapse; }
+    .main-table td, .main-table th { border: 1px solid #000; padding: 3px 5px; font-size: 9pt; vertical-align: top; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+${coverPage}
+${kuantitatifPage}
+${kualitatifPage}
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  }
+
   async function handleApprove(action: "approved" | "rejected", sigDataUrl?: string) {
     if (!selectedBawahan) return;
     setApproving(true);
@@ -806,6 +1110,25 @@ export default function SKPContent() {
             }}
           >
             🖨️ Cetak Rencana SKP
+          </button>
+          <button
+            onClick={generateEvaluasiKinerjaPegawai}
+            disabled={rows.length === 0}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              border: "none",
+              borderRadius: 8,
+              background: rows.length === 0 ? "#9ca3af" : "#7c3aed",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: rows.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            📄 Cetak Formulir EKP
           </button>
               {rows.length === 0 && (
                 <span style={{ fontSize: 11, color: "#6b7280", textAlign: "right" }}>
