@@ -21,7 +21,7 @@ import {
   ProgressChartItem,
   IndikatorDetail,
 } from "@/services/monitoringService";
-import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, type RealisasiFileItem, type MonitoringBawahanResult, type MonitoringBawahanUser, type MonitoringBawahanRow } from "@/lib/api";
+import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, getValidasiBiroPKU, upsertValidasiBiroPKU, type RealisasiFileItem, type MonitoringBawahanResult, type MonitoringBawahanUser, type MonitoringBawahanRow, type ValidasiBiroPKUItem } from "@/lib/api";
 import type { User } from "@/types";
 
 const jenisOptions = [
@@ -572,6 +572,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [expandedLeaves, setExpandedLeaves] = useState<Set<number>>(new Set());
 
+  const [validasiBiroPKU, setValidasiBiroPKU] = useState<ValidasiBiroPKUItem[]>([]);
+  const [validasiModal, setValidasiModal] = useState<{ indikatorId: number; nama: string; current: ValidasiBiroPKUItem | null } | null>(null);
+  const [validasiInput, setValidasiInput] = useState<{ jumlahValid: string; keterangan: string }>({ jumlahValid: "", keterangan: "" });
+  const [validasiSaving, setValidasiSaving] = useState(false);
+
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
   const canViewDetail = roleStr === "dekan" || roleStr.includes("wakil dekan");
@@ -622,6 +627,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   }, [selectedJenis, selectedTahun, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!isPimpinan) return;
+    getValidasiBiroPKU(selectedTahun).then(setValidasiBiroPKU).catch(() => setValidasiBiroPKU([]));
+  }, [selectedTahun, isPimpinan]);
+
+  useEffect(() => {
     const roleLevel: number = (user as MonitoringUser & { roleLevel?: number })?.roleLevel ?? 99;
     if (!user || roleLevel > 3) { setMonitoringBawahan(null); return; }
     let cancelled = false;
@@ -641,6 +651,277 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       setChartData([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSaveValidasi() {
+    if (!validasiModal) return;
+    setValidasiSaving(true);
+    try {
+      const userId: number = user?.id ?? user?.userId ?? 0;
+      const saved = await upsertValidasiBiroPKU({
+        indikatorId: validasiModal.indikatorId,
+        tahun: selectedTahun,
+        jumlahValid: validasiInput.jumlahValid === "" ? null : Number(validasiInput.jumlahValid),
+        keterangan: validasiInput.keterangan || undefined,
+        inputBy: userId,
+      });
+      setValidasiBiroPKU(prev => {
+        const idx = prev.findIndex(v => v.indikatorId === saved.indikatorId);
+        if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n; }
+        return [...prev, saved];
+      });
+      setValidasiModal(null);
+    } catch {
+      alert("Gagal menyimpan hasil validasi.");
+    } finally {
+      setValidasiSaving(false);
+    }
+  }
+
+  async function exportValidasiExcel() {
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+
+      const HEADER_BG  = "FFBDD7EE";
+      const HEADER_FG  = "FF1F3864";
+      const JUMLAH_BG  = "FFFFC000";
+      const JUMLAH_FG  = "FF1F3864";
+      const BORDER     = "FF000000";
+      const TOTAL_COLS = 13;
+
+      const mkBorder = (style: "thin" | "medium" = "thin") => ({
+        top:    { style, color: { argb: BORDER } },
+        bottom: { style, color: { argb: BORDER } },
+        left:   { style, color: { argb: BORDER } },
+        right:  { style, color: { argb: BORDER } },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const styleCell = (cell: any, fillArgb: string, fontArgb: string, bold: boolean, halign: "center" | "left", wrap = false, vAlign: "middle" | "top" = "middle", borderStyle: "thin" | "medium" = "thin") => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillArgb } };
+        cell.font = { bold, color: { argb: fontArgb }, size: 10, name: "Calibri" };
+        cell.alignment = { horizontal: halign, vertical: vAlign, wrapText: wrap };
+        cell.border = mkBorder(borderStyle);
+      };
+
+      const sortKode = (a: string, b: string) => {
+        const pa = a.split(".").map(Number);
+        const pb = b.split(".").map(Number);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+          if (d !== 0) return d;
+        }
+        return 0;
+      };
+
+      const sorted = [...chartData].sort((a, b) => sortKode(a.kode, b.kode));
+
+      // Fetch folder links in parallel
+      const folderLinkMap = new Map<number, string | null>();
+      await Promise.all(sorted.map(async (item) => {
+        try {
+          const result = await getAllRealisasiFiles(item.id, token);
+          folderLinkMap.set(item.id, result.folderLink ?? null);
+        } catch {
+          folderLinkMap.set(item.id, null);
+        }
+      }));
+
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet(`Validasi ${selectedJenis} ${selectedTahun}`);
+
+      // Col widths: No | Sasaran | Kode | Nama | TargetUniv | SD | TgtKual | TgtKuant | RealKual | RealKuant | Capaian | HasilBiroPKU | SumberData
+      [5, 30, 10, 40, 12, 12, 12, 12, 14, 12, 12, 14, 25].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+      // ── Title rows ─────────────────────────────────────────────────────────
+      [
+        `DEKAN FAKULTAS ILMU KOMPUTER DENGAN REKTOR`,
+        `UNIVERSITAS PEMBANGUNAN NASIONAL "VETERAN" JAKARTA`,
+        `TAHUN ANGGARAN ${selectedTahun}`,
+      ].forEach(text => {
+        const r = ws.addRow([text, ...Array(TOTAL_COLS - 1).fill("")]);
+        r.height = 18;
+        ws.mergeCells(r.number, 1, r.number, TOTAL_COLS);
+        r.getCell(1).font = { bold: true, size: 12, name: "Calibri", color: { argb: HEADER_FG } };
+        r.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+      });
+      ws.addRow([]); // spacer
+
+      // ── 3-Row Header ────────────────────────────────────────────────────────
+      const tenggat = sorted[0]?.tenggat && sorted[0].tenggat !== "-" ? sorted[0].tenggat : "";
+
+      // H1: top-level group headers
+      const h1 = ws.addRow(Array(TOTAL_COLS).fill(""));
+      h1.height = 30;
+      h1.getCell(1).value = "No.";
+      h1.getCell(2).value = "Sasaran Strategis";
+      h1.getCell(3).value = "Indikator Kinerja Kegiatan";
+      h1.getCell(5).value = `TARGET UNIVERSITAS\n${selectedTahun}`;
+      h1.getCell(7).value = "FIK";
+      h1.getCell(12).value = "Hasil\nBiro PKU";
+      h1.getCell(13).value = "Sumber Data";
+
+      // H2: second-level headers
+      const h2 = ws.addRow(Array(TOTAL_COLS).fill(""));
+      h2.height = 30;
+      h2.getCell(3).value = "Kode";
+      h2.getCell(4).value = "Nama";
+      h2.getCell(5).value = selectedTahun;
+      h2.getCell(6).value = tenggat ? `S.D\n${tenggat}` : "S.D";
+      h2.getCell(7).value = `Target\n${selectedTahun}`;
+      h2.getCell(9).value = tenggat ? `Realisasi s.d\n${tenggat}` : "Realisasi";
+      h2.getCell(11).value = "% Capaian";
+
+      // H3: leaf sub-headers for FIK columns
+      const h3 = ws.addRow(Array(TOTAL_COLS).fill(""));
+      h3.height = 20;
+      h3.getCell(7).value = "Kualitas";
+      h3.getCell(8).value = "Kuantitas";
+      h3.getCell(9).value = "Kualitas";
+      h3.getCell(10).value = "Kuantitas";
+
+      // Style all header cells
+      for (const hRow of [h1, h2, h3]) {
+        for (let c = 1; c <= TOTAL_COLS; c++) {
+          styleCell(hRow.getCell(c), HEADER_BG, HEADER_FG, true, "center", true, "middle", "medium");
+        }
+      }
+
+      // Vertical merges: No, Sasaran, Hasil Biro PKU, Sumber Data span all 3 header rows
+      [1, 2, 12, 13].forEach(c => ws.mergeCells(h1.number, c, h3.number, c));
+      // H1 horizontal group merges
+      ws.mergeCells(h1.number, 3, h1.number, 4);   // IKK group
+      ws.mergeCells(h1.number, 5, h1.number, 6);   // TARGET UNIVERSITAS group
+      ws.mergeCells(h1.number, 7, h1.number, 11);  // FIK group
+      // H2-H3 merges: Kode, Nama, Tahun, S.D, % Capaian span rows 2-3
+      [3, 4, 5, 6, 11].forEach(c => ws.mergeCells(h2.number, c, h3.number, c));
+      // H2 sub-group merges: Target (cols 7-8) and Realisasi (cols 9-10)
+      ws.mergeCells(h2.number, 7, h2.number, 8);
+      ws.mergeCells(h2.number, 9, h2.number, 10);
+
+      ws.views = [{ state: "frozen", ySplit: h3.number, topLeftCell: `A${h3.number + 1}` }];
+
+      // ── Data rows ──────────────────────────────────────────────────────────
+      let groupNo = 0;
+      let totalTgtKuant = 0;
+      let totalRealKuant = 0;
+      let totalValid = 0;
+
+      for (const item of sorted) {
+        const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
+        const folderLink = folderLinkMap.get(item.id) ?? null;
+        groupNo++;
+
+        const subs = [...(item.subIndikators ?? [])].sort((a, b) => sortKode(a.kode, b.kode));
+        const groupStartRow = ws.rowCount + 1;
+        let anyRow = false;
+
+        for (const sub of subs) {
+          const l2s = [...(sub.children ?? [])].sort((a, b) => sortKode(a.kode, b.kode));
+
+          // L1 row: kode/nama only — data cols blank
+          const l1Row = ws.addRow(Array(TOTAL_COLS).fill(""));
+          l1Row.height = 18;
+          l1Row.getCell(3).value = sub.kode;
+          l1Row.getCell(4).value = sub.nama;
+          for (let c = 1; c <= TOTAL_COLS; c++) {
+            styleCell(l1Row.getCell(c), "FFFFFFFF", "FF000000", true,
+              c === 3 || c === 4 ? "left" : "center", true, "middle");
+          }
+          anyRow = true;
+
+          // L2 rows: kode/nama + realisasi data
+          for (const l2 of l2s) {
+            const tgtKuant = l2.nilaiTarget != null ? Number(l2.nilaiTarget) : null;
+            const realKuant = l2.realisasi != null ? Number(l2.realisasi) : 0;
+            const pctStr = tgtKuant && tgtKuant > 0
+              ? `${Math.round((realKuant / tgtKuant) * 100)}%`
+              : "";
+
+            if (tgtKuant != null) totalTgtKuant += tgtKuant;
+            totalRealKuant += realKuant;
+
+            const l2Row = ws.addRow(Array(TOTAL_COLS).fill(""));
+            l2Row.height = 18;
+            l2Row.getCell(3).value = l2.kode;
+            l2Row.getCell(4).value = l2.nama;
+            l2Row.getCell(8).value = tgtKuant ?? "";   // Target Kuantitas
+            l2Row.getCell(9).value = pctStr;           // Realisasi Kualitas (%)
+            l2Row.getCell(10).value = realKuant || ""; // Realisasi Kuantitas
+            l2Row.getCell(11).value = pctStr;          // % Capaian
+            for (let c = 1; c <= TOTAL_COLS; c++) {
+              styleCell(l2Row.getCell(c), "FFF9F9F9", "FF000000", false,
+                c === 3 || c === 4 ? "left" : "center", true, "middle");
+            }
+          }
+        }
+
+        if (!anyRow) {
+          const eRow = ws.addRow(Array(TOTAL_COLS).fill(""));
+          eRow.height = 18;
+          for (let c = 1; c <= TOTAL_COLS; c++) {
+            styleCell(eRow.getCell(c), "FFFFFFFF", "FF000000", false, "center", true, "middle");
+          }
+        }
+
+        const groupEndRow = ws.rowCount;
+
+        // Merge L0-level cols (No, Sasaran, TargetUniv, SD, HasilBiroPKU, SumberData) across all rows
+        [1, 2, 5, 6, 12, 13].forEach(c => {
+          if (groupEndRow > groupStartRow) {
+            ws.mergeCells(groupStartRow, c, groupEndRow, c);
+          }
+        });
+
+        // Set L0 values on first row of the group
+        ws.getCell(groupStartRow, 1).value = groupNo;
+        ws.getCell(groupStartRow, 1).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        ws.getCell(groupStartRow, 2).value = item.nama;
+        ws.getCell(groupStartRow, 2).alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+        ws.getCell(groupStartRow, 5).value = item.targetUniversitas != null ? `${item.targetUniversitas}%` : "";
+        ws.getCell(groupStartRow, 5).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        ws.getCell(groupStartRow, 6).value = item.tenggat && item.tenggat !== "-" ? item.tenggat : "";
+        ws.getCell(groupStartRow, 6).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        ws.getCell(groupStartRow, 12).value = val?.jumlahValid != null ? val.jumlahValid : "";
+        ws.getCell(groupStartRow, 12).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+
+        // Sumber Data hyperlink
+        const linkCell = ws.getCell(groupStartRow, 13);
+        if (folderLink) {
+          linkCell.value = { text: "Lihat Folder", hyperlink: folderLink };
+          linkCell.font = { size: 10, name: "Calibri", color: { argb: "FF0563C1" }, underline: true };
+        } else {
+          linkCell.value = "-";
+          linkCell.font = { size: 10, name: "Calibri", color: { argb: "FF9CA3AF" } };
+        }
+        linkCell.alignment = { horizontal: "center", vertical: "middle" };
+
+        if (val?.jumlahValid != null) totalValid += val.jumlahValid;
+      }
+
+      // ── Jumlah row ──────────────────────────────────────────────────────────
+      const jRow = ws.addRow(Array(TOTAL_COLS).fill(""));
+      jRow.height = 22;
+      ws.mergeCells(jRow.number, 1, jRow.number, 2);
+      jRow.getCell(1).value = "Jumlah";
+      jRow.getCell(8).value = totalTgtKuant || "";
+      jRow.getCell(10).value = totalRealKuant || "";
+      jRow.getCell(12).value = totalValid || "";
+      for (let c = 1; c <= TOTAL_COLS; c++) {
+        styleCell(jRow.getCell(c), JUMLAH_BG, JUMLAH_FG, true, "center", false, "middle", "medium");
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Validasi_${selectedJenis}_${selectedTahun}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Gagal export: " + String(err));
     }
   }
 
@@ -913,8 +1194,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>
                   Rangkuman Target & Realisasi
                 </div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>
-                  {selectedJenis} - {selectedTahun}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 12, color: "#64748b" }}>{selectedJenis} - {selectedTahun}</span>
+                  <button onClick={exportValidasiExcel}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                    ⬇ Export Validasi
+                  </button>
                 </div>
               </div>
               <div style={{ overflowX: "auto" }}>
@@ -923,12 +1208,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     <tr style={{ backgroundColor: "#f8fafc" }}>
                       {[
                         { label: "No", w: "4%" },
-                        { label: "Sasaran", w: "14%" },
+                        { label: "Sasaran", w: "13%" },
                         { label: "Indikator / Sub-Indikator", w: "auto" },
-                        { label: "Target", w: "10%" },
-                        { label: "Realisasi", w: "9%" },
-                        { label: "Tenggat", w: "10%" },
-                        { label: "Status", w: "9%" },
+                        { label: "Target", w: "8%" },
+                        { label: "Realisasi", w: "8%" },
+                        { label: "Tenggat", w: "9%" },
+                        { label: "Status", w: "8%" },
+                        { label: "Valid Biro PKU", w: "9%" },
                         { label: "Aksi", w: "8%" },
                       ].map((h) => (
                         <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
@@ -939,7 +1225,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
+                      <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
                     ) : chartData.length > 0 ? (() => {
                       const sortKode = (a: string, b: string) => {
                         const pa = a.split('.').map(Number);
@@ -1011,6 +1297,24 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                   {sub.status}
                                 </span>
                               </td>
+                              {firstRow && (() => {
+                                const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
+                                return (
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>
+                                    {val?.jumlahValid != null ? (
+                                      <span style={{ fontWeight: 700, color: "#0369a1", fontSize: 13 }}>{val.jumlahValid}</span>
+                                    ) : (
+                                      <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
+                                    )}
+                                    {isPimpinan && (
+                                      <button onClick={() => { setValidasiModal({ indikatorId: item.id, nama: item.nama, current: val ?? null }); setValidasiInput({ jumlahValid: val?.jumlahValid != null ? String(val.jumlahValid) : "", keterangan: val?.keterangan ?? "" }); }}
+                                        style={{ display: "block", margin: "4px auto 0", padding: "2px 8px", borderRadius: 5, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 11, color: "#374151", cursor: "pointer" }}>
+                                        Edit
+                                      </button>
+                                    )}
+                                  </td>
+                                );
+                              })()}
                               {firstRow && (
                                 <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>
                                   {canViewDetail ? (
@@ -1047,10 +1351,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       }
 
                       return rows.length > 0 ? rows : (
-                        <tr key="empty"><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data indikator.</td></tr>
+                        <tr key="empty"><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data indikator.</td></tr>
                       );
                     })() : (
-                      <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
+                      <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1529,6 +1833,51 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           token={token}
           onClose={() => setBawahanCellModal(null)}
         />
+      )}
+
+      {/* Validasi Biro PKU Modal */}
+      {validasiModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setValidasiModal(null)}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: "28px 32px", width: 440, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}
+            onClick={e => e.stopPropagation()}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#1f2937", margin: "0 0 4px" }}>Input Hasil Validasi Biro PKU</p>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 20px", lineHeight: 1.4 }}>{validasiModal.nama}</p>
+
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>
+              Jumlah Valid
+            </label>
+            <input
+              type="number" min={0}
+              value={validasiInput.jumlahValid}
+              onChange={e => setValidasiInput(p => ({ ...p, jumlahValid: e.target.value }))}
+              placeholder="contoh: 12"
+              style={{ width: "100%", padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, marginBottom: 14, boxSizing: "border-box" }}
+            />
+
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>
+              Keterangan <span style={{ fontWeight: 400, color: "#9ca3af" }}>(opsional)</span>
+            </label>
+            <textarea
+              value={validasiInput.keterangan}
+              onChange={e => setValidasiInput(p => ({ ...p, keterangan: e.target.value }))}
+              placeholder="Catatan dari Biro PKU..."
+              rows={3}
+              style={{ width: "100%", padding: "9px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, marginBottom: 20, resize: "vertical", boxSizing: "border-box" }}
+            />
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setValidasiModal(null)}
+                style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+                Batal
+              </button>
+              <button onClick={handleSaveValidasi} disabled={validasiSaving}
+                style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#0369a1", fontSize: 13, fontWeight: 600, color: "#fff", cursor: validasiSaving ? "not-allowed" : "pointer", opacity: validasiSaving ? 0.7 : 1 }}>
+                {validasiSaving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

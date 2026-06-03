@@ -439,36 +439,39 @@ export default function TambahIndikatorForm() {
               </div>
 
               <div className="row g-3 mb-3">
-                <div className="col-md-4">
+                <div className="col-md-6">
                   <label style={fieldLabel}>Jenis Indikator <span style={{ color: "#ef4444" }}>*</span></label>
                   <select style={fieldInput} value={jenis} onChange={e => setJenis(e.target.value)}>
                     <option value="IKU">IKU — Indikator Kinerja Utama</option>
                     <option value="PK">PK — Perjanjian Kinerja</option>
                   </select>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-6">
                   <label style={fieldLabel}>Tahun <span style={{ color: "#ef4444" }}>*</span></label>
                   <select style={fieldInput} value={targetTahun} onChange={e => setTargetTahun(e.target.value)}>
                     {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
                   </select>
                 </div>
-                {jenis !== "PK" && (
-                  <div className="col-md-4">
+              </div>
+
+              {jenis !== "PK" && (
+                <div className="row g-3 mb-3">
+                  <div className="col-md-6">
                     <label style={fieldLabel}>Tenggat Waktu <span style={{ color: "#ef4444" }}>*</span></label>
                     <select style={fieldInput} value={tenggat} onChange={e => setTenggat(e.target.value)}>
                       <option value="">— Pilih Triwulan —</option>
                       {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div className="row g-3 mb-3">
-                <div className="col-md-2">
+                <div className="col-md-6">
                   <label style={fieldLabel}>Nomor / Kode <span style={{ color: "#ef4444" }}>*</span></label>
                   <input style={fieldInput} type="text" value={nomor} onChange={e => setNomor(e.target.value)} placeholder="1" />
                 </div>
-                <div className="col">
+                <div className="col-md-6">
                   <label style={fieldLabel}>Sasaran Strategis <span style={{ color: "#ef4444" }}>*</span></label>
                   <input style={fieldInput} type="text" value={sasaranStrategis} onChange={e => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
                 </div>
@@ -476,7 +479,7 @@ export default function TambahIndikatorForm() {
 
               {jenis !== "PK" && (
                 <div className="row g-3">
-                  <div className="col-md-3">
+                  <div className="col-md-6">
                     <label style={fieldLabel}>Target <span style={{ color: "#ef4444" }}>*</span></label>
                     <input style={fieldInput} type="number" min={0} value={targetUniversitas}
                       onChange={e => {
@@ -484,7 +487,7 @@ export default function TambahIndikatorForm() {
                         setTargetUniversitas(v === "" ? "" : String(Math.max(0, Number(v))));
                       }} placeholder="80" />
                   </div>
-                  <div className="col-md-3">
+                  <div className="col-md-6">
                     <label style={fieldLabel}>Satuan</label>
                     <select style={fieldInput} value={targetSatuan} onChange={e => setTargetSatuan(e.target.value)}>
                       <option value="">— Pilih Satuan —</option>
@@ -509,7 +512,7 @@ export default function TambahIndikatorForm() {
               </div>
 
               {groups.map((group, gIdx) => (
-                <div key={group.id} style={{ background: "#fff", border: "1px solid #dbeafe", borderRadius: 14, padding: "16px 20px", marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                <div key={group.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "16px 20px", marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
                   {/* L1 header */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     {levelBadge("#1d4ed8", "#dbeafe", "L1")}
@@ -522,20 +525,22 @@ export default function TambahIndikatorForm() {
                     )}
                   </div>
 
-                  <div className="row g-2 mb-3">
-                    <div className="col-md-2">
+                  <div className="row g-2 mb-2">
+                    <div className="col-md-6">
                       <label style={fieldLabel}>Kode</label>
                       <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={group.kodeIndikator}
                         onChange={e => updateGroup(group.id, "kodeIndikator", e.target.value)}
                         placeholder="1.1" />
                     </div>
-                    <div className="col">
+                    <div className="col-md-6">
                       <label style={fieldLabel}>Nama Indikator Kinerja</label>
                       <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={group.indikatorKinerja}
                         onChange={e => updateGroup(group.id, "indikatorKinerja", e.target.value)}
                         placeholder="contoh: Rasio lulusan tepat waktu" />
                     </div>
-                    <div className="col-md-3">
+                  </div>
+                  <div className="row g-2 mb-3">
+                    <div className="col-md-6">
                       <label style={fieldLabel}>Sumber Data</label>
                       <select style={{ ...fieldInput, fontSize: 12 }} value={group.sumberData}
                         onChange={e => updateGroup(group.id, "sumberData", e.target.value)}>
@@ -550,46 +555,26 @@ export default function TambahIndikatorForm() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                       {levelBadge("#059669", "#d1fae5", "L2")}
                       <button type="button" onClick={() => addSub(group.id)}
-                        style={{ padding: "4px 10px", borderRadius: 6, border: "1px dashed #a7f3d0", background: "#f0fdf4", color: "#059669", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        style={{ padding: "4px 10px", borderRadius: 6, border: "1px dashed #d1d5db", background: "#fafafa", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         + Sub Indikator
                       </button>
                     </div>
 
                     {group.subItems.map((sub, sIdx) => (
-                      <div key={sub.id} style={{ background: "#f0fdf4", border: "1px solid #d1fae5", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                      <div key={sub.id} style={{ background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
                         <div className="row g-2 mb-2 align-items-end">
-                          <div className="col-md-2">
-                            <label style={{ ...fieldLabel, color: "#059669", fontSize: 11 }}>Kode</label>
+                          <div className="col-md-6">
+                            <label style={{ ...fieldLabel, fontSize: 11 }}>Kode</label>
                             <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={sub.kodeSubIndikator}
                               onChange={e => updateSub(group.id, sub.id, "kodeSubIndikator", e.target.value)}
                               placeholder={`1.${gIdx + 1}.${sIdx + 1}`} />
                           </div>
                           <div className="col">
-                            <label style={{ ...fieldLabel, color: "#059669", fontSize: 11 }}>Nama Sub Indikator</label>
+                            <label style={{ ...fieldLabel, fontSize: 11 }}>Nama Sub Indikator</label>
                             <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={sub.subIndikatorKinerja}
                               onChange={e => updateSub(group.id, sub.id, "subIndikatorKinerja", e.target.value)}
                               placeholder="contoh: Sub rincian indikator kinerja" />
                           </div>
-                          {jenis === "IKU" && (
-                            <>
-                              <div className="col-md-2">
-                                <label style={{ ...fieldLabel, color: "#059669", fontSize: 11 }}>Target</label>
-                                <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={sub.target}
-                                  onChange={e => updateSub(group.id, sub.id, "target", e.target.value)}
-                                  placeholder="0" />
-                              </div>
-                              <div className="col-md-2">
-                                <label style={{ ...fieldLabel, color: "#059669", fontSize: 11 }}>
-                                  Satuan <span style={{ fontWeight: 400, color: "#9ca3af" }}>(dari L0)</span>
-                                </label>
-                                <select style={{ ...fieldInput, fontSize: 12 }} value={sub.satuan}
-                                  onChange={e => updateSub(group.id, sub.id, "satuan", e.target.value)}>
-                                  <option value="">— Pilih —</option>
-                                  {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                              </div>
-                            </>
-                          )}
                           <div className="col-auto" style={{ display: "flex", alignItems: "flex-end" }}>
                             <button type="button" onClick={() => removeSub(group.id, sub.id)}
                               disabled={group.subItems.length <= 1}
@@ -598,28 +583,48 @@ export default function TambahIndikatorForm() {
                             </button>
                           </div>
                         </div>
+                        {jenis === "IKU" && (
+                          <div className="row g-2 mb-2">
+                            <div className="col-md-6">
+                              <label style={{ ...fieldLabel, fontSize: 11 }}>Target</label>
+                              <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={sub.target}
+                                onChange={e => updateSub(group.id, sub.id, "target", e.target.value)}
+                                placeholder="0" />
+                            </div>
+                            <div className="col-md-6">
+                              <label style={{ ...fieldLabel, fontSize: 11 }}>
+                                Satuan <span style={{ fontWeight: 400, color: "#9ca3af" }}>(dari L0)</span>
+                              </label>
+                              <select style={{ ...fieldInput, fontSize: 12 }} value={sub.satuan}
+                                onChange={e => updateSub(group.id, sub.id, "satuan", e.target.value)}>
+                                <option value="">— Pilih —</option>
+                                {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        )}
 
                         {/* L3 (PK only) */}
                         {jenis === "PK" && (
-                          <div style={{ borderTop: "1px solid #bbf7d0", paddingTop: 10, marginTop: 4 }}>
+                          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 10, marginTop: 4 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                               {levelBadge("#7c3aed", "#ede9fe", "L3")}
                               <button type="button" onClick={() => addSubL3(group.id, sub.id)}
-                                style={{ padding: "4px 10px", borderRadius: 6, border: "1px dashed #c4b5fd", background: "#f5f3ff", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                style={{ padding: "4px 10px", borderRadius: 6, border: "1px dashed #d1d5db", background: "#fafafa", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                                 + Rincian
                               </button>
                             </div>
                             {sub.level3Items.map((l3, l3Idx) => (
-                              <div key={l3.id} style={{ background: "#faf5ff", border: "1px solid #ede9fe", borderRadius: 8, padding: "10px 12px", marginBottom: 6 }}>
+                              <div key={l3.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 12px", marginBottom: 6 }}>
                                 <div className="row g-2 mb-2 align-items-end">
-                                  <div className="col-md-2">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Kode</label>
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Kode</label>
                                     <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.kode}
                                       onChange={e => updateSubL3(group.id, sub.id, l3.id, "kode", e.target.value)}
                                       placeholder={`x.${sIdx + 1}.${l3Idx + 1}`} />
                                   </div>
                                   <div className="col">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Nama Rincian</label>
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Nama Rincian</label>
                                     <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.nama}
                                       onChange={e => updateSubL3(group.id, sub.id, l3.id, "nama", e.target.value)}
                                       placeholder="contoh: Rincian detail kegiatan" />
@@ -632,31 +637,33 @@ export default function TambahIndikatorForm() {
                                     </button>
                                   </div>
                                 </div>
-                                <div className="row g-2">
-                                  <div className="col-md-2">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Target</label>
+                                <div className="row g-2 mb-2">
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Target</label>
                                     <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={l3.target}
                                       onChange={e => updateSubL3(group.id, sub.id, l3.id, "target", e.target.value)}
                                       placeholder="5" />
                                   </div>
-                                  <div className="col-md-2">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Satuan</label>
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Satuan</label>
                                     <select style={{ ...fieldInput, fontSize: 12 }} value={l3.satuan}
                                       onChange={e => updateSubL3(group.id, sub.id, l3.id, "satuan", e.target.value)}>
                                       <option value="">— Pilih —</option>
                                       {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                   </div>
-                                  <div className="col-md-2">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Sumber Data</label>
+                                </div>
+                                <div className="row g-2">
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Sumber Data</label>
                                     <select style={{ ...fieldInput, fontSize: 12 }} value={l3.sumberData}
                                       onChange={e => updateSubL3(group.id, sub.id, l3.id, "sumberData", e.target.value)}>
                                       <option value="repository">Repository</option>
                                       <option value="ikupk">IKU PK</option>
                                     </select>
                                   </div>
-                                  <div className="col-md-4">
-                                    <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Tenggat</label>
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Tenggat</label>
                                     <div style={{ display: "flex", gap: 4 }}>
                                       <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
                                         value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
@@ -744,26 +751,30 @@ export default function TambahIndikatorForm() {
                   {appendTargetLoading ? (
                     <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Memuat target saat ini…</p>
                   ) : (
-                    <div className="row g-2">
-                      <div className="col-md-3">
-                        <label style={fieldLabel}>Target</label>
-                        <input style={fieldInput} type="number" min={0} value={appendTargetUni} onChange={e => setAppendTargetUni(e.target.value)} placeholder="80" />
+                    <>
+                      <div className="row g-2 mb-2">
+                        <div className="col-md-6">
+                          <label style={fieldLabel}>Target</label>
+                          <input style={fieldInput} type="number" min={0} value={appendTargetUni} onChange={e => setAppendTargetUni(e.target.value)} placeholder="80" />
+                        </div>
+                        <div className="col-md-6">
+                          <label style={fieldLabel}>Satuan</label>
+                          <select style={fieldInput} value={appendSatuan} onChange={e => setAppendSatuan(e.target.value)}>
+                            <option value="">— Pilih Satuan —</option>
+                            {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div className="col-md-3">
-                        <label style={fieldLabel}>Satuan</label>
-                        <select style={fieldInput} value={appendSatuan} onChange={e => setAppendSatuan(e.target.value)}>
-                          <option value="">— Pilih Satuan —</option>
-                          {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                      <div className="row g-2">
+                        <div className="col-md-6">
+                          <label style={fieldLabel}>Tenggat Waktu</label>
+                          <select style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
+                            <option value="">— Pilih Triwulan —</option>
+                            {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div className="col-md-4">
-                        <label style={fieldLabel}>Tenggat Waktu</label>
-                        <select style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
-                          <option value="">— Pilih Triwulan —</option>
-                          {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    </div>
+                    </>
                   )}
                 </div>
               )}
@@ -820,7 +831,7 @@ export default function TambahIndikatorForm() {
                       {appendL3Items.map((l3, idx) => (
                         <div key={l3.id} style={{ background: "#faf5ff", border: "1px solid #ede9fe", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
                           <div className="row g-2 mb-2 align-items-end">
-                            <div className="col-md-2">
+                            <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed" }}>Kode</label>
                               <input style={{ ...fieldInput, fontSize: 12 }} type="text" value={l3.kode}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, kode: e.target.value } : x))}
@@ -838,14 +849,14 @@ export default function TambahIndikatorForm() {
                                 style={{ width: 32, height: 32, borderRadius: 7, border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
                             </div>
                           </div>
-                          <div className="row g-2">
-                            <div className="col-md-2">
+                          <div className="row g-2 mb-2">
+                            <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Target Fakultas</label>
                               <input style={{ ...fieldInput, fontSize: 12 }} type="number" min={0} value={l3.target}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, target: e.target.value } : x))}
                                 placeholder="5" />
                             </div>
-                            <div className="col-md-2">
+                            <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Satuan</label>
                               <select style={{ ...fieldInput, fontSize: 12 }} value={l3.satuan}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, satuan: e.target.value } : x))}>
@@ -853,7 +864,9 @@ export default function TambahIndikatorForm() {
                                 {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                             </div>
-                            <div className="col-md-2">
+                          </div>
+                          <div className="row g-2">
+                            <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Sumber Data</label>
                               <select style={{ ...fieldInput, fontSize: 12 }} value={l3.sumberData}
                                 onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, sumberData: e.target.value } : x))}>
@@ -861,7 +874,7 @@ export default function TambahIndikatorForm() {
                                 <option value="ikupk">IKU PK</option>
                               </select>
                             </div>
-                            <div className="col-md-4">
+                            <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Tenggat</label>
                               <div style={{ display: "flex", gap: 4 }}>
                                 <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
