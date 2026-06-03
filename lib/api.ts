@@ -1330,3 +1330,34 @@ export async function validateWD2Batch(userId: number, tahun: string): Promise<v
   });
   if (!res.ok) throw new Error('Failed to validate WD2');
 }
+
+export interface ValidasiBiroPKUItem {
+  id: number;
+  indikatorId: number;
+  tahun: string;
+  jumlahValid: number | null;
+  keterangan: string | null;
+  inputBy: number | null;
+}
+
+export async function getValidasiBiroPKU(tahun: string): Promise<ValidasiBiroPKUItem[]> {
+  const res = await fetch(`${API_BASE_URL}/monitoring/validasi-biro-pku?tahun=${encodeURIComponent(tahun)}`);
+  if (!res.ok) throw new Error('Failed to fetch validasi biro pku');
+  return res.json();
+}
+
+export async function upsertValidasiBiroPKU(data: {
+  indikatorId: number;
+  tahun: string;
+  jumlahValid: number | null;
+  keterangan?: string;
+  inputBy?: number;
+}): Promise<ValidasiBiroPKUItem> {
+  const res = await fetch(`${API_BASE_URL}/monitoring/validasi-biro-pku`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to upsert validasi biro pku');
+  return res.json();
+}

@@ -748,7 +748,8 @@ export default function SKPContent() {
       <td style="vertical-align:top;padding:4px 6px;font-size:8pt;font-style:italic">Ekspektasi Khusus Pimpinan:</td>
     </tr>`).join("");
 
-    const garuda = `<div style="text-align:center;font-size:48pt;margin-bottom:4px">🦅</div>`;
+    const logoUrl = `${window.location.origin}/logo-upnvj.webp`;
+    const garuda = `<div style="text-align:center;margin-bottom:6px"><img src="${logoUrl}" style="height:72px;width:auto;object-fit:contain" /></div>`;
 
     const coverPage = `<div class="page">
   ${garuda}
