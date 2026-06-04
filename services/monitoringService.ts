@@ -37,6 +37,7 @@ export interface ProgressChartItem {
   targetAbsolut: number | null;
   targetFakultas: number;      // sum target_unit (IKU: L1, PK: L3)
   realisasi: number;
+  realisasiBiroPKU: number | null;
   persentaseRealisasi: number | null;
   tenggat: string;
   status: string;

@@ -4,8 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, API_BASE_URL } from "../../lib/api";
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, getValidasiBiroPKU, API_BASE_URL } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile, ValidasiBiroPKUItem } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
@@ -48,6 +48,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
   const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
+  const [validasiBiroPKU, setValidasiBiroPKU] = useState<ValidasiBiroPKUItem[]>([]);
 const [tahun, setTahun] = useState("2026");
   const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
   const [jenis, setJenis] = useState("IKU");
@@ -106,6 +107,13 @@ const [tahun, setTahun] = useState("2026");
         .catch(() => { if (!cancelled) setReceivedGroupedData([]); });
     } else if (!isTopLevel) {
       setReceivedGroupedData([]);
+    }
+
+    // Fetch hasil Biro PKU — hanya untuk pimpinan (Dekan/WD)
+    if (isTopLevel) {
+      getValidasiBiroPKU(tahun)
+        .then((d) => { if (!cancelled) setValidasiBiroPKU(d); })
+        .catch(() => { if (!cancelled) setValidasiBiroPKU([]); });
     }
 
     return () => { cancelled = true; };
@@ -393,6 +401,7 @@ const [tahun, setTahun] = useState("2026");
   // showAtasanView=false → tampilkan file milik sendiri (seperti dosen)
   // showAtasanView=true  → tampilkan semua file bawahan (mode lihat progress)
   const handleInputFileClick = async (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = [], showAtasanView = false) => {
+    // Akan di-update setelah allowedEmails diketahui
     setFileRepoIsAtasan(showAtasanView);
     setFileRepoIndikatorId(indikatorId);
     setFileRepoNama(nama);
@@ -452,7 +461,13 @@ const [tahun, setTahun] = useState("2026");
       } catch { }
     }
 
-    fetchRepoFiles(indikatorId, showAtasanView, allowedEmails);
+    // Non-dosen tanpa disposisi terkirim & tanpa bawahan → tampilkan semua file indikator
+    const effectiveAsAtasan = !isDosen && !showAtasanView && allowedEmails === undefined
+      ? true
+      : showAtasanView;
+
+    setFileRepoIsAtasan(effectiveAsAtasan);
+    fetchRepoFiles(indikatorId, effectiveAsAtasan, allowedEmails);
   };
 
   const handleFileRepoSubmit = async () => {
@@ -1190,6 +1205,20 @@ const [tahun, setTahun] = useState("2026");
                                   </td>
                                   <td rowSpan={totalRowSpan} className="td-cell v-top">
                                     <div className="fw-600 mb-4">{group.nama}</div>
+                                    {(() => {
+                                      const biroPKU = validasiBiroPKU.find((v) => v.indikatorId === group.id);
+                                      if (!biroPKU || biroPKU.jumlahValid == null) return null;
+                                      return (
+                                        <div style={{ marginTop: 6, padding: "5px 8px", background: "#eff6ff", borderRadius: 6, border: "1px solid #bfdbfe", fontSize: 11 }}>
+                                          <span style={{ fontWeight: 600, color: "#1d4ed8" }}>Hasil Biro PKU: </span>
+                                          <span style={{ fontWeight: 700, color: "#0369a1" }}>{biroPKU.jumlahValid}</span>
+                                          <span style={{ color: "#6b7280" }}> valid</span>
+                                          {biroPKU.keterangan && (
+                                            <div style={{ color: "#6b7280", marginTop: 2 }}>{biroPKU.keterangan}</div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                 </>
                               )}

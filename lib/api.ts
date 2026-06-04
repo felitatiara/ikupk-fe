@@ -1296,6 +1296,22 @@ export async function deleteIkupkFile(id: number, token: string): Promise<void> 
   if (!res.ok) throw new Error('Gagal menghapus file');
 }
 
+export async function getIkupkFilesByUser(
+  userId: number,
+  indikatorId: number,
+  tahun: string,
+): Promise<IkupkFile[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/ikupk-files-by-user?userId=${userId}&indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 /** Approve atau reject semua realisasi validated_wd2 bawahan (Dekan) */
 export async function approveBawahanSkp(
   userId: number,

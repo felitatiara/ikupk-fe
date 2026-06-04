@@ -10,9 +10,11 @@ import {
   validateRealisasiAtasan,
   validateWD2Batch,
   getAllRealisasiFiles,
+  getIkupkFilesByUser,
   getLaporanWithRealisasi,
   SubmissionPerIndikator,
   RealisasiSubmission,
+  API_BASE_URL,
 } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -54,7 +56,7 @@ export default function ValidasiRealisasiAtasanContent() {
 
   // Detail modal
   const [detail, setDetail] = useState<DetailModal | null>(null);
-  const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string }[]>([]);
+  const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string; sumber?: 'repository' | 'repository-all' | 'ikupk'; }[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [checkedFiles, setCheckedFiles] = useState<Set<number>>(new Set());
   const [savingModal, setSavingModal] = useState(false);
@@ -73,27 +75,51 @@ export default function ValidasiRealisasiAtasanContent() {
     setDetailLoading(true);
     setDetailFiles([]);
     setCheckedFiles(new Set());
-    getAllRealisasiFiles(detail.submission.indikatorId, token)
-      .then((result) => {
-        const dosenEmailLower = detail.dosenEmail.toLowerCase();
-        const mapFile = (f: any) => ({
-          name: f.name,
-          previewUrl: f.preview_url,
-          tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
-          ownerName: f.ownerName || f.owner?.name,
-          ownerEmail: f.ownerEmail || f.owner?.email,
-        });
-        const filtered = result.files
-          .filter(f => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
-          .map(mapFile);
-        setDetailFiles(filtered);
-        // Pre-check files based on saved validFileCount
-        const savedCount = detail.submission.validFileCount ?? 0;
-        setCheckedFiles(new Set(Array.from({ length: Math.min(savedCount, filtered.length) }, (_, i) => i)));
-      })
-      .catch(() => setDetailFiles([]))
-      .finally(() => setDetailLoading(false));
-  }, [detail, token]);
+
+    const dosenEmailLower = detail.dosenEmail.toLowerCase();
+    const tahunNow = tahun;
+
+    Promise.all([
+      getAllRealisasiFiles(detail.submission.indikatorId, token).catch(() => ({ files: [] as any[] })),
+      getIkupkFilesByUser(detail.submission.dosenId, detail.submission.indikatorId, tahunNow).catch(() => [] as any[]),
+    ]).then(([repoResult, ikupkFiles]) => {
+      type DetailFile = { name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string; sumber?: 'repository' | 'repository-all' | 'ikupk' };
+      const mapRepoFile = (f: any, isAll = false): DetailFile => ({
+        name: f.name,
+        previewUrl: f.preview_url,
+        tanggal: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : '-',
+        ownerName: f.ownerName || f.owner?.name,
+        ownerEmail: f.ownerEmail || f.owner?.email,
+        sumber: (isAll ? 'repository-all' : 'repository') as 'repository' | 'repository-all',
+      });
+
+      // File repo milik dosen ini
+      const ownRepoFiles = repoResult.files
+        .filter((f: any) => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
+        .map((f: any) => mapRepoFile(f));
+
+      const ikupkMapped = (ikupkFiles as any[]).map((f: any) => ({
+        name: f.fileName,
+        previewUrl: `${API_BASE_URL}${f.fileUrl}`,
+        tanggal: f.createdAt ? new Date(f.createdAt).toLocaleDateString('id-ID') : '-',
+        ownerName: detail.dosenNama,
+        ownerEmail: detail.dosenEmail,
+        sumber: 'ikupk' as const,
+      }));
+
+      let merged = [...ownRepoFiles, ...ikupkMapped];
+
+      // Fallback: jika tidak ada file milik dosen ini, tampilkan semua file indikator
+      // (terjadi ketika dosen/kajur submit realisasi berdasarkan agregat bawahan)
+      if (merged.length === 0 && repoResult.files.length > 0) {
+        merged = repoResult.files.map((f: any) => mapRepoFile(f, true));
+      }
+
+      setDetailFiles(merged);
+      const savedCount = detail.submission.validFileCount ?? 0;
+      setCheckedFiles(new Set(Array.from({ length: Math.min(savedCount, merged.length) }, (_, i) => i)));
+    }).finally(() => setDetailLoading(false));
+  }, [detail, token, tahun]);
 
   async function fetchData() {
     setLoading(true);
@@ -299,6 +325,19 @@ export default function ValidasiRealisasiAtasanContent() {
         const aoa: (string | number)[][] = [];
         const merges: MergeRange[] = [];
 
+        // Hitung total baris dari struktur data
+        let totalRows = 0;
+        for (const group of grouped) {
+          for (const sub of group.subIndikators) {
+            totalRows++;
+            for (const child of sub.children ?? []) {
+              totalRows++;
+              totalRows += ((child as any).children ?? []).length;
+            }
+          }
+        }
+        const emptyRow = () => ["", "", "", "", "", "", "", ""];
+
         if (jenisExport === "IKU") {
           aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
           aoa.push(["", "", "", "", "", "%", "Angka", ""]);
@@ -309,33 +348,7 @@ export default function ValidasiRealisasiAtasanContent() {
           merges.push({ s: { r: 0, c: 4 }, e: { r: 1, c: 4 } });
           merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 6 } });
           merges.push({ s: { r: 0, c: 7 }, e: { r: 1, c: 7 } });
-
-          let no = 1;
-          for (const group of grouped) {
-            const groupStart = aoa.length;
-            aoa.push([no + ".", group.nama, "", group.persentaseTarget !== null ? group.persentaseTarget + "%" : "", group.tenggat || "", "", "", ""]);
-            for (const sub of group.subIndikators) {
-              const subRowIdx = aoa.length;
-              const childCount = (sub.children ?? []).length;
-              const folderLink = folderLinkMap.get(sub.id) || "";
-              aoa.push(["", "", sub.kode + "  " + sub.nama, "", "", sub.realisasiKualitas !== null ? sub.realisasiKualitas + "%" : "", sub.realisasiKuantitas || "", folderLink]);
-              for (const child of sub.children ?? []) {
-                aoa.push(["", "", "    " + child.kode + "  " + child.nama, "", "", "", child.realisasiKuantitas || "", folderLink]);
-              }
-              // Merge Data Link kolom 7 untuk sub + semua children-nya
-              if (childCount > 0 && folderLink) {
-                merges.push({ s: { r: subRowIdx, c: 7 }, e: { r: subRowIdx + childCount, c: 7 } });
-              }
-            }
-            const groupEnd = aoa.length - 1;
-            if (groupEnd > groupStart) {
-              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
-              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
-              merges.push({ s: { r: groupStart, c: 3 }, e: { r: groupEnd, c: 3 } });
-              merges.push({ s: { r: groupStart, c: 4 }, e: { r: groupEnd, c: 4 } });
-            }
-            no++;
-          }
+          for (let i = 0; i < totalRows; i++) aoa.push(emptyRow());
           const ws = XLSX.utils.aoa_to_sheet(aoa);
           ws["!merges"] = merges;
           ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
@@ -343,27 +356,7 @@ export default function ValidasiRealisasiAtasanContent() {
 
         } else {
           aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
-          let no = 1;
-          for (const group of grouped) {
-            const groupStart = aoa.length;
-            aoa.push([no + ".", group.nama, "", "", "", "", "", ""]);
-            for (const sub of group.subIndikators) {
-              aoa.push(["", "", sub.kode + "  " + sub.nama, "", "", "", "", ""]);
-              for (const child of sub.children ?? []) {
-                aoa.push(["", "", "    " + child.kode + "  " + child.nama, "", "", "", "", ""]);
-                for (const l3 of (child as any).children ?? []) {
-                  const folderLink = folderLinkMap.get(l3.id) || "";
-                  aoa.push(["", "", "        " + l3.kode + "  " + l3.nama, l3.tenggat || "", l3.satuan || "", l3.nilaiTarget ?? "", l3.realisasiKuantitas || "", folderLink]);
-                }
-              }
-            }
-            const groupEnd = aoa.length - 1;
-            if (groupEnd > groupStart) {
-              merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
-              merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
-            }
-            no++;
-          }
+          for (let i = 0; i < totalRows; i++) aoa.push(emptyRow());
           const ws = XLSX.utils.aoa_to_sheet(aoa);
           ws["!merges"] = merges;
           ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
@@ -526,10 +519,17 @@ export default function ValidasiRealisasiAtasanContent() {
                           </svg>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          {f.previewUrl
-                            ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#0f9f6e", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
-                            : <span style={{ fontSize: 13, fontWeight: 500, color: "#1f2937", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-                          }
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {f.previewUrl
+                              ? <a href={f.previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#0f9f6e", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{f.name}</a>
+                              : <span style={{ fontSize: 13, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{f.name}</span>
+                            }
+                            {f.sumber && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10, flexShrink: 0, background: f.sumber === 'ikupk' ? '#ede9fe' : '#eff6ff', color: f.sumber === 'ikupk' ? '#7c3aed' : '#2563eb' }}>
+                                {f.sumber === 'ikupk' ? 'IKUPK' : 'REPO'}
+                              </span>
+                            )}
+                          </div>
                           {f.ownerName && (
                             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{f.ownerName}{f.ownerEmail ? ` · ${f.ownerEmail}` : ""}</div>
                           )}

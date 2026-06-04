@@ -52,8 +52,11 @@ interface ChartTooltipItem {
     jenis?: string;
     satuan?: string;
     target?: number | string | null;
-    realisasi?: number | string | null;
-    progress?: number | string | null;
+    realisasi?: number | null;
+    realisasiBiroPKU?: number | null;
+    progress?: number | null;
+    realProgress?: number | null;
+    persentaseRealisasi?: number | null;
     capaian?: number | string | null;
     status?: string;
   };
@@ -518,16 +521,31 @@ function BarTooltip({ active, payload }: { active?: boolean; payload?: ChartTool
           Target: <strong style={{ color: "#374151" }}>{isIku ? `${d.target}%` : `${d.target}${unit}`}</strong>
         </p>
       )}
-      {d.realisasi != null && (
+      {d.realisasiBiroPKU != null ? (
+        <>
+          <p style={{ margin: "2px 0", color: "#6b7280" }}>
+            Realisasi Diajukan: <strong style={{ color: "#374151" }}>{d.realisasi}{unit}</strong>
+          </p>
+          <p style={{ margin: "2px 0", color: "#6b7280" }}>
+            Realisasi Biro PKU:{" "}
+            <strong style={{ color: "#0369a1" }}>{d.realisasiBiroPKU}{unit}</strong>{" "}
+            <span style={{ fontSize: 10, background: "#dbeafe", color: "#1d4ed8", borderRadius: 4, padding: "1px 5px", fontWeight: 600 }}>validasi</span>
+          </p>
+        </>
+      ) : d.realisasi != null ? (
         <p style={{ margin: "2px 0", color: "#6b7280" }}>
           Realisasi: <strong style={{ color: progressColor }}>{d.realisasi}{unit}</strong>
         </p>
-      )}
-      {d.progress != null && (
+      ) : null}
+      {(d.realProgress ?? 0) > 0 ? (
         <p style={{ margin: "2px 0", color: "#6b7280" }}>
-          Progress: <strong style={{ color: progressColor }}>{d.progress}%</strong>
+          Progress: <strong style={{ color: progressColor }}>{d.realProgress}%</strong>
         </p>
-      )}
+      ) : d.realisasiBiroPKU != null || (d.realisasi ?? 0) > 0 ? (
+        <p style={{ margin: "2px 0", color: "#6b7280", fontStyle: "italic" }}>
+          Target belum dikonfigurasi
+        </p>
+      ) : null}
       {d.capaian != null && d.progress == null && (
         <p style={{ margin: "2px 0", color: "#6b7280" }}>
           Capaian: <strong style={{ color: progressColor }}>{d.capaian}%</strong>
@@ -1036,7 +1054,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     satuan: d.satuan,
     target: d.targetUniversitas,
     realisasi: d.realisasi,
+    realisasiBiroPKU: d.realisasiBiroPKU,
     persentaseRealisasi: d.persentaseRealisasi,
+    realProgress: d.progress,
     progress: d.chartProgress,
   }));
 
@@ -1214,7 +1234,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         { label: "Realisasi", w: "8%" },
                         { label: "Tenggat", w: "9%" },
                         { label: "Status", w: "8%" },
-                        { label: "Valid Biro PKU", w: "9%" },
+                        { label: "Hasil Validasi Biro PKU", w: "9%" },
                         { label: "Aksi", w: "8%" },
                       ].map((h) => (
                         <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
@@ -1300,17 +1320,16 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               {firstRow && (() => {
                                 const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
                                 return (
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f0f0f0" }}>
                                     {val?.jumlahValid != null ? (
-                                      <span style={{ fontWeight: 700, color: "#0369a1", fontSize: 13 }}>{val.jumlahValid}</span>
+                                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                                        <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 15 }}>{val.jumlahValid}</span>
+                                        {val.keterangan && (
+                                          <div style={{ fontSize: 10, color: "#6b7280", maxWidth: 110, wordBreak: "break-word", lineHeight: 1.4 }}>{val.keterangan}</div>
+                                        )}
+                                      </div>
                                     ) : (
                                       <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
-                                    )}
-                                    {isPimpinan && (
-                                      <button onClick={() => { setValidasiModal({ indikatorId: item.id, nama: item.nama, current: val ?? null }); setValidasiInput({ jumlahValid: val?.jumlahValid != null ? String(val.jumlahValid) : "", keterangan: val?.keterangan ?? "" }); }}
-                                        style={{ display: "block", margin: "4px auto 0", padding: "2px 8px", borderRadius: 5, border: "1px solid #e5e7eb", background: "#fafafa", fontSize: 11, color: "#374151", cursor: "pointer" }}>
-                                        Edit
-                                      </button>
                                     )}
                                   </td>
                                 );
