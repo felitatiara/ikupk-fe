@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PageTransition from "@/components/layout/PageTransition";
 import {
   BarChart,
@@ -21,7 +21,7 @@ import {
   ProgressChartItem,
   IndikatorDetail,
 } from "@/services/monitoringService";
-import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, getValidasiBiroPKU, upsertValidasiBiroPKU, type RealisasiFileItem, type MonitoringBawahanResult, type MonitoringBawahanUser, type MonitoringBawahanRow, type ValidasiBiroPKUItem } from "@/lib/api";
+import { getIndikatorGroupedForUser, getAllRealisasiFiles, getMonitoringBawahan, getAvailableYears, getValidasiBiroPKU, upsertValidasiBiroPKU, getMonitoringScope, type RealisasiFileItem, type MonitoringBawahanResult, type MonitoringBawahanUser, type MonitoringBawahanRow, type ValidasiBiroPKUItem } from "@/lib/api";
 import type { User } from "@/types";
 
 const jenisOptions = [
@@ -594,10 +594,16 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [validasiModal, setValidasiModal] = useState<{ indikatorId: number; nama: string; current: ValidasiBiroPKUItem | null } | null>(null);
   const [validasiInput, setValidasiInput] = useState<{ jumlahValid: string; keterangan: string }>({ jumlahValid: "", keterangan: "" });
   const [validasiSaving, setValidasiSaving] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [scopeIds, setScopeIds] = useState<number[]>([]);
 
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
-  const canViewDetail = roleStr === "dekan" || roleStr.includes("wakil dekan");
+  const isDekan = roleStr === "dekan";
+  const isWadek = roleStr.includes("wakil dekan");
+  const canSeeAll = role === "admin" || isDekan;
+  const canViewDetail = isDekan || isWadek;
 
   const filteredBawahan = (monitoringBawahan?.bawahanList ?? []).filter(b => {
     if (bawahanFilterUser !== "all" && String(b.id) !== bawahanFilterUser) return false;
@@ -640,6 +646,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     if (!user) return;
     if (isPimpinan) {
       fetchGlobal();
+      if (isWadek) fetchScope();
     }
     fetchPersonal();
   }, [selectedJenis, selectedTahun, user]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -669,6 +676,17 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       setChartData([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchScope() {
+    if (!user) return;
+    const userId: number = user.id ?? (user as MonitoringUser).userId ?? 0;
+    try {
+      const ids = await getMonitoringScope(userId, selectedTahun, selectedJenis);
+      setScopeIds(ids);
+    } catch {
+      setScopeIds([]);
     }
   }
 
@@ -733,7 +751,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         return 0;
       };
 
-      const sorted = [...chartData].sort((a, b) => sortKode(a.kode, b.kode));
+      const sorted = [...displayedChartData].sort((a, b) => sortKode(a.kode, b.kode));
 
       // Fetch folder links in parallel
       const folderLinkMap = new Map<number, string | null>();
@@ -777,7 +795,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       h1.getCell(3).value = "Indikator Kinerja Kegiatan";
       h1.getCell(5).value = `TARGET UNIVERSITAS\n${selectedTahun}`;
       h1.getCell(7).value = "FIK";
-      h1.getCell(12).value = "Hasil\nBiro PKU";
+      h1.getCell(12).value = "Verifikasi\nBiro PKU\n(isi di sini)";
       h1.getCell(13).value = "Sumber Data";
 
       // H2: second-level headers
@@ -901,8 +919,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         ws.getCell(groupStartRow, 5).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
         ws.getCell(groupStartRow, 6).value = item.tenggat && item.tenggat !== "-" ? item.tenggat : "";
         ws.getCell(groupStartRow, 6).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-        ws.getCell(groupStartRow, 12).value = val?.jumlahValid != null ? val.jumlahValid : "";
-        ws.getCell(groupStartRow, 12).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        const veriCell = ws.getCell(groupStartRow, 12);
+        veriCell.value = val?.jumlahValid != null ? val.jumlahValid : "";
+        veriCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        // Kuning jika kosong → tandai isian; putih jika sudah ada nilai
+        veriCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: val?.jumlahValid != null ? "FFFFFFFF" : "FFFFFFF0" } };
+        veriCell.border = mkBorder("thin");
 
         // Sumber Data hyperlink
         const linkCell = ws.getCell(groupStartRow, 13);
@@ -940,6 +962,58 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       URL.revokeObjectURL(url);
     } catch (err) {
       alert("Gagal export: " + String(err));
+    }
+  }
+
+  async function importVerifikasiExcel(file: File) {
+    setImportLoading(true);
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await file.arrayBuffer());
+      const ws = wb.worksheets[0];
+      if (!ws) throw new Error("Worksheet tidak ditemukan dalam file.");
+
+      const sortKode = (a: string, b: string) => {
+        const pa = a.split(".").map(Number);
+        const pb = b.split(".").map(Number);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+          if (d !== 0) return d;
+        }
+        return 0;
+      };
+      const sorted = [...displayedChartData].sort((a, b) => sortKode(a.kode, b.kode));
+
+      const updates: { indikatorId: number; jumlahValid: number | null }[] = [];
+
+      ws.eachRow((row) => {
+        const col1 = row.getCell(1).value;
+        const groupNo = typeof col1 === "number" ? col1 : null;
+        if (groupNo == null || groupNo < 1 || groupNo > sorted.length) return;
+
+        const indicator = sorted[groupNo - 1];
+        if (!indicator) return;
+
+        const raw = row.getCell(12).value;
+        const num = raw !== null && raw !== "" ? Number(raw) : null;
+        updates.push({ indikatorId: indicator.id, jumlahValid: num != null && !isNaN(num) ? num : null });
+      });
+
+      if (updates.length === 0) throw new Error("Tidak ada data yang bisa dibaca. Pastikan file adalah template yang benar.");
+
+      await Promise.all(
+        updates.map(u => upsertValidasiBiroPKU({ indikatorId: u.indikatorId, tahun: selectedTahun, jumlahValid: u.jumlahValid }))
+      );
+
+      const refreshed = await getValidasiBiroPKU(selectedTahun);
+      setValidasiBiroPKU(refreshed);
+      alert(`Berhasil mengimpor ${updates.length} data verifikasi.`);
+    } catch (err) {
+      alert("Gagal import: " + String(err));
+    } finally {
+      setImportLoading(false);
+      if (importFileRef.current) importFileRef.current.value = "";
     }
   }
 
@@ -1032,11 +1106,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     status: r.capaian !== null && r.capaian >= 100 ? "Done" : "Proses",
   }));
 
+  const displayedChartData = canSeeAll ? chartData : chartData.filter((i) => scopeIds.includes(i.id));
+
   // Pimpinan KPIs
-  const doneCount = chartData.filter((d) => d.status === "Done").length;
-  const prosesCount = chartData.filter((d) => d.status === "Proses").length;
-  const avgProgress = chartData.length > 0
-    ? Math.round(chartData.reduce((s, d) => s + d.chartProgress, 0) / chartData.length)
+  const doneCount = displayedChartData.filter((d) => d.status === "Done").length;
+  const prosesCount = displayedChartData.filter((d) => d.status === "Proses").length;
+  const avgProgress = displayedChartData.length > 0
+    ? Math.round(displayedChartData.reduce((s, d) => s + d.chartProgress, 0) / displayedChartData.length)
     : 0;
 
   // Personal KPIs (L1 only)
@@ -1046,7 +1122,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     ? (l1Rows.reduce((s, r) => s + (r.capaian ?? 0), 0) / l1Rows.length).toFixed(1)
     : "0";
 
-  const globalChartItems = chartData.map((d) => ({
+  const globalChartItems = displayedChartData.map((d) => ({
     kode: d.kode,
     nama: d.nama,
     jenis: d.jenis,
@@ -1060,7 +1136,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     progress: d.chartProgress,
   }));
 
-  const globalChartHeight = Math.max(200, chartData.length * 64);
+  const globalChartHeight = Math.max(200, displayedChartData.length * 64);
   const personalChartHeight = Math.max(200, personalChartData.length * 64);
 
   return (
@@ -1166,9 +1242,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
             {/* KPI Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 20 }}>
-              <KpiCard label="Total Indikator" value={chartData.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
-              <KpiCard label="Sudah Tercapai" value={doneCount} sub={`dari ${chartData.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
-              <KpiCard label="Sedang Proses" value={prosesCount} sub={`dari ${chartData.length}`} accent="#b45309" bg="#FFF4C2" icon={Clock3} />
+              <KpiCard label="Total Indikator" value={displayedChartData.length} accent="#0284c7" bg="#E8F1F9" icon={ListChecks} />
+              <KpiCard label="Sudah Tercapai" value={doneCount} sub={`dari ${displayedChartData.length}`} accent="#047857" bg="#E6F6EA" icon={CheckCircle2} />
+              <KpiCard label="Sedang Proses" value={prosesCount} sub={`dari ${displayedChartData.length}`} accent="#b45309" bg="#FFF4C2" icon={Clock3} />
               <KpiCard label="Rata-rata Progress" value={`${avgProgress}%`} accent="#be123c" bg="#F9E7E8" icon={Percent} />
             </div>
 
@@ -1214,12 +1290,32 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>
                   Rangkuman Target & Realisasi
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, color: "#64748b" }}>{selectedJenis} - {selectedTahun}</span>
                   <button onClick={exportValidasiExcel}
                     style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                    ⬇ Export Validasi
+                    ⬇ Export Template
                   </button>
+                  {isPimpinan && (
+                    <>
+                      <input
+                        ref={importFileRef}
+                        type="file"
+                        accept=".xlsx"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) importVerifikasiExcel(file);
+                        }}
+                      />
+                      <button
+                        onClick={() => importFileRef.current?.click()}
+                        disabled={importLoading}
+                        style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #bae6fd", background: importLoading ? "#f0f9ff" : "#f0f9ff", fontSize: 12, fontWeight: 600, color: "#0369a1", cursor: importLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: importLoading ? 0.7 : 1 }}>
+                        {importLoading ? "Mengimpor..." : "⬆ Import Verifikasi"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div style={{ overflowX: "auto" }}>
@@ -1246,7 +1342,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   <tbody>
                     {loading ? (
                       <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
-                    ) : chartData.length > 0 ? (() => {
+                    ) : displayedChartData.length > 0 ? (() => {
                       const sortKode = (a: string, b: string) => {
                         const pa = a.split('.').map(Number);
                         const pb = b.split('.').map(Number);
@@ -1257,7 +1353,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         return 0;
                       };
 
-                      const sorted = [...chartData].sort((a, b) => sortKode(a.kode, b.kode));
+                      const sorted = [...displayedChartData].sort((a, b) => sortKode(a.kode, b.kode));
                       const rows: React.ReactNode[] = [];
                       let globalNo = 0;
 

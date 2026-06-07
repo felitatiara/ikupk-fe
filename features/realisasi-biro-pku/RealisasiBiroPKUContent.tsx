@@ -106,15 +106,9 @@ export default function RealisasiBiroPKUContent() {
   return (
     <div>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Realisasi Biro PKU
-        </p>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: "#1e3a5f", marginBottom: 4 }}>
-          Input Hasil Realisasi Biro PKU
-        </h2>
-        <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 24 }}>
-          Submit jumlah data valid yang telah dinilai oleh Biro PKU per indikator.
-        </p>
+        <h3 className="ikupk-card-title">
+          Input Hasil Verifikasi Biro PKU
+        </h3>
 
         {/* Filter bar */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>

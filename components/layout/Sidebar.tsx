@@ -61,7 +61,7 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
 
     return [
       { key: "beranda", label: "Beranda", href: "/admin/dashboard", icon: LayoutDashboard },
-      { key: "realisasi_biro_pku", label: "Realisasi Biro PKU", href: "/admin/realisasi-biro-pku", icon: ClipboardCheck },
+      { key: "realisasi_biro_pku", label: "Verifikasi Biro PKU", href: "/admin/realisasi-biro-pku", icon: ClipboardCheck },
       ...(isAdminRole ? [
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator", icon: Target },
         { key: "master_user", label: "Master User", href: "/admin/master-user", icon: UsersRound },

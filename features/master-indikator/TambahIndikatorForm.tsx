@@ -7,6 +7,7 @@ import {
   upsertTargetUniversitas,
   getTargetUniversitas,
   getIndikator,
+  getIkuOptions,
   type Indikator,
 } from "../../lib/api";
 import PageTransition from "@/components/layout/PageTransition";
@@ -29,11 +30,11 @@ let _nextId = 1;
 const nextId = () => _nextId++;
 
 type NavEntry = { id: number | null; nama: string; kode: string };
-type Level3Item = { id: number; kode: string; nama: string; target: string; satuan: string; tenggat: string; sumberData: string };
+type Level3Item = { id: number; kode: string; nama: string; target: string; satuan: string; tenggat: string; sumberData: string; linkedIkuId: number | null };
 type SubItem = { id: number; kodeSubIndikator: string; subIndikatorKinerja: string; target: string; satuan: string; level3Items: Level3Item[] };
 type Group = { id: number; kodeIndikator: string; indikatorKinerja: string; sumberData: string; subItems: SubItem[] };
 
-const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "", target: "", satuan: "", tenggat: "", sumberData: "repository" });
+const blankL3 = (): Level3Item => ({ id: nextId(), kode: "", nama: "", target: "", satuan: "", tenggat: "", sumberData: "repository", linkedIkuId: null });
 const blankSub = (satuan = ""): SubItem => ({ id: nextId(), kodeSubIndikator: "", subIndikatorKinerja: "", target: "", satuan, level3Items: [blankL3()] });
 const blankGroup = (): Group => ({ id: nextId(), kodeIndikator: "", indikatorKinerja: "", sumberData: "repository", subItems: [blankSub()] });
 const blankNav = (): NavEntry => ({ id: null, nama: "", kode: "" });
@@ -210,7 +211,7 @@ export default function TambahIndikatorForm() {
     setGroups(p => p.map(g => g.id === gid ? { ...g, subItems: g.subItems.map(s => s.id === sid ? { ...s, level3Items: [...s.level3Items, blankL3()] } : s) } : g));
   const removeSubL3 = (gid: number, sid: number, lid: number) =>
     setGroups(p => p.map(g => g.id === gid ? { ...g, subItems: g.subItems.map(s => s.id === sid ? { ...s, level3Items: s.level3Items.filter(l => l.id !== lid) } : s) } : g));
-  const updateSubL3 = (gid: number, sid: number, lid: number, field: keyof Level3Item, val: string) =>
+  const updateSubL3 = (gid: number, sid: number, lid: number, field: keyof Level3Item, val: string | number | null) =>
     setGroups(p => p.map(g => g.id === gid ? { ...g, subItems: g.subItems.map(s => s.id === sid ? { ...s, level3Items: s.level3Items.map(l => l.id === lid ? { ...l, [field]: val } : l) } : s) } : g));
 
   // ── Append mode navigation ──
@@ -220,6 +221,7 @@ export default function TambahIndikatorForm() {
   const [nav2, setNav2] = useState<NavEntry>(blankNav()); // L2
   const [appendL3Items, setAppendL3Items] = useState<Level3Item[]>([blankL3()]);
   const [appendL1SumberData, setAppendL1SumberData] = useState("repository");
+  const [ikuOptions, setIkuOptions] = useState<Indikator[]>([]);
 
   // ── Append mode: editable target for selected L0 ──
   const [appendTargetUni, setAppendTargetUni] = useState("");
@@ -236,6 +238,14 @@ export default function TambahIndikatorForm() {
 
   const nav1Active = nav1.nama.trim() !== "";
   const nav2Active = nav2.nama.trim() !== "";
+
+  useEffect(() => {
+    if (jenis === "PK") {
+      getIkuOptions(targetTahun).then(setIkuOptions).catch(() => setIkuOptions([]));
+    } else {
+      setIkuOptions([]);
+    }
+  }, [jenis, targetTahun]);
 
   useEffect(() => {
     if (mode !== "append") return;
@@ -328,6 +338,7 @@ export default function TambahIndikatorForm() {
                   jenis, kode: l3.kode.trim(), nama: l3.nama.trim(),
                   tahun: targetTahun, level: 3, parentId: l2.id,
                   sumberData: l3.sumberData || 'repository',
+                  linkedIkuId: l3.linkedIkuId ?? undefined,
                 });
                 if (l3.target.trim() && !isNaN(Number(l3.target))) {
                   await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
@@ -372,7 +383,7 @@ export default function TambahIndikatorForm() {
           if (jenis === "PK") {
             for (const l3 of appendL3Items) {
               if (l3.kode.trim() && l3.nama.trim()) {
-                const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id, sumberData: l3.sumberData || 'repository' });
+                const l3Entity = await createIndikator({ jenis, kode: l3.kode.trim(), nama: l3.nama.trim(), tahun: targetTahun, level: 3, parentId: l2Id, sumberData: l3.sumberData || 'repository', linkedIkuId: l3.linkedIkuId ?? undefined });
                 if (l3.target.trim() && !isNaN(Number(l3.target))) {
                   await upsertTargetUniversitas(l3Entity.id, targetTahun, Number(l3.target), l3.tenggat || undefined, l3.satuan.trim() || undefined);
                 }
@@ -688,6 +699,32 @@ export default function TambahIndikatorForm() {
                                     </div>
                                   </div>
                                 </div>
+                                {/* Berbasis IKU — cross-reading realisasi */}
+                                <div className="row g-2 mt-1">
+                                  <div className="col-md-6">
+                                    <label style={{ ...fieldLabel, fontSize: 11 }}>Berbasis IKU?</label>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 6 }}>
+                                      <input type="checkbox"
+                                        checked={l3.linkedIkuId !== null}
+                                        onChange={e => updateSubL3(group.id, sub.id, l3.id, "linkedIkuId", e.target.checked ? (ikuOptions[0]?.id ?? null) : null)}
+                                        style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                                      <span style={{ fontSize: 12, color: "#6b7280" }}>Link ke indikator IKU</span>
+                                    </div>
+                                  </div>
+                                  {l3.linkedIkuId !== null && (
+                                    <div className="col-md-6">
+                                      <label style={{ ...fieldLabel, fontSize: 11 }}>IKU Terkait</label>
+                                      <select style={{ ...fieldInput, fontSize: 12 }}
+                                        value={l3.linkedIkuId ?? ""}
+                                        onChange={e => updateSubL3(group.id, sub.id, l3.id, "linkedIkuId", Number(e.target.value) || null)}>
+                                        <option value="">— Pilih IKU —</option>
+                                        {ikuOptions.map(iku => (
+                                          <option key={iku.id} value={iku.id}>{iku.kode} – {iku.nama}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -899,6 +936,32 @@ export default function TambahIndikatorForm() {
                                 </select>
                               </div>
                             </div>
+                          </div>
+                          {/* Berbasis IKU — cross-reading realisasi */}
+                          <div className="row g-2 mt-1">
+                            <div className="col-md-6">
+                              <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Berbasis IKU?</label>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 6 }}>
+                                <input type="checkbox"
+                                  checked={l3.linkedIkuId !== null}
+                                  onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, linkedIkuId: e.target.checked ? (ikuOptions[0]?.id ?? null) : null } : x))}
+                                  style={{ width: 16, height: 16, accentColor: "#7c3aed", cursor: "pointer" }} />
+                                <span style={{ fontSize: 12, color: "#6b7280" }}>Link ke indikator IKU</span>
+                              </div>
+                            </div>
+                            {l3.linkedIkuId !== null && (
+                              <div className="col-md-6">
+                                <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>IKU Terkait</label>
+                                <select style={{ ...fieldInput, fontSize: 12 }}
+                                  value={l3.linkedIkuId ?? ""}
+                                  onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, linkedIkuId: Number(e.target.value) || null } : x))}>
+                                  <option value="">— Pilih IKU —</option>
+                                  {ikuOptions.map(iku => (
+                                    <option key={iku.id} value={iku.id}>{iku.kode} – {iku.nama}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}

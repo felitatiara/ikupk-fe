@@ -9,6 +9,7 @@ export interface Indikator {
   kode: string;
   tahun: string;
   jenisData?: string | null;
+  linkedIkuId?: number | null;
 }
 
 export interface Kriteria {
@@ -204,8 +205,18 @@ export async function getMonitoringBawahan(
   return res.json();
 }
 
+export async function getIkuOptions(tahun: string): Promise<Indikator[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/indikator/iku-options?tahun=${encodeURIComponent(tahun)}`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null; sumberData?: string }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null; sumberData?: string; linkedIkuId?: number | null }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -215,7 +226,7 @@ export async function createIndikator(data: { jenis: string; kode: string; nama:
   return response.json();
 }
 
-export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; tahun: string; level: number; parentId: number | null; jenisData: string | null; sumberData: string }>): Promise<Indikator> {
+export async function updateIndikator(id: number, data: Partial<{ jenis: string; kode: string; nama: string; tahun: string; level: number; parentId: number | null; jenisData: string | null; sumberData: string; linkedIkuId: number | null }>): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1004,10 +1015,10 @@ export async function getRealisasiFiles(
         },
       },
     );
-    if (!res.ok) return { indikatorKode: '', indikatorNama: '', files: [] };
+    if (!res.ok) return { indikatorKode: '', indikatorNama: '', folderLink: null, files: [] };
     return res.json();
   } catch {
-    return { indikatorKode: '', indikatorNama: '', files: [] };
+    return { indikatorKode: '', indikatorNama: '', folderLink: null, files: [] };
   }
 }
 
@@ -1045,10 +1056,10 @@ export async function getAllRealisasiFiles(
       `${API_BASE_URL}/integration/all-realisasi-files?indikatorId=${indikatorId}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    if (!res.ok) return { indikatorKode: '', indikatorNama: '', files: [] };
+    if (!res.ok) return { indikatorKode: '', indikatorNama: '', folderLink: null, files: [] };
     return res.json();
   } catch {
-    return { indikatorKode: '', indikatorNama: '', files: [] };
+    return { indikatorKode: '', indikatorNama: '', folderLink: null, files: [] };
   }
 }
 
@@ -1375,5 +1386,16 @@ export async function upsertValidasiBiroPKU(data: {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to upsert validasi biro pku');
+  return res.json();
+}
+
+export async function getMonitoringScope(
+  userId: number,
+  tahun: string,
+  jenis: string,
+): Promise<number[]> {
+  const params = new URLSearchParams({ userId: String(userId), tahun, jenis });
+  const res = await fetch(`${API_BASE_URL}/monitoring/scope?${params}`);
+  if (!res.ok) return [];
   return res.json();
 }

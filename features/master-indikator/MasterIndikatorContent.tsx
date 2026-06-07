@@ -2,7 +2,6 @@
 
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 
 import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, Indikator } from "../../lib/api";
 import { toast } from "sonner";
@@ -111,8 +110,8 @@ export default function MasterIndikatorContent() {
   // Available years from DB (shared between form and edit modal)
   const [availableYears, setAvailableYears] = useState<string[]>(TAHUN_OPTIONS_FALLBACK);
 
-  // Edit modal state
-  const [editModalOpen, setEditModalOpen] = useState(false);
+  // Edit inline page state
+  const [editMode, setEditMode] = useState(false);
   const [editRow, setEditRow] = useState<Level0WithChildren | null>(null);
   const [editTahun, setEditTahun] = useState("");
   const [editTenggat, setEditTenggat] = useState<string>('');
@@ -125,6 +124,8 @@ export default function MasterIndikatorContent() {
   const [editLeafSatuan, setEditLeafSatuan] = useState<Record<number, string>>({});
   // L3 children for PK: l2Id → Indikator[]
   const [editL3Map, setEditL3Map] = useState<Record<number, Indikator[]>>({});
+  // PK L3 berbasis IKU: l3Id → linkedIkuId (null = tidak berbasis IKU)
+  const [editL3LinkedIku, setEditL3LinkedIku] = useState<Record<number, number | null>>({});
   const [editLeafLoading, setEditLeafLoading] = useState(false);
 
   // Form fields
@@ -474,18 +475,23 @@ export default function MasterIndikatorContent() {
     const firstL1 = row.children[0]?.record;
     setEditSumberData((firstL1 as any)?.sumberData || 'repository');
 
-    // Build L3 map for PK
+    // Build L3 map and load linkedIkuId per L3 for PK
     const l3map: Record<number, Indikator[]> = {};
+    const l3LinkedIku: Record<number, number | null> = {};
     if (filterJenis === 'PK') {
       for (const l1 of row.children) {
         for (const l2 of l1.children) {
           l3map[l2.record.id] = l2.children;
+          for (const l3 of l2.children) {
+            l3LinkedIku[l3.id] = l3.linkedIkuId ?? null;
+          }
         }
       }
     }
     setEditL3Map(l3map);
+    setEditL3LinkedIku(l3LinkedIku);
 
-    setEditModalOpen(true);
+    setEditMode(true);
     fetchLeafTargets(row, filterJenis, tahun, l3map);
     getTargetUniversitas(row.record.id, tahun).then(t => setEditTenggat(t?.tenggat || ''));
   };
@@ -525,8 +531,17 @@ export default function MasterIndikatorContent() {
       }
       await Promise.all(allChildIds.map(id => updateIndikator(id, { sumberData: editSumberData })));
 
+      // Save linkedIkuId per L3 for PK
+      if (filterJenis === 'PK') {
+        await Promise.all(
+          Object.entries(editL3LinkedIku).map(([id, linkedIkuId]) =>
+            updateIndikator(Number(id), { linkedIkuId })
+          )
+        );
+      }
+
       toast.success("Indikator berhasil diperbarui.");
-      setEditModalOpen(false);
+      setEditMode(false);
       setEditRow(null);
       refreshList();
     } catch (err) {
@@ -607,41 +622,30 @@ export default function MasterIndikatorContent() {
         desc={`${selectedIds.size} indikator terpilih beserta data turunannya akan dihapus.`}
         loading={deleteLoading} confirmLabel={`Hapus ${selectedIds.size} Item`} />
 
-      {/* Edit Modal */}
-      {editModalOpen && editRow && createPortal(
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)",
-            backdropFilter: "blur(4px)", display: "flex", alignItems: "center",
-            justifyContent: "center", zIndex: 9999, padding: 16,
-          }}
-          onClick={() => !editSaving && setEditModalOpen(false)}
-        >
-          <div
-            style={{
-              background: "#fff", borderRadius: 16, width: 660, maxWidth: "100%",
-              maxHeight: "92vh", overflowY: "auto", boxSizing: "border-box",
-              boxShadow: "0 25px 80px rgba(0,0,0,0.22)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div style={{ padding: "24px 28px 0", borderBottom: "1px solid #f3f4f6", paddingBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: filterJenis === "IKU" ? "#fff7ed" : "#f5f3ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-                  {filterJenis === "IKU" ? "📊" : "📋"}
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#111827" }}>Edit Indikator</h3>
-                  <p style={{ margin: 0, fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
-                    {editRow.record.kode} — {editRow.record.nama}
-                  </p>
-                </div>
+      {/* ── Edit Inline Page ── */}
+      {editMode && editRow && (() => {
+        const ikuLeafList = indikatorList.filter(i => i.jenis === 'IKU' && i.level === 2);
+        return (
+          <div>
+            {/* Back + Title */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+              <button
+                onClick={() => !editSaving && setEditMode(false)}
+                disabled={editSaving}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+              >
+                ← Kembali
+              </button>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#111827" }}>Edit Indikator</h3>
+                <p style={{ margin: 0, fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
+                  {editRow.record.kode} — {editRow.record.nama}
+                </p>
               </div>
             </div>
 
-            <div style={{ padding: "20px 28px" }}>
-              {/* Tahun + Tenggat row */}
+            <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "24px 28px", marginBottom: 16 }}>
+              {/* Tahun + Tenggat */}
               <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
                 <div>
                   <label style={fLabel}>Tahun</label>
@@ -651,30 +655,21 @@ export default function MasterIndikatorContent() {
                 </div>
                 <div>
                   <label style={fLabel}>Tenggat (Batas Waktu)</label>
-                  <input
-                    type="date"
-                    value={editTenggat}
-                    onChange={(e) => setEditTenggat(e.target.value)}
-                    style={{ ...fInput, maxWidth: 200 }}
-                  />
+                  <input type="date" value={editTenggat} onChange={(e) => setEditTenggat(e.target.value)} style={{ ...fInput, maxWidth: 200 }} />
                 </div>
               </div>
 
-              {/* Divider */}
               <div style={{ borderTop: "1px solid #f3f4f6", marginBottom: 20 }} />
 
-              {/* Section: Sumber Data (single, for all children) */}
+              {/* Sumber Data */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#6366f1", display: "inline-block" }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data Realisasi</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <select
-                    value={editSumberData}
-                    onChange={(e) => setEditSumberData(e.target.value)}
-                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}
-                  >
+                  <select value={editSumberData} onChange={(e) => setEditSumberData(e.target.value)}
+                    style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer" }}>
                     <option value="repository">Repository FIK</option>
                     <option value="ikupk">IKU PK (Upload)</option>
                   </select>
@@ -682,10 +677,9 @@ export default function MasterIndikatorContent() {
                 </div>
               </div>
 
-              {/* Divider */}
               <div style={{ borderTop: "1px solid #f3f4f6", marginBottom: 20 }} />
 
-              {/* Section: Target per Leaf (L2 untuk IKU, L3 untuk PK) */}
+              {/* Target per leaf */}
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#059669", display: "inline-block" }} />
@@ -701,16 +695,13 @@ export default function MasterIndikatorContent() {
 
                 {editRow.children.map((l1) => (
                   <div key={l1.record.id} style={{ marginBottom: 14 }}>
-                    {/* L1 header */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f9fafb", borderRadius: 8, marginBottom: 6, border: "1px solid #e5e7eb" }}>
                       <span style={{ width: 3, height: 12, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#1f2937" }}>{l1.record.kode} {l1.record.nama}</span>
                     </div>
-
                     {l1.children.length === 0 && (
                       <p style={{ fontSize: 12, color: "#9ca3af", paddingLeft: 20, fontStyle: "italic" }}>Tidak ada sub-indikator level 2.</p>
                     )}
-
                     {l1.children.map((l2) => {
                       const l3s = editL3Map[l2.record.id] ?? [];
                       const showL3 = filterJenis === 'PK' && l3s.length > 0;
@@ -718,53 +709,79 @@ export default function MasterIndikatorContent() {
                         <div key={l2.record.id} style={{ paddingLeft: 16, marginBottom: showL3 ? 10 : 0 }}>
                           {showL3 ? (
                             <>
-                              {/* L2 as group header for PK */}
                               <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 600, padding: "6px 0 4px", borderBottom: "1px dashed #e5e7eb", marginBottom: 6 }}>
                                 {l2.record.kode} {l2.record.nama}
                               </div>
-                              {l3s.map((l3) => (
-                                <div key={l3.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0 7px 14px" }}>
-                                  <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
-                                  <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l3.kode} {l3.nama}</span>
-                                  <input
-                                    type="number" min={0}
-                                    value={editLeafTargets[l3.id] ?? ''}
-                                    onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l3.id]: e.target.value }))}
-                                    placeholder="Target"
-                                    disabled={editLeafLoading}
-                                    style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
-                                  />
-                                  <select
-                                    value={editLeafSatuan[l3.id] ?? ''}
-                                    onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l3.id]: e.target.value }))}
-                                    disabled={editLeafLoading}
-                                    style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}
-                                  >
-                                    <option value="">— Satuan —</option>
-                                    {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
-                                </div>
-                              ))}
+                              {l3s.map((l3) => {
+                                const isLinked = editL3LinkedIku[l3.id] !== null && editL3LinkedIku[l3.id] !== undefined;
+                                return (
+                                  <div key={l3.id} style={{ padding: "10px 0 10px 14px", borderBottom: "1px solid #f9fafb" }}>
+                                    {/* L3 name + target + satuan */}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                      <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
+                                      <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l3.kode} {l3.nama}</span>
+                                      <input type="number" min={0}
+                                        value={editLeafTargets[l3.id] ?? ''}
+                                        onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l3.id]: e.target.value }))}
+                                        placeholder="Target" disabled={editLeafLoading}
+                                        style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
+                                      />
+                                      <select value={editLeafSatuan[l3.id] ?? ''}
+                                        onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l3.id]: e.target.value }))}
+                                        disabled={editLeafLoading}
+                                        style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}>
+                                        <option value="">— Satuan —</option>
+                                        {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                      </select>
+                                    </div>
+                                    {/* Berbasis IKU toggle */}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 20 }}>
+                                      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                                        <input type="checkbox" checked={isLinked}
+                                          onChange={() => setEditL3LinkedIku(prev => ({
+                                            ...prev,
+                                            [l3.id]: isLinked ? null : (ikuLeafList[0]?.id ?? null),
+                                          }))}
+                                          style={{ cursor: "pointer", accentColor: "#7c3aed" }}
+                                        />
+                                        Berbasis IKU
+                                      </label>
+                                      {isLinked && (
+                                        <select
+                                          value={editL3LinkedIku[l3.id] ?? ''}
+                                          onChange={(e) => setEditL3LinkedIku(prev => ({ ...prev, [l3.id]: Number(e.target.value) || null }))}
+                                          style={{ border: "1px solid #c4b5fd", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#374151", background: "#faf5ff", flex: 1, maxWidth: 400 }}
+                                        >
+                                          <option value="">— Pilih Indikator IKU —</option>
+                                          {ikuLeafList.map(iku => (
+                                            <option key={iku.id} value={iku.id}>{iku.kode} {iku.nama}</option>
+                                          ))}
+                                        </select>
+                                      )}
+                                      {isLinked && (
+                                        <span style={{ fontSize: 11, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ede9fe", borderRadius: 4, padding: "2px 8px" }}>
+                                          File diambil dari folder IKU
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </>
                           ) : (
-                            /* L2 as leaf (IKU) */
                             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0" }}>
                               <span style={{ color: "#d1d5db", fontSize: 11, fontFamily: "monospace", flexShrink: 0 }}>└─</span>
                               <span style={{ fontSize: 12, color: "#374151", flex: 1 }}>{l2.record.kode} {l2.record.nama}</span>
-                              <input
-                                type="number" min={0}
+                              <input type="number" min={0}
                                 value={editLeafTargets[l2.record.id] ?? ''}
                                 onChange={(e) => setEditLeafTargets(prev => ({ ...prev, [l2.record.id]: e.target.value }))}
-                                placeholder="Target"
-                                disabled={editLeafLoading}
+                                placeholder="Target" disabled={editLeafLoading}
                                 style={{ width: 90, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13, textAlign: "right", background: editLeafLoading ? "#f9fafb" : "#fff" }}
                               />
-                              <select
-                                value={editLeafSatuan[l2.record.id] ?? ''}
+                              <select value={editLeafSatuan[l2.record.id] ?? ''}
                                 onChange={(e) => setEditLeafSatuan(prev => ({ ...prev, [l2.record.id]: e.target.value }))}
                                 disabled={editLeafLoading}
-                                style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}
-                              >
+                                style={{ width: 110, border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 8px", fontSize: 12, background: editLeafLoading ? "#f9fafb" : "#fff", color: "#374151" }}>
                                 <option value="">— Satuan —</option>
                                 {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
@@ -778,35 +795,23 @@ export default function MasterIndikatorContent() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div style={{ padding: "16px 28px", borderTop: "1px solid #f3f4f6", display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setEditModalOpen(false)}
-                disabled={editSaving}
-                style={{ padding: "9px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
-              >
+            {/* Save button row */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditMode(false)} disabled={editSaving}
+                style={{ padding: "9px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>
                 Kembali
               </button>
-              <button
-                onClick={handleEditSave}
-                disabled={editSaving}
-                style={{
-                  padding: "9px 22px", borderRadius: 8, border: "none",
-                  background: editSaving ? "#d1d5db" : "#16a34a",
-                  color: "#fff", fontSize: 13, fontWeight: 700,
-                  cursor: editSaving ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", gap: 6,
-                }}
-              >
+              <button onClick={handleEditSave} disabled={editSaving}
+                style={{ padding: "9px 22px", borderRadius: 8, border: "none", background: editSaving ? "#d1d5db" : "#16a34a", color: "#fff", fontSize: 13, fontWeight: 700, cursor: editSaving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                 {editSaving ? "Menyimpan…" : "✓ Simpan Perubahan"}
               </button>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+        );
+      })()}
 
-      {/* ── Page Header ── */}
+      {/* ── Main content (hidden while in edit mode) ── */}
+      {!editMode && <>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
         <div>
           <h3 className="ikupk-card-title">Master Indikator</h3>
@@ -1259,7 +1264,7 @@ export default function MasterIndikatorContent() {
           </div>
         </div>
       )}
-      {/* End of main content, removed PageTransition wrapper */}
+      </>}
     </div>
   );
 }
