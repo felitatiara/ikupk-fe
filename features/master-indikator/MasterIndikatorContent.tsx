@@ -131,6 +131,8 @@ export default function MasterIndikatorContent() {
   const [jenis, setJenis] = useState<"IKU" | "PK">("IKU");
   const [nomor, setNomor] = useState("");
   const [sasaranStrategis, setSasaranStrategis] = useState("");
+  const [kategori, setKategori] = useState("Wajib");
+  const [collapsedMasterKat, setCollapsedMasterKat] = useState<Set<string>>(new Set());
   const [targetUniversitas, setTargetUniversitas] = useState("");
   const [tenggat, setTenggat] = useState("");
   const [targetTahun, setTargetTahun] = useState("");
@@ -362,7 +364,7 @@ export default function MasterIndikatorContent() {
       }
       setSubmitLoading(true);
       try {
-        const level0 = await createIndikator({ jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(), tahun: targetTahun, level: 0, parentId: null });
+        const level0 = await createIndikator({ jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(), tahun: targetTahun, level: 0, parentId: null, ...(jenis === 'IKU' ? { kategori } : {}) });
         for (const g of groups) {
           const level1 = await createIndikator({ jenis, kode: g.kodeIndikator.trim(), nama: g.indikatorKinerja.trim(), tahun: targetTahun, level: 1, parentId: level0.id });
           for (const s of g.subItems) {
@@ -884,7 +886,7 @@ export default function MasterIndikatorContent() {
                       onChange={toggleSelectAll} style={{ cursor: "pointer" }} />
                   </th>
                   {[
-                    { label: "Kode", w: "8%" }, { label: "Sasaran Strategis", w: "26%" },
+                    { label: "Kode", w: "8%" }, { label: "Sasaran Program", w: "26%" },
                     { label: filterJenis === "IKU" ? "Indikator Kinerja" : "Indikator PK", w: "auto" },
                     { label: "Aksi", w: "9%" },
                   ].map((h, i) => (
@@ -897,90 +899,70 @@ export default function MasterIndikatorContent() {
                 </tr>
               </thead>
               <tbody>
-                {rowsPerLevel0.map((row, rowGroupIdx) => {
-                  const level0Group = hierarchy.find(h => h.record.id === row.parent.id) ?? null;
-                  const isLastGroup = rowGroupIdx === rowsPerLevel0.length - 1;
-                  return row.entries.map((entry, idx) => (
-                    <tr key={`${row.parent.id}-${entry.key}`}
-                      style={{ borderBottom: idx === row.entries.length - 1 && !isLastGroup ? "2px solid #f0f0f0" : "1px solid #f8f8f8" }}>
-                      {idx === 0 && (
-                        <td rowSpan={row.entries.length} style={{ padding: 14, textAlign: "center", verticalAlign: "middle" }}>
-                          <input type="checkbox" checked={selectedIds.has(row.parent.id)}
-                            onChange={() => toggleSelect(row.parent.id)} style={{ cursor: "pointer" }} />
+                {(() => {
+                  const KAT_ORDER = ['Wajib', 'Pilihan', 'Partisipatif'];
+                  const KAT_LABEL: Record<string, string> = { Wajib: 'A. WAJIB', Pilihan: 'B. PILIHAN', Partisipatif: 'C. PARTISIPATIF' };
+                  const IKU_KAT: Record<string, string> = { '1':'Wajib','2':'Wajib','3':'Wajib','5':'Wajib','7':'Wajib','4':'Pilihan','6':'Pilihan','8':'Pilihan','10':'Pilihan' };
+
+                  const renderRows = (rows: typeof rowsPerLevel0): React.ReactNode[] =>
+                    rows.flatMap((row, rowGroupIdx) => {
+                      const level0Group = hierarchy.find(h => h.record.id === row.parent.id) ?? null;
+                      const isLastGroup = rowGroupIdx === rows.length - 1;
+                      return row.entries.map((entry, idx) => (
+                        <tr key={`${row.parent.id}-${entry.key}`} style={{ borderBottom: idx === row.entries.length - 1 && !isLastGroup ? "2px solid #f0f0f0" : "1px solid #f8f8f8" }}>
+                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: 14, textAlign: "center", verticalAlign: "middle" }}><input type="checkbox" checked={selectedIds.has(row.parent.id)} onChange={() => toggleSelect(row.parent.id)} style={{ cursor: "pointer" }} /></td>}
+                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13, borderRight: "1px solid #f3f4f6" }}>{row.parent.kode}</td>}
+                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", borderRight: "1px solid #f3f4f6" }}><span style={{ fontWeight: 700, fontSize: 13, color: "#111", lineHeight: 1.5 }}>{row.parent.nama}</span></td>}
+                          <td style={{ padding: 0 }}>
+                            {entry.level === 1 ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 11px 20px" }}>
+                                <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
+                                <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
+                              </div>
+                            ) : entry.level === 2 ? (
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 40px" }}>
+                                <span style={{ color: "#d1d5db", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
+                                <span style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 64px" }}>
+                                <span style={{ color: "#e5e7eb", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
+                                <span style={{ color: "#9ca3af", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
+                              </div>
+                            )}
+                          </td>
+                          {idx === 0 && level0Group && (
+                            <td rowSpan={row.entries.length} style={{ padding: "14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f3f4f6" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
+                                <button onClick={() => handleEditClick(level0Group)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #e5e7eb", background: "#fff", color: "#374151", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.borderColor = "#d1d5db")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>Edit</button>
+                                <button onClick={() => { window.location.href = `/admin/master-indikator/${row.parent.id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.background = "#e0f2fe")} onMouseLeave={e => (e.currentTarget.style.background = "#f0f9ff")}>Alur</button>
+                                <button onClick={() => setConfirmDeleteSingleId(row.parent.id)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")} onMouseLeave={e => (e.currentTarget.style.background = "#fff7f7")}>Hapus</button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ));
+                    });
+
+                  if (filterJenis !== 'IKU') return renderRows(rowsPerLevel0);
+
+                  const grouped: Record<string, typeof rowsPerLevel0> = { Wajib: [], Pilihan: [], Partisipatif: [] };
+                  rowsPerLevel0.forEach(r => { const k = r.parent.kategori ?? IKU_KAT[r.parent.kode] ?? 'Partisipatif'; grouped[k].push(r); });
+                  return KAT_ORDER.flatMap(kat => {
+                    const items = grouped[kat];
+                    if (items.length === 0) return [];
+                    const isCollapsed = collapsedMasterKat.has(kat);
+                    return [
+                      <tr key={`master-kat-${kat}`} onClick={() => setCollapsedMasterKat(prev => { const s = new Set(prev); s.has(kat) ? s.delete(kat) : s.add(kat); return s; })} style={{ background: "#1e3a5f", cursor: "pointer", userSelect: "none" }}>
+                        <td colSpan={5} style={{ padding: "9px 16px", color: "#fff", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em" }}>
+                          <span style={{ marginRight: 8, fontSize: 10 }}>{isCollapsed ? '▶' : '▼'}</span>
+                          {KAT_LABEL[kat]}
                         </td>
-                      )}
-                      {idx === 0 && (
-                        <td rowSpan={row.entries.length} style={{
-                          padding: "14px", verticalAlign: "top",
-                          fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13,
-                          borderRight: "1px solid #f3f4f6"
-                        }}>
-                          {row.parent.kode}
-                        </td>
-                      )}
-                      {idx === 0 && (
-                        <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", borderRight: "1px solid #f3f4f6" }}>
-                          <span style={{ fontWeight: 700, fontSize: 13, color: "#111", lineHeight: 1.5 }}>{row.parent.nama}</span>
-                        </td>
-                      )}
-                      <td style={{ padding: 0 }}>
-                        {entry.level === 1 ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 11px 20px" }}>
-                            <span style={{
-                              width: 3, height: 14, borderRadius: 2, flexShrink: 0,
-                              background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed"
-                            }} />
-                            <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
-                          </div>
-                        ) : entry.level === 2 ? (
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 40px" }}>
-                            <span style={{ color: "#d1d5db", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
-                            <span style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 64px" }}>
-                            <span style={{ color: "#e5e7eb", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
-                            <span style={{ color: "#9ca3af", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
-                          </div>
-                        )}
-                      </td>
-                      {idx === 0 && level0Group && (
-                        <td rowSpan={row.entries.length} style={{ padding: "14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f3f4f6" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-                            <button onClick={() => handleEditClick(level0Group)}
-                              style={{
-                                padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                                border: "1px solid #e5e7eb", background: "#fff", color: "#374151", width: "100%"
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.borderColor = "#d1d5db")}
-                              onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => { window.location.href = `/admin/master-indikator/${row.parent.id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }}
-                              style={{
-                                padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                                border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", width: "100%"
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.background = "#e0f2fe")}
-                              onMouseLeave={e => (e.currentTarget.style.background = "#f0f9ff")}>
-                              Alur
-                            </button>
-                            <button onClick={() => setConfirmDeleteSingleId(row.parent.id)}
-                              style={{
-                                padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                                border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", width: "100%"
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")}
-                              onMouseLeave={e => (e.currentTarget.style.background = "#fff7f7")}>
-                              Hapus
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ));
-                })}
+                      </tr>,
+                      ...(isCollapsed ? [] : renderRows(items)),
+                    ];
+                  });
+                })()}
               </tbody>
               <tfoot>
                 <tr style={{ background: "#fafafa", borderTop: "1px solid #f0f0f0" }}>
@@ -1045,14 +1027,14 @@ export default function MasterIndikatorContent() {
                 </div>
               </div>
 
-              {/* Nomor + Sasaran Strategis + Target Universitas */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 16, marginBottom: 16 }}>
+              {/* Nomor + Sasaran Program + Kategori (IKU) + Target Universitas */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 16, marginBottom: jenis === "IKU" ? 8 : 16 }}>
                 <div>
                   <label style={labelStyle}>Nomor</label>
                   <input type="text" value={nomor} onChange={(e) => setNomor(e.target.value)} placeholder="contoh: 1" style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Sasaran Strategis</label>
+                  <label style={labelStyle}>Sasaran Program</label>
                   <input type="text" value={sasaranStrategis} onChange={(e) => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan..." style={inputStyle} />
                 </div>
                 <div>
@@ -1067,6 +1049,17 @@ export default function MasterIndikatorContent() {
                   />
                 </div>
               </div>
+
+              {jenis === "IKU" && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Kategori</label>
+                  <select value={kategori} onChange={(e) => setKategori(e.target.value)} style={inputStyle}>
+                    <option value="Wajib">A. Wajib</option>
+                    <option value="Pilihan">B. Pilihan</option>
+                    <option value="Partisipatif">C. Partisipatif</option>
+                  </select>
+                </div>
+              )}
 
               {/* Groups */}
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>

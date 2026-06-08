@@ -9,6 +9,7 @@ export interface Indikator {
   kode: string;
   tahun: string;
   jenisData?: string | null;
+  kategori?: string | null;
 }
 
 export interface Kriteria {
@@ -94,6 +95,7 @@ export interface IndikatorGrouped {
   tenggat: string | null;
   baselineJumlah: number | null;
   fromUserNama?: string | null;
+  kategori?: string | null;
   subIndikators: IndikatorGroupedSub[];
 }
 
@@ -205,7 +207,7 @@ export async function getMonitoringBawahan(
 }
 
 // ambil dari bawah (CRUD)
-export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null; sumberData?: string }): Promise<Indikator> {
+export async function createIndikator(data: { jenis: string; kode: string; nama: string; tahun: string; level: number; parentId?: number | null; jenisData?: string | null; sumberData?: string; kategori?: string | null }): Promise<Indikator> {
   const response = await fetch(`${API_BASE_URL}/indikator`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

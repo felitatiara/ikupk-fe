@@ -10,6 +10,16 @@ import { useAuth } from "@/hooks/useAuth";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
 
+const IKU_KATEGORI: Record<string, string> = {
+  '1': 'Wajib', '2': 'Wajib', '3': 'Wajib', '5': 'Wajib', '7': 'Wajib',
+  '4': 'Pilihan', '6': 'Pilihan', '8': 'Pilihan', '10': 'Pilihan',
+};
+const KATEGORI_ORDER = ['Wajib', 'Pilihan', 'Partisipatif'];
+const KATEGORI_LABEL: Record<string, string> = { 'Wajib': 'A. WAJIB', 'Pilihan': 'B. PILIHAN', 'Partisipatif': 'C. PARTISIPATIF' };
+const getIkuKategori = (kode: string) => IKU_KATEGORI[kode] ?? 'Partisipatif';
+
+type FlatRow = { id: number; kode: string; nama: string; level: number; sub: any; child: any; l3Obj: any; isSubFirst: boolean; subTotalRows: number };
+
 export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan'; pageTitle?: string; headerSlot?: React.ReactNode }) {
   const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
 
@@ -49,6 +59,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
   const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
   const [validasiBiroPKU, setValidasiBiroPKU] = useState<ValidasiBiroPKUItem[]>([]);
+  const [collapsedKategori, setCollapsedKategori] = useState<Set<string>>(new Set());
 const [tahun, setTahun] = useState("2026");
   const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
   const [jenis, setJenis] = useState("IKU");
@@ -495,6 +506,33 @@ const [tahun, setTahun] = useState("2026");
   };
 
 
+  const renderWithKategori = (
+    data: IndikatorGrouped[],
+    colSpan: number,
+    keyPrefix: string,
+    renderGroupFn: (group: IndikatorGrouped, groupIdx: number) => React.ReactNode[],
+  ): React.ReactNode[] => {
+    if (jenis !== 'IKU') return data.flatMap((g, i) => renderGroupFn(g, i));
+    const grouped: Record<string, IndikatorGrouped[]> = { Wajib: [], Pilihan: [], Partisipatif: [] };
+    data.forEach(g => grouped[g.kategori ?? getIkuKategori(g.kode)].push(g));
+    return KATEGORI_ORDER.flatMap(kat => {
+      const items = grouped[kat];
+      if (items.length === 0) return [];
+      const isCollapsed = collapsedKategori.has(kat);
+      return [
+        <tr key={`${keyPrefix}-kat-${kat}`}
+          onClick={() => setCollapsedKategori(prev => { const s = new Set(prev); s.has(kat) ? s.delete(kat) : s.add(kat); return s; })}
+          style={{ background: "#1e3a5f", cursor: "pointer", userSelect: "none" }}>
+          <td colSpan={colSpan} style={{ padding: "9px 16px", color: "#fff", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em" }}>
+            <span style={{ marginRight: 8, fontSize: 10 }}>{isCollapsed ? '▶' : '▼'}</span>
+            {KATEGORI_LABEL[kat]}
+          </td>
+        </tr>,
+        ...(isCollapsed ? [] : items.flatMap((g, i) => renderGroupFn(g, i))),
+      ];
+    });
+  };
+
   // Helper: render the "Input File" table — handles PK level 3
   const renderInputFileTable = (data: IndikatorGrouped[], keyPrefix: string) => {
     type FR = {
@@ -513,7 +551,7 @@ const [tahun, setTahun] = useState("2026");
           <thead>
             <tr>
               <th className="col-w5 text-center">No</th>
-              <th className="col-w20">Sasaran Strategis</th>
+              <th className="col-w20">Sasaran Program</th>
               <th>Sub Indikator Kinerja</th>
               <th className="col-w10 text-center">Target Diterima</th>
               <th className="col-w10 text-center">Capaian</th>
@@ -521,7 +559,7 @@ const [tahun, setTahun] = useState("2026");
             </tr>
           </thead>
           <tbody>
-            {data.map((group, groupIdx) => {
+            {renderWithKategori(data, 6, keyPrefix, (group, groupIdx) => {
               const flatRows: FR[] = [];
               for (const sub of group.subIndikators) {
                 const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
@@ -603,6 +641,7 @@ const [tahun, setTahun] = useState("2026");
       </div>
     );
   };
+
 
   return (
     <div>
@@ -1140,7 +1179,7 @@ const [tahun, setTahun] = useState("2026");
                     <thead>
                       <tr>
                         <th rowSpan={2} className="col-w5 text-center">Nomor</th>
-                        <th rowSpan={2} className="col-w20">Sasaran Strategis</th>
+                        <th rowSpan={2} className="col-w20">Sasaran Program</th>
                         <th rowSpan={2} className="col-w35">Sub Indikator Kinerja Utama</th>
                         <th colSpan={2} className="text-center">Target Universitas</th>
                         <th rowSpan={2} className="text-center min-w100">Target</th>
@@ -1156,123 +1195,113 @@ const [tahun, setTahun] = useState("2026");
                     </thead>
 
                     <tbody>
-                      {groupedData.filter(g => g.persentaseTarget !== null).flatMap((group, groupIdx) => {
-                        // Tampilkan semua sub-indikator jika Sasaran Strategis memiliki target universitas
-                        const filteredSubs = group.subIndikators;
+                      {(() => {
+                        const allGroups = jenis === 'IKU'
+                          ? groupedData.filter(g => g.persentaseTarget !== null)
+                          : groupedData;
+                        const colSpan = displayRole !== 'admin' ? 7 : 6;
 
-                        if (filteredSubs.length === 0) return [];
-
-                        type TF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
-                        const flatRows: TF[] = [];
-                        for (const sub of filteredSubs) {
-                          const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
-                          let subTotal = 1;
-                          if (hasPkL3) {
-                            for (const child of sub.children) subTotal += 1 + (child.children ?? []).length;
-                          } else {
-                            subTotal += sub.children.length;
-                          }
-                          flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
-                          for (const child of sub.children) {
-                            flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
-                            if (hasPkL3) {
-                              for (const l3 of (child.children ?? [])) {
-                                flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal });
-                              }
+                        const renderGroupRows = (group: typeof allGroups[0], groupIdx: number): React.ReactNode[] => {
+                          const filteredSubs = group.subIndikators;
+                          if (filteredSubs.length === 0) return [];
+                          const flatRows: FlatRow[] = [];
+                          for (const sub of filteredSubs) {
+                            const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
+                            let subTotal = 1;
+                            if (hasPkL3) { for (const child of sub.children) subTotal += 1 + (child.children ?? []).length; }
+                            else { subTotal += sub.children.length; }
+                            flatRows.push({ id: sub.id, kode: sub.kode, nama: sub.nama, level: 1, sub, child: null, l3Obj: null, isSubFirst: true, subTotalRows: subTotal });
+                            for (const child of sub.children) {
+                              flatRows.push({ id: child.id, kode: child.kode, nama: child.nama, level: 2, sub, child, l3Obj: null, isSubFirst: false, subTotalRows: subTotal });
+                              if (hasPkL3) { for (const l3 of (child.children ?? [])) { flatRows.push({ id: l3.id, kode: l3.kode, nama: l3.nama, level: 3, sub, child, l3Obj: l3, isSubFirst: false, subTotalRows: subTotal }); } }
                             }
                           }
+                          const totalRowSpan = flatRows.length;
+                          return flatRows.map((row, rowIdx) => {
+                            const univKuantitas = group.targetAbsolut;
+                            const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                            const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
+                            const leafNilaiTarget = row.level === 3 ? row.l3Obj?.nilaiTarget ?? null : row.child?.nilaiTarget ?? null;
+                            const leafTarget = Number(leafNilaiTarget || 0);
+                            const leafSatuan = row.level === 3 ? (row.l3Obj?.satuan ?? null) : (row.child?.satuan ?? null);
+                            return (
+                              <tr key={`${group.id}-${rowIdx}`}>
+                                {rowIdx === 0 && (
+                                  <>
+                                    <td rowSpan={totalRowSpan} className="td-cell td-cell--center">
+                                      <p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p>
+                                    </td>
+                                    <td rowSpan={totalRowSpan} className="td-cell v-top">
+                                      <div className="fw-600 mb-4">{group.nama}</div>
+                                      {(() => {
+                                        const biroPKU = validasiBiroPKU.find((v) => v.indikatorId === group.id);
+                                        if (!biroPKU || biroPKU.jumlahValid == null) return null;
+                                        return (
+                                          <div style={{ marginTop: 6, padding: "5px 8px", background: "#eff6ff", borderRadius: 6, border: "1px solid #bfdbfe", fontSize: 11 }}>
+                                            <span style={{ fontWeight: 600, color: "#1d4ed8" }}>Hasil Biro PKU: </span>
+                                            <span style={{ fontWeight: 700, color: "#0369a1" }}>{biroPKU.jumlahValid}</span>
+                                            <span style={{ color: "#6b7280" }}> valid</span>
+                                            {biroPKU.keterangan && <div style={{ color: "#6b7280", marginTop: 2 }}>{biroPKU.keterangan}</div>}
+                                          </div>
+                                        );
+                                      })()}
+                                    </td>
+                                  </>
+                                )}
+                                <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
+                                  {row.kode} {row.nama}
+                                </td>
+                                {rowIdx === 0 && (
+                                  <>
+                                    <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
+                                      {univKuantitas !== null ? `${univKuantitas}${group.satuan ? ` ${group.satuan}` : ''}` : "-"}
+                                    </td>
+                                    <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
+                                      {group.tenggat || "-"}
+                                    </td>
+                                  </>
+                                )}
+                                <td className="td-cell td-cell--center">
+                                  {isLeaf && leafNilaiTarget !== null ? `${leafNilaiTarget}${leafSatuan ? ` ${leafSatuan}` : ''}` : '-'}
+                                </td>
+                                {displayRole !== 'admin' && (
+                                  isLeaf ? (
+                                    <td className="action-cell">
+                                      <div className="action-cell-inner">
+                                        <button onClick={() => handleGroupedDisposisiClick(row.id, leafTarget, authUser?.id, group.id)} className="btn-small btn-small--green btn-small--w100">Disposisi</button>
+                                        <button onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)} className="btn-small btn-small--outline btn-small--w100">Lihat Progress</button>
+                                      </div>
+                                    </td>
+                                  ) : <td className="td-cell" />
+                                )}
+                              </tr>
+                            );
+                          });
+                        };
+
+                        if (jenis === 'IKU') {
+                          const grouped: Record<string, typeof allGroups> = { Wajib: [], Pilihan: [], Partisipatif: [] };
+                          allGroups.forEach(g => grouped[getIkuKategori(g.kode)].push(g));
+                          return KATEGORI_ORDER.flatMap(kat => {
+                            const items = grouped[kat];
+                            if (items.length === 0) return [];
+                            const isCollapsed = collapsedKategori.has(kat);
+                            return [
+                              <tr key={`kat-${kat}`}
+                                onClick={() => setCollapsedKategori(prev => { const s = new Set(prev); s.has(kat) ? s.delete(kat) : s.add(kat); return s; })}
+                                style={{ background: "#1e3a5f", cursor: "pointer", userSelect: "none" }}>
+                                <td colSpan={colSpan} style={{ padding: "9px 16px", color: "#fff", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em" }}>
+                                  <span style={{ marginRight: 8, fontSize: 10 }}>{isCollapsed ? '▶' : '▼'}</span>
+                                  {KATEGORI_LABEL[kat]}
+                                </td>
+                              </tr>,
+                              ...(isCollapsed ? [] : items.flatMap((g, i) => renderGroupRows(g, i))),
+                            ];
+                          });
                         }
-                        const totalRowSpan = flatRows.length;
 
-                        return flatRows.map((row, rowIdx) => {
-                          const univKuantitas = group.targetAbsolut;
-                          const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
-                          const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
-                          const leafNilaiTarget = row.level === 3
-                            ? row.l3Obj?.nilaiTarget ?? null
-                            : row.child?.nilaiTarget ?? null;
-                          const leafTarget = Number(leafNilaiTarget || 0);
-                          const leafSatuan = row.level === 3
-                            ? (row.l3Obj?.satuan ?? null)
-                            : (row.child?.satuan ?? null);
-
-                          return (
-                            <tr key={`${group.id}-${rowIdx}`}>
-                              {rowIdx === 0 && (
-                                <>
-                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center">
-                                    <p>{row.sub.kode.split('.')[0] || groupIdx + 1}</p>
-                                  </td>
-                                  <td rowSpan={totalRowSpan} className="td-cell v-top">
-                                    <div className="fw-600 mb-4">{group.nama}</div>
-                                    {(() => {
-                                      const biroPKU = validasiBiroPKU.find((v) => v.indikatorId === group.id);
-                                      if (!biroPKU || biroPKU.jumlahValid == null) return null;
-                                      return (
-                                        <div style={{ marginTop: 6, padding: "5px 8px", background: "#eff6ff", borderRadius: 6, border: "1px solid #bfdbfe", fontSize: 11 }}>
-                                          <span style={{ fontWeight: 600, color: "#1d4ed8" }}>Hasil Biro PKU: </span>
-                                          <span style={{ fontWeight: 700, color: "#0369a1" }}>{biroPKU.jumlahValid}</span>
-                                          <span style={{ color: "#6b7280" }}> valid</span>
-                                          {biroPKU.keterangan && (
-                                            <div style={{ color: "#6b7280", marginTop: 2 }}>{biroPKU.keterangan}</div>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
-                                  </td>
-                                </>
-                              )}
-                              <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
-                                {row.kode} {row.nama}
-                              </td>
-
-                              {/* Target Universitas — merged per group */}
-                              {rowIdx === 0 && (
-                                <>
-                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
-                                    {univKuantitas !== null
-                                      ? `${univKuantitas}${group.satuan ? ` ${group.satuan}` : ''}`
-                                      : "-"}
-                                  </td>
-                                  <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--blue">
-                                    {group.tenggat || "-"}
-                                  </td>
-                                </>
-                              )}
-                              {/* Target per leaf row (L2 IKU / L3 PK) */}
-                              <td className="td-cell td-cell--center">
-                                {isLeaf && leafNilaiTarget !== null
-                                  ? `${leafNilaiTarget}${leafSatuan ? ` ${leafSatuan}` : ''}`
-                                  : '-'}
-                              </td>
-
-                              {/* Disposisi — hanya untuk Dekan, bukan Admin */}
-                              {displayRole !== 'admin' && (
-                                isLeaf ? (
-                                  <td className="action-cell">
-                                    <div className="action-cell-inner">
-                                      <button
-                                        onClick={() => handleGroupedDisposisiClick(row.id, leafTarget, authUser?.id, group.id)}
-                                        className="btn-small btn-small--green btn-small--w100"
-                                      >
-                                        Disposisi
-                                      </button>
-                                      <button
-                                        onClick={() => handleInputFileClick(row.id, row.nama, leafTarget, [], true)}
-                                        className="btn-small btn-small--outline btn-small--w100"
-                                      >
-                                        Lihat Progress
-                                      </button>
-                                    </div>
-                                  </td>
-                                ) : (
-                                  <td className="td-cell" />
-                                )
-                              )}
-                            </tr>
-                          );
-                        });
-                      })}
+                        return allGroups.flatMap((g, i) => renderGroupRows(g, i));
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1298,16 +1327,15 @@ const [tahun, setTahun] = useState("2026");
                         <thead>
                           <tr>
                             <th className="col-w5 text-center">No</th>
-                            <th className="col-w20">Sasaran Strategis</th>
+                            <th className="col-w20">Sasaran Program</th>
                             <th>Sub Indikator Kinerja</th>
                             <th className="col-w10 text-center">Diterima</th>
                             <th className="col-w15 text-center">Aksi</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {receivedGroupedData.map((group, groupIdx) => {
-                            type RF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
-                            const flatRows: RF[] = [];
+                          {renderWithKategori(receivedGroupedData, 5, 'recv', (group, groupIdx) => {
+                            const flatRows: FlatRow[] = [];
                             for (const sub of group.subIndikators) {
                               const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
                               let subTotal = 1;
@@ -1321,7 +1349,7 @@ const [tahun, setTahun] = useState("2026");
                             }
                             const totalRowSpan = flatRows.length;
                             return flatRows.map((row, rowIdx) => {
-                              const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                              const hasPkL3 = (row.sub as IndikatorGroupedSub).children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
                               const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
                               const leafDisposisi = row.level === 3 ? (row.l3Obj?.disposisiJumlah ?? null) : (row.child?.disposisiJumlah ?? null);
                               return (
@@ -1417,16 +1445,15 @@ const [tahun, setTahun] = useState("2026");
                           <thead>
                             <tr>
                               <th className="col-w5 text-center">No</th>
-                              <th className="col-w20">Sasaran Strategis</th>
+                              <th className="col-w20">Sasaran Program</th>
                               <th>Sub Indikator Kinerja</th>
                               <th className="col-w10 text-center">Target Diterima</th>
                               <th className="col-w15 text-center">Aksi</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {groupedData.map((group, groupIdx) => {
-                              type DF = { id: number; kode: string; nama: string; level: number; sub: IndikatorGroupedSub; child: IndikatorGroupedChild | null; l3Obj: IndikatorGroupedLevel3 | null; isSubFirst: boolean; subTotalRows: number };
-                              const flatRows: DF[] = [];
+                            {renderWithKategori(groupedData, 5, 'disp', (group, groupIdx) => {
+                              const flatRows: FlatRow[] = [];
                               for (const sub of group.subIndikators) {
                                 const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
                                 let subTotal = 1;
@@ -1447,7 +1474,7 @@ const [tahun, setTahun] = useState("2026");
                               }
                               const totalRowSpan = flatRows.length;
                               return flatRows.map((row, rowIdx) => {
-                                const hasPkL3 = row.sub.children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
+                                const hasPkL3 = (row.sub as IndikatorGroupedSub).children.some((c: IndikatorGroupedChild) => (c.children ?? []).length > 0);
                                 const isLeaf = hasPkL3 ? row.level === 3 : row.level === 2;
                                 const leafDisposisi = row.level === 3
                                   ? (row.l3Obj?.disposisiJumlah ?? null)
