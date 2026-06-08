@@ -61,9 +61,24 @@ export interface DetailEntry {
   files: { id: number; fileName: string; fileUrl: string; repositoryFileId: string | null }[];
 }
 
+export interface DisposisiChainNode {
+  disposisiId: number;
+  parentDisposisiId: number | null;
+  indikatorId: number;
+  indikatorKode: string;
+  indikatorNama: string;
+  toUserId: number;
+  toUserNama: string;
+  toUserEmail: string;
+  jumlahTarget: number;
+  realisasiJumlah: number;
+  realisasiStatus: 'tercapai' | 'proses' | 'belum_input';
+}
+
 export interface IndikatorDetail {
   indikator: { id: number; kode: string; nama: string; jenis: string } | null;
   entries: DetailEntry[];
+  disposisiChain: DisposisiChainNode[];
 }
 
 export async function getMonitoringData(unitId?: number): Promise<MonitoringData> {
