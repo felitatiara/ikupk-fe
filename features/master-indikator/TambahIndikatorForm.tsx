@@ -190,6 +190,7 @@ export default function TambahIndikatorForm() {
   // ── New mode ──
   const [nomor, setNomor] = useState("");
   const [sasaranStrategis, setSasaranStrategis] = useState("");
+  const [kategori, setKategori] = useState("Wajib");
   const [targetUniversitas, setTargetUniversitas] = useState("");
   const [targetSatuan, setTargetSatuan] = useState("");
   const [tenggat, setTenggat] = useState("");
@@ -310,6 +311,7 @@ export default function TambahIndikatorForm() {
         const l0 = await createIndikator({
           jenis, kode: nomor.trim(), nama: sasaranStrategis.trim(),
           tahun: targetTahun, level: 0, parentId: null,
+          ...(jenis === 'IKU' ? { kategori } : {}),
         });
         if (jenis === "IKU") {
           await upsertTargetUniversitas(l0.id, targetTahun, Number(targetUniversitas), tenggat, targetSatuan.trim() || undefined);
@@ -483,10 +485,23 @@ export default function TambahIndikatorForm() {
                   <input style={fieldInput} type="text" value={nomor} onChange={e => setNomor(e.target.value)} placeholder="1" />
                 </div>
                 <div className="col-md-6">
-                  <label style={fieldLabel}>Sasaran Strategis <span style={{ color: "#ef4444" }}>*</span></label>
+                  <label style={fieldLabel}>Sasaran Program <span style={{ color: "#ef4444" }}>*</span></label>
                   <input style={fieldInput} type="text" value={sasaranStrategis} onChange={e => setSasaranStrategis(e.target.value)} placeholder="contoh: Meningkatnya kualitas lulusan" />
                 </div>
               </div>
+
+              {jenis === "IKU" && (
+                <div className="row g-3 mb-3">
+                  <div className="col-md-6">
+                    <label style={fieldLabel}>Kategori <span style={{ color: "#ef4444" }}>*</span></label>
+                    <select style={fieldInput} value={kategori} onChange={e => setKategori(e.target.value)}>
+                      <option value="Wajib">A. Wajib</option>
+                      <option value="Pilihan">B. Pilihan</option>
+                      <option value="Partisipatif">C. Partisipatif</option>
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {jenis !== "PK" && (
                 <div className="row g-3">
