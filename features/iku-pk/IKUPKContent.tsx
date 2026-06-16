@@ -598,7 +598,7 @@ const [tahun, setTahun] = useState("2026");
                   <tr key={`${keyPrefix}-${group.id}-${rowIdx}`}>
                     {rowIdx === 0 && (
                       <>
-                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
                         <td rowSpan={totalRowSpan} className="td-cell v-top">
                           <div>{group.nama}</div>
                           {group.fromUserNama && (
@@ -1356,7 +1356,7 @@ const [tahun, setTahun] = useState("2026");
                                 <tr key={`recv-${group.id}-${rowIdx}`}>
                                   {rowIdx === 0 && (
                                     <>
-                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                                      <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
                                       <td rowSpan={totalRowSpan} className="td-cell v-top">
                                         <div>{group.nama}</div>
                                         {group.fromUserNama && (
@@ -1483,7 +1483,7 @@ const [tahun, setTahun] = useState("2026");
                                   <tr key={`disp-${group.id}-${rowIdx}`}>
                                     {rowIdx === 0 && (
                                       <>
-                                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{groupIdx + 1}</td>
+                                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
                                         <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
                                       </>
                                     )}

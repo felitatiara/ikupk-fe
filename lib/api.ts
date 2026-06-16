@@ -1392,6 +1392,22 @@ export async function upsertValidasiBiroPKU(data: {
   return res.json();
 }
 
+export async function bulkUpsertValidasiBiroPKU(items: {
+  indikatorId: number;
+  tahun: string;
+  jumlahValid: number | null;
+  keterangan?: string;
+  inputBy?: number;
+}[]): Promise<{ saved: number; skipped: number }> {
+  const res = await fetch(`${API_BASE_URL}/monitoring/validasi-biro-pku/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) throw new Error('Failed to bulk upsert validasi biro pku');
+  return res.json();
+}
+
 export async function getMonitoringScope(
   userId: number,
   tahun: string,

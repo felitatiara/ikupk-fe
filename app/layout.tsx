@@ -8,6 +8,7 @@ import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "IKU & PK UPN Veteran Jakarta",
+  icons: { icon: '/logo-upnvj.webp' },
 };
 const nunitoSans = Nunito_Sans({
   variable: "--font-nunito-sans",
