@@ -142,40 +142,45 @@ const [tahun, setTahun] = useState("2026");
       let users: UnitUser[] = [];
       let usedCascade = false;
 
-      // Cascade chain (role-based): ambil chain dari L0 indikator
-      if (l0Id) {
+      // Helper: resolve next-step users from a cascade chain ID
+      const tryCascadeId = async (chainIndikatorId: number): Promise<boolean> => {
         try {
-          const cascadeChain = await getIndikatorCascadeChain(l0Id); // (number | number[])[]
-          if (cascadeChain.length > 0) {
-            // Normalize each step to number[] for uniform handling
-            const normalizedChain: number[][] = cascadeChain.map(step =>
-              Array.isArray(step) ? step.map(Number) : [Number(step)]
-            );
-            let nextRoleIds: number[] = [];
-
-            if (displayRole === 'admin') {
-              nextRoleIds = normalizedChain[0] ?? [];
-            } else if (authUser?.roleId) {
-              const myRoleId = Number(authUser.roleId);
-              const currentIdx = normalizedChain.findIndex(step => step.includes(myRoleId));
-              if (currentIdx >= 0 && currentIdx < normalizedChain.length - 1) {
-                nextRoleIds = normalizedChain[currentIdx + 1];
-              } else if (currentIdx === -1 && isTopLevel) {
-                nextRoleIds = normalizedChain[0] ?? [];
-              }
-            }
-
-            if (nextRoleIds.length > 0) {
-              const usersByRole = await Promise.all(nextRoleIds.map(rid => getUsersByRole(rid)));
-              const merged = usersByRole.flat();
-              const seen = new Set<number>();
-              users = merged.filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
-              users = users.filter((u) => u.id !== authUser?.id);
-              usedCascade = true;
-            }
+          const chain = await getIndikatorCascadeChain(chainIndikatorId);
+          if (chain.length === 0) return false;
+          const normalized: number[][] = chain.map(step => Array.isArray(step) ? step.map(Number) : [Number(step)]);
+          let nextRoleIds: number[] = [];
+          if (displayRole === 'admin') {
+            nextRoleIds = normalized[0] ?? [];
+          } else if (authUser?.roleId) {
+            const myRoleId = Number(authUser.roleId);
+            const idx = normalized.findIndex(s => s.includes(myRoleId));
+            if (idx >= 0 && idx < normalized.length - 1) nextRoleIds = normalized[idx + 1];
+            else if (idx === -1 && isTopLevel) nextRoleIds = normalized[0] ?? [];
           }
-        } catch { /* fallback ke logika lama */ }
+          if (nextRoleIds.length === 0) return false;
+          const byRole = await Promise.all(nextRoleIds.map(rid => getUsersByRole(rid)));
+          const merged = byRole.flat();
+          const seen = new Set<number>();
+          users = merged.filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
+          users = users.filter(u => u.id !== authUser?.id);
+          return true;
+        } catch { return false; }
+      };
+
+      // 1. Try L1 parent cascade chain (chain is stored at L1 sub-indicator level)
+      let l1Id: number | null = null;
+      for (const g of [...groupedData, ...receivedGroupedData]) {
+        for (const sub of g.subIndikators) {
+          if (sub.children.some(c => c.id === subId || c.children.some(gc => gc.id === subId))) {
+            l1Id = sub.id; break;
+          }
+        }
+        if (l1Id) break;
       }
+      if (l1Id) usedCascade = await tryCascadeId(l1Id);
+
+      // 2. Fall back to L0 cascade chain
+      if (!usedCascade && l0Id) usedCascade = await tryCascadeId(l0Id);
 
       if (!usedCascade) {
         if (displayRole === 'admin') {
@@ -454,7 +459,9 @@ const [tahun, setTahun] = useState("2026");
         }
       }
     } else if (!showAtasanView && !isDosen && authUser?.id) {
-      // Non-dosen klik "Input File": gunakan disposisi, fallback ke UserRelation
+      // Non-dosen klik "Input File": hanya gunakan disposisi yang dikirim user ini.
+      // Jangan fallback ke UserRelation — struktur org tidak mencerminkan alur disposisi
+      // (misal: Widya adalah dosen di bawah Ridwan secara org, tapi atasan Ridwan untuk indikator ini).
       try {
         const disposisiRecords = await getDisposisi(indikatorId, tahun, authUser.id);
         const emails = disposisiRecords
@@ -463,18 +470,14 @@ const [tahun, setTahun] = useState("2026");
           .map(e => e.toLowerCase());
         if (emails.length > 0) {
           allowedEmails = new Set(emails);
-        } else {
-          const bawahanUsers = await getRelatedUsersFor(authUser.id);
-          if (bawahanUsers.length > 0) {
-            allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
-          }
         }
       } catch { }
     }
 
-    // Non-dosen tanpa disposisi terkirim & tanpa bawahan → tampilkan semua file indikator
+    // Hanya Dekan/WD (roleLevel <= 1) tanpa disposisi terkirim yang melihat semua file.
+    // User lain tanpa disposisi terkirim = leaf → tampilkan file milik sendiri.
     const effectiveAsAtasan = !isDosen && !showAtasanView && allowedEmails === undefined
-      ? true
+      ? roleLevel <= 1
       : showAtasanView;
 
     setFileRepoIsAtasan(effectiveAsAtasan);

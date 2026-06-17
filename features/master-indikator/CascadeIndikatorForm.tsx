@@ -19,7 +19,7 @@ function normalizeIncoming(raw: (number | number[])[]): Chain {
   return raw.map(step => Array.isArray(step) ? step.map(Number) : [Number(step)]);
 }
 
-export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: number; jenis: string; tahun: string }) {
+export default function CascadeIndikatorForm({ l0Id: indikatorId, jenis, tahun }: { l0Id: number; jenis: string; tahun: string }) {
   const router = useRouter();
 
   const [l0, setL0] = useState<Indikator | null>(null);
@@ -29,7 +29,7 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
   const [submitLoading, setSubmitLoading] = useState(false);
 
   useEffect(() => {
-    Promise.all([getIndikatorById(l0Id), getAllRoles(), getIndikatorCascadeChain(l0Id)])
+    Promise.all([getIndikatorById(indikatorId), getAllRoles(), getIndikatorCascadeChain(indikatorId)])
       .then(([indikator, roles, existingChain]) => {
         setL0(indikator);
         setAllRoles(roles.filter(r => r.level > 0).sort((a, b) => a.level - b.level));
@@ -37,7 +37,7 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
       })
       .catch(() => {})
       .finally(() => setLoadingInfo(false));
-  }, [l0Id]);
+  }, [indikatorId]);
 
   const addStep = () => setChain(p => [...p, [0]]);
   const removeStep = (si: number) => setChain(p => p.filter((_, i) => i !== si));
@@ -52,7 +52,7 @@ export default function CascadeIndikatorForm({ l0Id, jenis, tahun }: { l0Id: num
     if (new Set(all).size !== all.length) { toast.error("Role yang sama tidak boleh muncul lebih dari sekali."); return; }
     setSubmitLoading(true);
     try {
-      await saveIndikatorCascadeChain(l0Id, validChain);
+      await saveIndikatorCascadeChain(indikatorId, validChain);
       toast.success("Alur disposisi berhasil disimpan!");
       router.push("/admin/master-indikator");
     } catch {

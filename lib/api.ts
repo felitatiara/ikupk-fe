@@ -1392,6 +1392,12 @@ export async function upsertValidasiBiroPKU(data: {
   return res.json();
 }
 
+export async function getRealisasiCounts(jenis: string, tahun: string): Promise<Record<number, number>> {
+  const res = await fetch(`${API_BASE_URL}/monitoring/realisasi-counts?jenis=${encodeURIComponent(jenis)}&tahun=${encodeURIComponent(tahun)}`);
+  if (!res.ok) return {};
+  return res.json();
+}
+
 export async function bulkUpsertValidasiBiroPKU(items: {
   indikatorId: number;
   tahun: string;

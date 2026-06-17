@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, Indikator } from "../../lib/api";
 import { toast } from "sonner";
@@ -920,9 +921,17 @@ export default function MasterIndikatorContent() {
                           {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", borderRight: "1px solid #f3f4f6" }}><span style={{ fontWeight: 700, fontSize: 13, color: "#111", lineHeight: 1.5 }}>{row.parent.nama}</span></td>}
                           <td style={{ padding: 0 }}>
                             {entry.level === 1 ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 11px 20px" }}>
-                                <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
-                                <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 14px 11px 20px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
+                                  <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
+                                </div>
+                                <button
+                                  onClick={() => { const l1Id = entry.key.split('-')[1]; window.location.href = `/admin/master-indikator/${l1Id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }}
+                                  style={{ flexShrink: 0, padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", whiteSpace: "nowrap" }}
+                                >
+                                  Alur
+                                </button>
                               </div>
                             ) : entry.level === 2 ? (
                               <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 40px" }}>
@@ -940,7 +949,6 @@ export default function MasterIndikatorContent() {
                             <td rowSpan={row.entries.length} style={{ padding: "14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f3f4f6" }}>
                               <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
                                 <button onClick={() => handleEditClick(level0Group)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #e5e7eb", background: "#fff", color: "#374151", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.borderColor = "#d1d5db")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>Edit</button>
-                                <button onClick={() => { window.location.href = `/admin/master-indikator/${row.parent.id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.background = "#e0f2fe")} onMouseLeave={e => (e.currentTarget.style.background = "#f0f9ff")}>Alur</button>
                                 <button onClick={() => setConfirmDeleteSingleId(row.parent.id)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")} onMouseLeave={e => (e.currentTarget.style.background = "#fff7f7")}>Hapus</button>
                               </div>
                             </td>
