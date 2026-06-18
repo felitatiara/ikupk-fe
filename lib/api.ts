@@ -260,6 +260,33 @@ export async function getAvailableYears(): Promise<string[]> {
   return response.json();
 }
 
+export interface IndikatorImportRow {
+  kode: string;
+  nama: string;
+  level: number;
+  parentKode: string | null;
+  kategori: string | null;
+  tenggat: string | null;
+  target: number | null;
+  satuan: string | null;
+  sumberData: string;
+}
+
+export async function importIndikatorBulk(
+  jenis: string,
+  tahun: string,
+  rows: IndikatorImportRow[],
+  token: string,
+): Promise<{ imported: number; errors: string[] }> {
+  const res = await fetch(`${API_BASE_URL}/indikator/import-bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jenis, tahun, rows }),
+  });
+  if (!res.ok) throw new Error('Import gagal');
+  return res.json();
+}
+
 export async function copyIndikatorYear(fromTahun: string, toTahun: string): Promise<{ copied: number }> {
   const response = await fetch(`${API_BASE_URL}/indikator/copy-year`, {
     method: 'POST',

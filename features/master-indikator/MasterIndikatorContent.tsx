@@ -3,8 +3,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import * as XLSX from "xlsx";
 
-import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, Indikator } from "../../lib/api";
+import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, importIndikatorBulk, Indikator, IndikatorImportRow } from "../../lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 
@@ -94,7 +96,126 @@ const labelStyle = { fontSize: 12, fontWeight: 600, color: "#374151", marginBott
 const inputStyle = { border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151", width: "100%" };
 
 
+function parseIndikatorExcel(file: File): Promise<IndikatorImportRow[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawRows: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+
+        // Detect header rows (scan first 10 rows)
+        let h1 = -1, h2 = -1;
+        for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+          const texts = (rawRows[i] ?? []).map(c => String(c ?? "").toLowerCase().trim());
+          if (texts.some(t => t === "no" || t === "no." || t.includes("kategori"))) {
+            h1 = i;
+            if (i + 1 < rawRows.length) {
+              const nextTexts = (rawRows[i + 1] ?? []).map(c => String(c ?? "").toLowerCase().trim());
+              if (nextTexts.some(t => t === "kode" || t.includes("nama"))) h2 = i + 1;
+            }
+            break;
+          }
+        }
+        const dataStart = h2 >= 0 ? h2 + 1 : h1 >= 0 ? h1 + 1 : 0;
+
+        // Detect column positions from header rows
+        const headerCols: Record<string, number> = {};
+        [h1, h2].filter(h => h >= 0).forEach(h => {
+          (rawRows[h] ?? []).forEach((cell, idx) => {
+            const t = String(cell ?? "").toLowerCase().trim();
+            if (!t) return;
+            if (t === "no" || t === "no.") headerCols["no"] = idx;
+            else if (t.includes("kategori")) headerCols["kategori"] = idx;
+            else if (t.includes("sasaran")) headerCols["sasaran"] = idx;
+            else if (t === "kode") headerCols["kode"] = idx;
+            // "Indikator Kinerja Kegiatan" adalah merged header yang mencakup 2 kolom: kode di idx, nama di idx+1
+            else if (t.includes("indikator kinerja") || t.includes("kinerja kegiatan")) {
+              if (headerCols["kode"] === undefined) headerCols["kode"] = idx;
+              if (headerCols["nama"] === undefined) headerCols["nama"] = idx + 1;
+            }
+            // "Nama" saja (bukan bagian dari "Indikator Kinerja")
+            else if (t === "nama" || (t.includes("nama") && !t.includes("indikator") && !t.includes("kinerja"))) headerCols["nama"] = idx;
+            else if (t.includes("tenggat")) headerCols["tenggat"] = idx;
+            else if (t.includes("target")) headerCols["target"] = idx;
+            else if (t.includes("satuan")) headerCols["satuan"] = idx;
+            else if (t.includes("sumber")) headerCols["sumber"] = idx;
+          });
+        });
+        const COL = {
+          no:       headerCols["no"]       ?? 0,
+          kategori: headerCols["kategori"] ?? 1,
+          sasaran:  headerCols["sasaran"]  ?? 2,
+          kode:     headerCols["kode"]     ?? 3,
+          nama:     headerCols["nama"]     ?? 4,
+          tenggat:  headerCols["tenggat"]  ?? 5,
+          target:   headerCols["target"]   ?? 6,
+          satuan:   headerCols["satuan"]   ?? 7,
+          sumber:   headerCols["sumber"]   ?? 8,
+        };
+        // Safety: pastikan kode dan nama tidak baca kolom yang sama
+        if (COL.kode === COL.nama) COL.nama = COL.kode + 1;
+
+        const result: IndikatorImportRow[] = [];
+        let lastKategori = "";
+        let lastSasaran = "";
+        const l0Created = new Set<string>();
+
+        for (let i = dataStart; i < rawRows.length; i++) {
+          const row = rawRows[i] ?? [];
+          if (row.every(c => c === null)) continue;
+
+          const rawNo       = row[COL.no];
+          const rawKategori = row[COL.kategori];
+          const rawSasaran  = row[COL.sasaran];
+          const rawKode     = row[COL.kode];
+          const rawNama     = row[COL.nama];
+
+          if (rawKategori != null && String(rawKategori).trim()) lastKategori = String(rawKategori).trim();
+          if (rawSasaran  != null && String(rawSasaran).trim())  lastSasaran  = String(rawSasaran).trim();
+
+          // L0: dari kolom No. + Sasaran Program
+          if (rawNo != null && String(rawNo).trim()) {
+            const no = String(rawNo).trim();
+            if (!l0Created.has(no) && lastSasaran) {
+              result.push({ kode: no, nama: lastSasaran, level: 0, parentKode: null, kategori: lastKategori || null, tenggat: null, target: null, satuan: null, sumberData: "repository" });
+              l0Created.add(no);
+            }
+          }
+
+          if (rawKode == null || String(rawKode).trim() === "") continue;
+          const kode = String(rawKode).trim();
+          const nama = String(rawNama ?? "").trim();
+          if (!nama) continue;
+
+          const parts = kode.split(".");
+          const level = parts.length - 1;
+          const parentKode = level > 0 ? parts.slice(0, -1).join(".") : null;
+
+          const rawSumber = String(row[COL.sumber] ?? "").trim().toLowerCase();
+          const sumberData = rawSumber.includes("ikupk") ? "ikupk" : "repository";
+          const tenggat = row[COL.tenggat] != null && String(row[COL.tenggat]).trim() ? String(row[COL.tenggat]).trim() : null;
+          const rawTarget = row[COL.target];
+          const targetNum = rawTarget != null && String(rawTarget).trim() !== "" ? Number(rawTarget) : null;
+          const satuan = row[COL.satuan] != null && String(row[COL.satuan]).trim() ? String(row[COL.satuan]).trim() : null;
+
+          result.push({ kode, nama, level, parentKode, kategori: null, tenggat, target: targetNum !== null && isNaN(targetNum) ? null : targetNum, satuan, sumberData });
+        }
+
+        resolve(result);
+      } catch (err: any) {
+        reject(new Error("Gagal parse Excel: " + err.message));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export default function MasterIndikatorContent() {
+  const { token } = useAuth();
+
   // State declarations
   const [indikatorList, setIndikatorList] = useState<Indikator[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,6 +261,15 @@ export default function MasterIndikatorContent() {
   const [targetTahun, setTargetTahun] = useState("");
   const [selectedLevel0Id, setSelectedLevel0Id] = useState<number | "">("");
   const [groups, setGroups] = useState<IndikatorGroupForm[]>([blankGroup()]);
+
+  // Import Excel state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importRows, setImportRows] = useState<IndikatorImportRow[]>([]);
+  const [importJenis, setImportJenis] = useState<"IKU" | "PK">("IKU");
+  const [importTahun, setImportTahun] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importFileError, setImportFileError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   // Debounce timers per sub item id
   const debounceRefs = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
@@ -613,6 +743,132 @@ export default function MasterIndikatorContent() {
 
   return (
     <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+
+      {/* ── Import Excel Modal ── */}
+      {importModalOpen && createPortal(
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(3px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.18)", width: "100%", maxWidth: 860, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ padding: "18px 24px 14px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>Import Indikator dari Excel</div>
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>Upload file Excel sesuai template, lalu konfirmasi untuk menyimpan.</div>
+              </div>
+              <button onClick={() => setImportModalOpen(false)} style={{ background: "none", border: "none", fontSize: 20, color: "#9ca3af", cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "18px 24px", overflowY: "auto", flex: 1 }}>
+              {/* Jenis + Tahun selector */}
+              <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ ...labelStyle, marginBottom: 6 }}>Jenis</div>
+                  <select value={importJenis} onChange={e => setImportJenis(e.target.value as "IKU" | "PK")} style={{ ...inputStyle, width: "100%" }}>
+                    <option value="IKU">IKU</option>
+                    <option value="PK">PK</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ ...labelStyle, marginBottom: 6 }}>Tahun</div>
+                  <input value={importTahun} onChange={e => setImportTahun(e.target.value)} placeholder="2026" style={{ ...inputStyle }} />
+                </div>
+                <div style={{ flex: 2, minWidth: 200 }}>
+                  <div style={{ ...labelStyle, marginBottom: 6 }}>File Excel</div>
+                  <input ref={importFileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setImportFileError(null);
+                      setImportRows([]);
+                      try {
+                        const rows = await parseIndikatorExcel(file);
+                        if (rows.length === 0) { setImportFileError("Tidak ada data yang terbaca dari file ini."); return; }
+                        setImportRows(rows);
+                      } catch (err: any) {
+                        setImportFileError(err.message ?? "Gagal membaca file.");
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  <button onClick={() => importFileRef.current?.click()}
+                    style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #d1d5db", background: "#f9fafb", fontSize: 13, cursor: "pointer", fontWeight: 600, color: "#374151" }}>
+                    Pilih File...
+                  </button>
+                  {importFileError && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{importFileError}</div>}
+                </div>
+              </div>
+
+              {/* Preview table */}
+              {importRows.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 8 }}>
+                    Preview — {importRows.length} baris akan diimpor
+                  </div>
+                  <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "#f9fafb" }}>
+                          {["Kode", "Nama", "Level", "Parent", "Kategori", "Tenggat", "Target", "Satuan", "Sumber"].map(h => (
+                            <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importRows.map((r, i) => (
+                          <tr key={i} style={{ borderBottom: "1px solid #f3f4f6", background: r.level === 0 ? "#fef9f0" : r.level === 1 ? "#f9fafb" : "#fff" }}>
+                            <td style={{ padding: "6px 10px", fontWeight: 700, color: importJenis === "IKU" ? "#FF7900" : "#7c3aed" }}>{r.kode}</td>
+                            <td style={{ padding: "6px 10px", paddingLeft: 10 + r.level * 12 }}>{r.nama}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>L{r.level}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.parentKode ?? "-"}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.kategori ?? "-"}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.tenggat ?? "-"}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.target ?? "-"}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.satuan ?? "-"}</td>
+                            <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.sumberData}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "14px 24px", borderTop: "1px solid #f3f4f6", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setImportModalOpen(false)} disabled={importLoading}
+                style={{ padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>
+                Batal
+              </button>
+              <button
+                disabled={importRows.length === 0 || importLoading || !importTahun}
+                onClick={async () => {
+                  if (!token) { toast.error("Token tidak ditemukan, silakan login ulang."); return; }
+                  setImportLoading(true);
+                  try {
+                    const result = await importIndikatorBulk(importJenis, importTahun, importRows, token);
+                    if (result.errors.length > 0) {
+                      toast.error(`Import selesai dengan ${result.errors.length} error. ${result.errors[0]}`);
+                    } else {
+                      toast.success(`${result.imported} indikator berhasil diimpor.`);
+                    }
+                    setImportModalOpen(false);
+                    refreshList();
+                  } catch {
+                    toast.error("Import gagal, coba lagi.");
+                  } finally {
+                    setImportLoading(false);
+                  }
+                }}
+                style={{ padding: "8px 24px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 700, cursor: importRows.length === 0 || importLoading ? "not-allowed" : "pointer", background: importRows.length === 0 || importLoading ? "#d1d5db" : "#16a34a", color: "#fff" }}>
+                {importLoading ? "Menyimpan..." : `Simpan ${importRows.length} Indikator`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* ── Confirm Dialogs ── */}
       <Confirm open={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={handleDeleteAll} title="Hapus Semua Data?"
@@ -836,6 +1092,17 @@ export default function MasterIndikatorContent() {
               background: "#fff7f7", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#dc2626"
             }}>
             Hapus Semua
+          </button>
+          <button
+            onClick={() => {
+              setImportJenis(filterJenis);
+              setImportTahun(targetTahun || String(new Date().getFullYear()));
+              setImportRows([]);
+              setImportFileError(null);
+              setImportModalOpen(true);
+            }}
+            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #0284c7", background: "#f0f9ff", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#0369a1" }}>
+            Import Excel
           </button>
           <button onClick={() => { window.location.href = "/admin/master-indikator/tambah"; }}
             style={{
