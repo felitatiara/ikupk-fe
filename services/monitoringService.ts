@@ -15,6 +15,7 @@ export interface ProgressChartSubChild {
   realisasi: number;
   nilaiTarget?: number | null;
   satuan?: string | null;
+  status?: string;
 }
 
 export interface ProgressChartSubItem {
@@ -32,6 +33,7 @@ export interface ProgressChartItem {
   kode: string;
   nama: string;
   jenis: string;
+  kategori: string | null;
   targetUniversitas: number;   // IKU: %; PK: nilai absolut
   satuan: string | null;       // unit untuk PK (e.g. "Dokumen")
   targetAbsolut: number | null;
@@ -67,6 +69,8 @@ export interface DisposisiChainNode {
   indikatorId: number;
   indikatorKode: string;
   indikatorNama: string;
+  indikatorLevel: number;
+  indikatorHierarchy: { kode: string; nama: string; level: number }[];
   toUserId: number;
   toUserNama: string;
   toUserEmail: string;

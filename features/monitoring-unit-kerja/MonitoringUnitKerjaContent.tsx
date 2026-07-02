@@ -19,6 +19,7 @@ import {
   getAggregatedProgress,
   getIndikatorMonitoringDetail,
   ProgressChartItem,
+  ProgressChartSubChild,
   IndikatorDetail,
   DisposisiChainNode,
 } from "@/services/monitoringService";
@@ -72,16 +73,6 @@ interface FilesByOwner {
   files: RealisasiFileItem[];
 }
 
-type EntryGroup = {
-  uploaderNama: string;
-  uploaderEmail: string;
-  indikatorKode: string;
-  indikatorNama: string;
-  totalRealisasi: number;
-  lastPeriode: string | null;
-  files: RealisasiFileItem[];
-};
-
 // ── Disposisi tree helpers ────────────────────────────────────────────────────
 
 /**
@@ -113,70 +104,74 @@ function ChainNode({
   node,
   allNodes,
   depth,
+  filesByOwner,
+  onSelect,
 }: {
   node: DisposisiChainNode;
   allNodes: DisposisiChainNode[];
   depth: number;
+  filesByOwner: FilesByOwner[];
+  onSelect: (nama: string, email: string, files: RealisasiFileItem[], statusColor: string, indikatorLevel: number, indikatorKode: string, indikatorNama: string, indikatorHierarchy: { kode: string; nama: string; level: number }[]) => void;
 }) {
   const children = allNodes.filter(n => n.parentDisposisiId === node.disposisiId);
   const isLeaf = children.length === 0;
 
-  // For non-leaf nodes: aggregate from bawahan; for leaf: own submission
   const real = isLeaf ? node.realisasiJumlah : effectiveRealisasi(node.disposisiId, allNodes);
   const status = nodeStatus(real, node.jumlahTarget);
   const sc = STATUS_STYLE[status];
 
+  const userFiles = filesByOwner
+    .filter(g => g.ownerEmail === node.toUserEmail)
+    .flatMap(g => g.files);
+
+  const hasFiles = userFiles.length > 0;
+
   return (
-    <div style={{ marginLeft: depth * 22 }}>
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "9px 12px",
-        borderRadius: 8,
-        border: `1px solid ${depth === 0 ? "#d1d5db" : "#e5e7eb"}`,
-        backgroundColor: depth === 0 ? "#f8fafc" : "#ffffff",
-        marginBottom: 4,
-        position: "relative",
-      }}>
+    <div style={{ marginLeft: depth * 20 }}>
+      <div
+        onClick={() => hasFiles && onSelect(node.toUserNama, node.toUserEmail, userFiles, sc.fg, node.indikatorLevel, node.indikatorKode, node.indikatorNama, node.indikatorHierarchy)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "9px 12px",
+          borderRadius: 8,
+          border: "1px solid #e5e7eb",
+          backgroundColor: "#fff",
+          marginBottom: 4,
+          position: "relative",
+          cursor: hasFiles ? "pointer" : "default",
+          transition: "background 0.12s",
+        }}
+        onMouseEnter={e => { if (hasFiles) (e.currentTarget as HTMLDivElement).style.backgroundColor = "#f9fafb"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "#fff"; }}
+      >
         {depth > 0 && (
-          <div style={{ position: "absolute", left: -18, top: "50%", width: 14, height: 1, backgroundColor: "#d1d5db" }} />
+          <span style={{ fontSize: 10, color: "#d1d5db", flexShrink: 0 }}>└</span>
         )}
-        {/* Role indicator dot */}
-        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: sc.fg, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{node.toUserNama}</div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>{node.toUserEmail}</div>
-          {!isLeaf && (
-            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
-              Total dari {children.length} bawahan
-            </div>
-          )}
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
-            <span style={{ color: "#9ca3af" }}>Target </span>
-            <strong>{node.jumlahTarget}</strong>
-            <span style={{ color: "#d1d5db", margin: "0 6px" }}>·</span>
-            <span style={{ color: "#9ca3af" }}>Realisasi </span>
-            <strong style={{ color: real > 0 ? "#0284c7" : "#9ca3af" }}>{real}</strong>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {node.toUserNama}
           </div>
-          <span style={{
-            display: "inline-block",
-            padding: "2px 8px",
-            borderRadius: 999,
-            fontSize: 11,
-            fontWeight: 700,
-            backgroundColor: sc.bg,
-            color: sc.fg,
-            border: `1px solid ${sc.border}`,
-          }}>
-            {sc.label}
-          </span>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{node.toUserEmail}</div>
+        </div>
+        <div style={{ fontSize: 11, color: "#6b7280", flexShrink: 0, textAlign: "right", lineHeight: 1.6 }}>
+          <div>Target <strong style={{ color: "#374151" }}>{node.jumlahTarget}</strong> · Real <strong style={{ color: "#374151" }}>{real}</strong></div>
+          <div style={{ color: sc.fg, fontWeight: 600 }}>{sc.label}</div>
+        </div>
+        <div style={{
+          flexShrink: 0, fontSize: 11, fontWeight: 600,
+          color: hasFiles ? "#374151" : "#d1d5db",
+          padding: "4px 10px", borderRadius: 6,
+          border: "1px solid #e5e7eb",
+          whiteSpace: "nowrap",
+        }}>
+          {hasFiles ? `${userFiles.length} file` : "—"}
         </div>
       </div>
+
       {children.map(child => (
-        <ChainNode key={child.disposisiId} node={child} allNodes={allNodes} depth={depth + 1} />
+        <ChainNode key={child.disposisiId} node={child} allNodes={allNodes} depth={depth + 1} filesByOwner={filesByOwner} onSelect={onSelect} />
       ))}
     </div>
   );
@@ -196,8 +191,11 @@ function DetailModal({
   const [detail, setDetail] = useState<IndikatorDetail | null>(null);
   const [filesByOwner, setFilesByOwner] = useState<FilesByOwner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<"alur" | "realisasi">("alur");
+  const [selectedPerson, setSelectedPerson] = useState<{
+    nama: string; email: string; files: RealisasiFileItem[]; color: string;
+    indikatorLevel: number; indikatorKode: string; indikatorNama: string;
+    indikatorHierarchy: { kode: string; nama: string; level: number }[];
+  } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -240,29 +238,6 @@ function DetailModal({
     load();
   }, [item.id, tahun, token]);
 
-  // Build entry groups for realisasi tab
-  const entryGroupMap = new Map<string, EntryGroup>();
-  for (const entry of (detail?.entries ?? [])) {
-    const key = `${entry.uploaderEmail}::${entry.indikatorKode}`;
-    if (!entryGroupMap.has(key)) {
-      const fileGroup = filesByOwner.find(
-        g => g.ownerEmail === entry.uploaderEmail && g.indikatorKode === entry.indikatorKode
-      );
-      entryGroupMap.set(key, {
-        uploaderNama: entry.uploaderNama,
-        uploaderEmail: entry.uploaderEmail,
-        indikatorKode: entry.indikatorKode,
-        indikatorNama: entry.indikatorNama,
-        totalRealisasi: 0,
-        lastPeriode: entry.periode,
-        files: fileGroup?.files ?? [],
-      });
-    }
-    entryGroupMap.get(key)!.totalRealisasi += entry.realisasiAngka;
-  }
-  const entryGroups = [...entryGroupMap.values()];
-  const totalFiles = filesByOwner.reduce((s, g) => s + g.files.length, 0);
-
   // Chain data
   const chain = detail?.disposisiChain ?? [];
   // Group roots by indicator
@@ -300,191 +275,157 @@ function DetailModal({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <p style={{ color: "#FF7900", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
-              Detail Monitoring
-            </p>
-            <h3 style={{ margin: "4px 0 0", fontSize: 16, fontWeight: 700, color: "#1f2937" }}>
-              [{item.kode}] {item.nama}
-            </h3>
-            <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                {item.jenis === "PK" ? "Target Fak" : "Target Univ"}:{" "}
-                <strong style={{ color: "#1f2937" }}>
-                  {item.jenis === "PK"
-                    ? `${item.targetUniversitas}${item.satuan ? ` ${item.satuan}` : ""}`
-                    : `${item.targetUniversitas}%`}
-                </strong>
-                {item.jenis === "IKU" && item.targetAbsolut != null && (
-                  <span style={{ color: "#9ca3af" }}> ({item.targetAbsolut} absolut)</span>
-                )}
-              </span>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                Realisasi: <strong style={{ color: "#1f2937" }}>{item.realisasi}</strong>
-              </span>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                Tahun: <strong style={{ color: "#1f2937" }}>{tahun}</strong>
-              </span>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af", lineHeight: 1, padding: 4, flexShrink: 0 }}>✕</button>
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e5e7eb", padding: "0 24px" }}>
-          {(["alur", "realisasi"] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveDetailTab(tab)}
-              style={{
-                padding: "12px 20px",
-                fontSize: 13,
-                fontWeight: activeDetailTab === tab ? 700 : 500,
-                color: activeDetailTab === tab ? "#FF7900" : "#6b7280",
-                background: "none",
-                border: "none",
-                borderBottom: activeDetailTab === tab ? "2px solid #FF7900" : "2px solid transparent",
-                cursor: "pointer",
-                marginBottom: -1,
-              }}
-            >
-              {tab === "alur" ? "Alur Disposisi" : "Realisasi & File"}
-            </button>
-          ))}
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: "20px 24px", maxHeight: "60vh", overflowY: "auto" }}>
-          {loading ? (
-            <div style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data...</div>
-          ) : activeDetailTab === "alur" ? (
-            // ── Alur Disposisi ─────────────────────────────────────────────
-            chain.length === 0 ? (
-              <div style={{ textAlign: "center", color: "#9ca3af", padding: 40 }}>
-                Belum ada disposisi untuk indikator ini pada tahun {tahun}.
-              </div>
-            ) : (
+        {!selectedPerson ? (
+          <>
+            {/* PAGE 1 Header */}
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
               <div>
-                {/* Status summary */}
-                <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
-                  {[
-                    { label: "Tercapai", count: tercapaiCount, bg: "#ecfdf5", fg: "#047857", border: "#bbf7d0" },
-                    { label: "Proses", count: prosesCount, bg: "#fff7ed", fg: "#c2410c", border: "#fed7aa" },
-                    { label: "Belum Input", count: belumInputCount, bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca" },
-                  ].map(s => (
-                    <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, backgroundColor: s.bg, border: `1px solid ${s.border}` }}>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: s.fg }}>{s.count}</span>
-                      <span style={{ fontSize: 12, color: s.fg, fontWeight: 600 }}>{s.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Chain grouped by indicator */}
-                {indikatorIds.map(indId => {
-                  const roots = rootNodes.filter(n => n.indikatorId === indId);
-                  const first = roots[0];
-                  return (
-                    <div key={indId} style={{ marginBottom: 20 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                        <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "#065f46", background: "#d1fae5", padding: "2px 7px", borderRadius: 4 }}>
-                          {first?.indikatorKode}
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{first?.indikatorNama}</span>
-                      </div>
-                      <div style={{ borderLeft: "2px solid #e5e7eb", paddingLeft: 12 }}>
-                        {roots.map(root => (
-                          <ChainNode key={root.disposisiId} node={root} allNodes={chain} depth={0} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            // ── Realisasi & File ────────────────────────────────────────────
-            entryGroups.length === 0 ? (
-              <div style={{ textAlign: "center", color: "#9ca3af", padding: 40 }}>
-                Belum ada realisasi yang diinput untuk tahun {tahun}.
-              </div>
-            ) : (
-              <div>
-                <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 14 }}>
-                  {entryGroups.length} penginput · {totalFiles > 0 ? `${totalFiles} file terlampir` : "belum ada file"}
+                <p style={{ color: "#FF7900", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
+                  Detail Monitoring
                 </p>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 70px 60px 70px", gap: 8, padding: "8px 12px", backgroundColor: "#f9fafb", borderRadius: 6, marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>Nama / Email</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textAlign: "center" }}>Kode</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textAlign: "center" }}>Capaian</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textAlign: "center" }}>Periode</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textAlign: "center" }}>File</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textAlign: "center" }}>Aksi</span>
+                <h3 style={{ margin: "4px 0 0", fontSize: 16, fontWeight: 700, color: "#1f2937" }}>
+                  [{item.kode}] {item.nama}
+                </h3>
+                <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    {item.jenis === "PK" ? "Target Fak" : "Target Univ"}:{" "}
+                    <strong style={{ color: "#1f2937" }}>
+                      {item.jenis === "PK"
+                        ? `${item.targetUniversitas}${item.satuan ? ` ${item.satuan}` : ""}`
+                        : `${item.targetUniversitas}%`}
+                    </strong>
+                    {item.jenis === "IKU" && item.targetAbsolut != null && (
+                      <span style={{ color: "#9ca3af" }}> ({item.targetAbsolut} absolut)</span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    Realisasi: <strong style={{ color: "#1f2937" }}>{item.realisasi}</strong>
+                  </span>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    Tahun: <strong style={{ color: "#1f2937" }}>{tahun}</strong>
+                  </span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  {entryGroups.map((g) => {
-                    const key = `${g.uploaderEmail}::${g.indikatorKode}`;
-                    const isOpen = expandedKey === key;
-                    const hasFiles = g.files.length > 0;
+              </div>
+              <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af", lineHeight: 1, padding: 4, flexShrink: 0 }}>✕</button>
+            </div>
+
+            {/* PAGE 1 Body */}
+            <div style={{ padding: "20px 24px", maxHeight: "60vh", overflowY: "auto" }}>
+              {loading ? (
+                <div style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data...</div>
+              ) : chain.length === 0 ? (
+                <div style={{ textAlign: "center", color: "#9ca3af", padding: 40 }}>
+                  Belum ada disposisi untuk indikator ini pada tahun {tahun}.
+                </div>
+              ) : (
+                <div>
+                  {/* Status summary row */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#047857" }}>{tercapaiCount} Tercapai</span>
+                      <span style={{ color: "#d1d5db" }}>|</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#c2410c" }}>{prosesCount} Proses</span>
+                      <span style={{ color: "#d1d5db" }}>|</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>{belumInputCount} Belum Input</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: "#9ca3af" }}>Klik baris untuk lihat file</span>
+                  </div>
+
+                  {/* Chain grouped by indicator */}
+                  {indikatorIds.map(indId => {
+                    const roots = rootNodes.filter(n => n.indikatorId === indId);
+                    const first = roots[0];
                     return (
-                      <div key={key} style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 70px 60px 70px", gap: 8, alignItems: "center", padding: "10px 12px", backgroundColor: "#fafafa" }}>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#1f2937" }}>{g.uploaderNama}</p>
-                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>{g.uploaderEmail}</p>
-                          </div>
-                          <span style={{ textAlign: "center", fontSize: 11, color: "#9ca3af", fontFamily: "monospace" }}>{g.indikatorKode}</span>
-                          <span style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: "#374151" }}>{g.totalRealisasi}</span>
-                          <span style={{ textAlign: "center", fontSize: 11, color: "#6b7280" }}>{g.lastPeriode ?? "—"}</span>
-                          <span style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: hasFiles ? "#059669" : "#9ca3af" }}>
-                            {hasFiles ? g.files.length : "—"}
+                      <div key={indId} style={{ marginBottom: 20 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", background: "#f3f4f6", padding: "2px 7px", borderRadius: 4 }}>
+                            Level {(first?.indikatorLevel ?? 0) + 1}
                           </span>
-                          <div style={{ textAlign: "center" }}>
-                            {hasFiles ? (
-                              <button
-                                onClick={() => setExpandedKey(isOpen ? null : key)}
-                                style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 5, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#0284c7" }}
-                              >
-                                {isOpen ? "Tutup" : "Lihat"}
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: 11, color: "#d1d5db" }}>—</span>
-                            )}
-                          </div>
+                          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#6b7280" }}>{first?.indikatorKode}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{first?.indikatorNama}</span>
                         </div>
-                        {isOpen && hasFiles && (
-                          <div style={{ padding: "10px 14px", borderTop: "1px solid #f3f4f6", display: "flex", flexDirection: "column", gap: 6 }}>
-                            {g.files.map((f) => (
-                              <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", backgroundColor: "#f8fafc", borderRadius: 6, border: "1px solid #e5e7eb" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                                  <span style={{ fontSize: 14 }}>📄</span>
-                                  <span style={{ fontSize: 12, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-                                </div>
-                                <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 8 }}>
-                                  {f.preview_url && (
-                                    <a href={f.preview_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, textDecoration: "none" }}>
-                                      Preview ↗
-                                    </a>
-                                  )}
-                                  {f.download_url && (
-                                    <a href={f.download_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#0284c7", fontWeight: 600, textDecoration: "none" }}>
-                                      Unduh ↗
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <div style={{ borderLeft: "2px solid #e5e7eb", paddingLeft: 12 }}>
+                          {roots.map(root => (
+                            <ChainNode
+                              key={root.disposisiId}
+                              node={root}
+                              allNodes={chain}
+                              depth={0}
+                              filesByOwner={filesByOwner}
+                              onSelect={(nama, email, files, color, indikatorLevel, indikatorKode, indikatorNama, indikatorHierarchy) =>
+                                setSelectedPerson({ nama, email, files, color, indikatorLevel, indikatorKode, indikatorNama, indikatorHierarchy })
+                              }
+                            />
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* PAGE 2 Header */}
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                onClick={() => setSelectedPerson(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151", padding: "4px 0", flexShrink: 0 }}
+              >
+                ← Kembali
+              </button>
+              <span style={{ color: "#e5e7eb" }}>|</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedPerson.nama}</div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }}>{selectedPerson.email}</div>
               </div>
-            )
-          )}
-        </div>
+              <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af", lineHeight: 1, padding: 4, flexShrink: 0 }}>✕</button>
+            </div>
+
+            {/* PAGE 2 Body */}
+            <div style={{ padding: "20px 24px", maxHeight: "60vh", overflowY: "auto" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                DETAIL INDIKATOR
+              </div>
+              {selectedPerson.indikatorHierarchy.map((h, idx) => (
+                <div key={h.kode} style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: idx * 14, marginBottom: 4 }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{h.kode}</span>
+                  <span style={{ fontSize: 13, fontWeight: idx === selectedPerson.indikatorHierarchy.length - 1 ? 700 : 400, color: idx === selectedPerson.indikatorHierarchy.length - 1 ? "#111827" : "#6b7280" }}>{h.nama}</span>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 16, marginBottom: 10 }}>
+                {selectedPerson.files.length} file diunggah
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {selectedPerson.files.map((f, idx) => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#f8fafc", borderRadius: 8, padding: "10px 14px", border: "1px solid #e5e7eb" }}>
+                    <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0, fontWeight: 600, minWidth: 20 }}>{idx + 1}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                      <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>{new Date(f.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      {f.preview_url && (
+                        <a href={f.preview_url} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, fontWeight: 600, color: "#374151", textDecoration: "none", padding: "4px 10px", background: "#f3f4f6", borderRadius: 6, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>
+                          Preview
+                        </a>
+                      )}
+                      {f.download_url && (
+                        <a href={f.download_url} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, fontWeight: 600, color: "#c2410c", textDecoration: "none", padding: "4px 10px", background: "#fff7ed", borderRadius: 6, border: "1px solid #fed7aa", whiteSpace: "nowrap" }}>
+                          Unduh
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -754,6 +695,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const [validasiSaving, setValidasiSaving] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const [collapsedSasaran, setCollapsedSasaran] = useState<Set<number>>(new Set());
   const [scopeIds, setScopeIds] = useState<number[]>([]);
 
   const isPimpinan = role === "pimpinan" || role === "admin";
@@ -1454,7 +1396,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                     ⬇ Export Template
                   </button>
-                  {isPimpinan && (
+                  {(roleStr === "admin" || roleStr === "superadmin") && (
                     <>
                       <input
                         ref={importFileRef}
@@ -1477,24 +1419,26 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 </div>
               </div>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ backgroundColor: "#f8fafc" }}>
                       {[
-                        { label: "No", w: "4%" },
-                        { label: "Sasaran", w: "13%" },
-                        { label: "Indikator / Sub-Indikator", w: "auto" },
-                        { label: "Target", w: "8%" },
-                        { label: "Realisasi", w: "8%" },
-                        { label: "Tenggat", w: "9%" },
-                        { label: "Status", w: "8%" },
-                        { label: "Hasil Validasi Biro PKU", w: "9%" },
-                        { label: "Aksi", w: "8%" },
+                        { label: "No", w: 48 },
+                        { label: "Sasaran", w: 130 },
+                        { label: "Indikator / Sub-Indikator", w: 260 },
+                        { label: "Target", w: 90 },
+                        { label: "Realisasi", w: 90 },
+                        { label: "Tenggat", w: 110 },
+                        { label: "Status", w: 90 },
+                        { label: "Hasil Validasi", w: 110 },
                       ].map((h) => (
-                        <th key={h.label} style={{ width: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
+                        <th key={h.label} style={{ minWidth: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
                           {h.label}
                         </th>
                       ))}
+                      <th style={{ minWidth: 80, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: "center", whiteSpace: "nowrap", position: "sticky", right: 0, zIndex: 3, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                        Aksi
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1512,13 +1456,52 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       };
 
                       const sorted = [...displayedChartData].sort((a, b) => sortKode(a.kode, b.kode));
+
+                      const IKU_KATEGORI: Record<string, string> = {
+                        '1': 'Wajib', '2': 'Wajib', '3': 'Wajib', '5': 'Wajib', '7': 'Wajib',
+                        '4': 'Pilihan', '6': 'Pilihan', '8': 'Pilihan', '10': 'Pilihan',
+                      };
+                      const KATEGORI_ORDER = ['Wajib', 'Pilihan', 'Partisipatif'];
+                      const KATEGORI_LABEL: Record<string, string> = { 'Wajib': 'A. Wajib', 'Pilihan': 'B. Pilihan', 'Partisipatif': 'C. Partisipatif' };
+                      const getKategori = (it: typeof displayedChartData[0]) =>
+                        it.kategori ?? IKU_KATEGORI[it.kode] ?? 'Partisipatif';
+
+                      const isIKU = selectedJenis === "IKU";
+                      const grouped: Record<string, typeof sorted> = { Wajib: [], Pilihan: [], Partisipatif: [] };
+                      if (isIKU) sorted.forEach(it => grouped[getKategori(it)].push(it));
+                      const itemsToRender = isIKU
+                        ? KATEGORI_ORDER.flatMap(kat => {
+                            const items = grouped[kat];
+                            if (items.length === 0) return [];
+                            return [{ __kategoriHeader: kat, __label: KATEGORI_LABEL[kat] } as any, ...items];
+                          })
+                        : sorted;
+
                       const rows: React.ReactNode[] = [];
                       let globalNo = 0;
 
-                      for (const item of sorted) {
+                      for (const item of itemsToRender) {
+                        if (item.__kategoriHeader) {
+                          rows.push(
+                            <tr key={`kategori-${item.__kategoriHeader}`}>
+                              <td colSpan={9} style={{ padding: "8px 14px", backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.__label}</span>
+                              </td>
+                            </tr>
+                          );
+                          continue;
+                        }
+
                         const subs = [...(item.subIndikators ?? [])].sort((a, b) => sortKode(a.kode, b.kode));
-                        const totalRows = subs.reduce((s, sub) => s + 1 + (sub.children?.length ?? 0), 0) || 1;
+                        const totalRows = subs.reduce((s: number, sub: typeof subs[0]) => s + 1 + (sub.children?.length ?? 0), 0) || 1;
                         let firstRow = true;
+
+                        const isCollapsed = collapsedSasaran.has(item.id);
+                        const toggleCollapse = () => setCollapsedSasaran(prev => {
+                          const next = new Set(prev);
+                          next.has(item.id) ? next.delete(item.id) : next.add(item.id);
+                          return next;
+                        });
 
                         if (subs.length === 0) {
                           globalNo++;
@@ -1527,6 +1510,44 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 700, fontFamily: "monospace" }}>{globalNo}</td>
                               <td style={{ padding: "10px 14px", color: "#334155", fontWeight: 600 }}>{item.kode} — {item.nama}</td>
                               <td colSpan={6} style={{ padding: "10px 14px", color: "#9ca3af", textAlign: "center" }}>—</td>
+                              <td style={{ padding: "10px 14px", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }} />
+                            </tr>
+                          );
+                          continue;
+                        }
+
+                        if (isCollapsed) {
+                          globalNo++;
+                          const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
+                          rows.push(
+                            <tr key={`${item.id}-collapsed`} style={{ borderBottom: "1px solid #edf2f7", backgroundColor: "#f8fafc" }}>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, borderRight: "1px solid #f0f0f0" }}>{item.kode}</td>
+                              <td style={{ padding: "10px 14px", borderRight: "1px solid #f0f0f0" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>▶</button>
+                                  <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
+                                  {isIKU && item.kategori && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "1px 6px", borderRadius: 4 }}>
+                                      {item.kategori}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td colSpan={4} style={{ padding: "10px 14px", color: "#d1d5db", textAlign: "center" }}>—</td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" }}>{item.tenggat}</td>
+                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: item.status === "Done" ? "#ecfdf5" : "#fff7ed", color: item.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${item.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
+                                  {item.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                                {val?.jumlahValid != null ? <span style={{ fontWeight: 800, color: "#0369a1" }}>{val.jumlahValid}</span> : <span style={{ color: "#d1d5db" }}>—</span>}
+                              </td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", position: "sticky", right: 0, background: "#f8fafc", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                                {canViewDetail ? (
+                                  <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Detail</button>
+                                ) : <span style={{ color: "#d1d5db" }}>—</span>}
+                              </td>
                             </tr>
                           );
                           continue;
@@ -1542,7 +1563,15 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                     {item.kode}
                                   </td>
                                   <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "top", borderRight: "1px solid #f0f0f0" }}>
-                                    <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
+                                      <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>▼</button>
+                                      <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
+                                      {isIKU && item.kategori && (
+                                        <span style={{ fontSize: 10, fontWeight: 600, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "1px 6px", borderRadius: 4, marginTop: 2 }}>
+                                          {item.kategori}
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
                                 </>
                               )}
@@ -1552,9 +1581,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155", borderLeft: "1px solid #f0f0f0" }}>
                                 {(() => {
-                                  const l2WithTarget = (sub.children ?? []).filter((c) => c.nilaiTarget != null);
+                                  const l2WithTarget = (sub.children ?? []).filter((c: ProgressChartSubChild) => c.nilaiTarget != null);
                                   if (l2WithTarget.length > 0) {
-                                    const total = l2WithTarget.reduce((s, c) => s + (c.nilaiTarget ?? 0), 0);
+                                    const total = l2WithTarget.reduce((s: number, c: ProgressChartSubChild) => s + (c.nilaiTarget ?? 0), 0);
                                     const sat = l2WithTarget[0]?.satuan ?? null;
                                     return <span style={{ fontWeight: 600 }}>{total}{sat ? ` ${sat}` : ""}</span>;
                                   }
@@ -1564,7 +1593,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155" }}>{sub.realisasi}</td>
                               {firstRow && (
-                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>{item.tenggat}</td>
+                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, verticalAlign: "top", borderLeft: "1px solid #f0f0f0", whiteSpace: "nowrap" }}>{item.tenggat}</td>
                               )}
                               <td style={{ padding: "10px 14px", textAlign: "center" }}>
                                 <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: sub.status === "Done" ? "#ecfdf5" : "#fff7ed", color: sub.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${sub.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
@@ -1589,7 +1618,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 );
                               })()}
                               {firstRow && (
-                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #f0f0f0" }}>
+                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
                                   {canViewDetail ? (
                                     <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
                                       Detail
@@ -1616,7 +1645,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                     : <span style={{ color: "#d1d5db" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b", fontSize: 12 }}>{child.realisasi > 0 ? child.realisasi : <span style={{ color: "#d1d5db" }}>—</span>}</td>
-                                <td style={{ padding: "8px 10px" }} />
+                                <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                  {child.status ? (
+                                    <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: child.status === "Done" ? "#ecfdf5" : "#fff7ed", color: child.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${child.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
+                                      {child.status}
+                                    </span>
+                                  ) : <span style={{ color: "#d1d5db" }}>—</span>}
+                                </td>
                               </tr>
                             );
                           }
