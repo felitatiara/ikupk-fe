@@ -4,9 +4,10 @@ import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, getValidasiBiroPKU, API_BASE_URL } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getAllRoles, getAllDosen, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, getValidasiBiroPKU, API_BASE_URL } from "../../lib/api";
 import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile, ValidasiBiroPKUItem } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
+import { useOnConfigUpdate } from "@/hooks/useOnConfigUpdate";
 
 // Data nyata diambil dari IKUPK-BE → repository-nest berdasarkan kode indikator
 
@@ -25,6 +26,14 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
 
   const { user: authUser, token } = useAuth();
   const [loading, setLoading] = useState(true);
+
+  // Incremented by real-time config events to re-trigger the data fetch effect.
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Auto-refresh when admin changes indikator, cascade, target, or disposisi data.
+  useOnConfigUpdate(['indikator', 'cascade', 'target', 'disposisi'], () => {
+    setRefreshKey(k => k + 1);
+  });
 
   // Disposisi modal state
   const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
@@ -128,7 +137,7 @@ const [tahun, setTahun] = useState("2026");
     }
 
     return () => { cancelled = true; };
-  }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel, isActualDekan, isTopLevel]);
+  }, [displayRole, jenis, tahun, unitId, authUser?.id, roleLevel, isActualDekan, isTopLevel, refreshKey]);
 
   const handleGroupedDisposisiClick = async (subId: number, targetAmount: number, disposedByUserId?: number | null, l0Id?: number | null) => {
     setDisposisiSubId(subId);
@@ -143,10 +152,11 @@ const [tahun, setTahun] = useState("2026");
       let usedCascade = false;
 
       // Helper: resolve next-step users from a cascade chain ID
-      const tryCascadeId = async (chainIndikatorId: number): Promise<boolean> => {
+      // Returns: 'used' (chain ada & ada next step), 'ended' (chain ada tapi user di akhir), 'none' (chain kosong)
+      const tryCascadeId = async (chainIndikatorId: number): Promise<'used' | 'ended' | 'none'> => {
         try {
           const chain = await getIndikatorCascadeChain(chainIndikatorId);
-          if (chain.length === 0) return false;
+          if (chain.length === 0) return 'none';
           const normalized: number[][] = chain.map(step => Array.isArray(step) ? step.map(Number) : [Number(step)]);
           let nextRoleIds: number[] = [];
           if (displayRole === 'admin') {
@@ -157,14 +167,14 @@ const [tahun, setTahun] = useState("2026");
             if (idx >= 0 && idx < normalized.length - 1) nextRoleIds = normalized[idx + 1];
             else if (idx === -1 && isTopLevel) nextRoleIds = normalized[0] ?? [];
           }
-          if (nextRoleIds.length === 0) return false;
+          if (nextRoleIds.length === 0) return 'ended';
           const byRole = await Promise.all(nextRoleIds.map(rid => getUsersByRole(rid)));
           const merged = byRole.flat();
           const seen = new Set<number>();
           users = merged.filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
           users = users.filter(u => u.id !== authUser?.id);
-          return true;
-        } catch { return false; }
+          return 'used';
+        } catch { return 'none'; }
       };
 
       // 1. Try L1 parent cascade chain (chain is stored at L1 sub-indicator level)
@@ -177,39 +187,49 @@ const [tahun, setTahun] = useState("2026");
         }
         if (l1Id) break;
       }
-      if (l1Id) usedCascade = await tryCascadeId(l1Id);
+      // 1. Coba cascade chain → jika ada next step, tampilkan role berikutnya
+      // Jika l1Id punya chain sendiri (meski berakhir di user ini), jangan cek l0Id (hindari chain parent yang stale)
+      let l1Result: 'used' | 'ended' | 'none' = 'none';
+      if (l1Id) l1Result = await tryCascadeId(l1Id);
+      usedCascade = l1Result === 'used';
+      if (l1Result === 'none' && l0Id) usedCascade = (await tryCascadeId(l0Id)) === 'used';
 
-      // 2. Fall back to L0 cascade chain
-      if (!usedCascade && l0Id) usedCascade = await tryCascadeId(l0Id);
-
+      // 2. Cascade tidak ada next step (berhenti di user ini) → tampilkan berdasarkan level
       if (!usedCascade) {
         if (displayRole === 'admin') {
-          // Admin: disposisi ke Dekan/WD (level 1) sebagai default
+          // Admin: default ke level 1
           users = await getUsersByLevel(1);
-        } else if (roleLevel <= 2) {
-          // Level 1 (Dekan/WD/Kabag) DAN level 2 (Kajur): coba bawahan langsung dulu.
-          const directBawahan = await getRelatedUsersFor(authUser.id);
-          if (directBawahan.length > 0) {
-            users = directBawahan;
-          } else if (roleLevel <= 1) {
-            // Dekan/WD: disposisi ke level-1 lainnya DAN Kajur (level 2)
+        } else if (authUser?.id) {
+          if (roleLevel <= 1) {
+            // Dekan/WD → level 1 & 2
             const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
             const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
             const seen = new Set<number>();
             users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
-          } else {
-            // Kajur: disposisi ke semua Kaprodi (level 3)
-            users = await getUsersByLevel(3);
+          } else if (roleLevel === 3 && authUser?.unitNama) {
+            // Kaprodi → Dosen di unit (prodi) yang sama
+            const dosenUsers = await getDosenByUnit(authUser.unitNama);
+            users = dosenUsers.filter((u) => u.id !== authUser?.id);
           }
-        } else if (roleLevel === 3 && authUser?.unitNama) {
-          // Kaprodi: semua Dosen di prodinya
-          const dosenUsers = await getDosenByUnit(authUser.unitNama);
-          users = dosenUsers.filter((u) => u.id !== authUser?.id);
-        } else if (authUser?.id) {
-          // Dosen (level 4): bawahan langsung via user_relations
-          users = await getRelatedUsersFor(authUser.id);
         }
       }
+
+      // Kajur (level 2): tampilkan semua Kaprodi + Dosen hanya jika tidak ada cascade
+      // Cek lewat roleLevel ATAU roles array (kasus user punya multi-role dengan Kajur bukan primary)
+      const isKajur = roleLevel === 2 || ((authUser?.roles as any[])?.some((r: any) => r.level === 2) ?? false);
+      if (isKajur && !usedCascade && displayRole !== 'admin' && authUser?.id) {
+        const [allKaprodi, allDosenUsers] = await Promise.all([getUsersByLevel(3), getAllDosen()]);
+        const toMerge = [...allKaprodi, ...allDosenUsers];
+        const seen = new Set<number>(users.map(u => u.id));
+        const toAdd: UnitUser[] = [];
+        for (const u of toMerge) {
+          if (!seen.has(u.id) && u.id !== authUser.id) { seen.add(u.id); toAdd.push(u); }
+        }
+        users = [...users, ...toAdd];
+      }
+
+      // Urutkan alfabetis sebelum menambah entri diri sendiri
+      users = [...users].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
 
       // Semua user non-admin bisa disposisi ke diri sendiri.
       if (authUser && displayRole !== 'admin' && !users.some(u => u.id === authUser.id)) {
@@ -557,12 +577,13 @@ const [tahun, setTahun] = useState("2026");
               <th className="col-w20">Sasaran Program</th>
               <th>Sub Indikator Kinerja</th>
               <th className="col-w10 text-center">Target Diterima</th>
-              <th className="col-w10 text-center">Capaian</th>
+              <th className="col-w10 text-center">Tenggat</th>
+              <th className="col-w10 text-center">Realisasi</th>
               <th className="col-w15 text-center">Aksi</th>
             </tr>
           </thead>
           <tbody>
-            {renderWithKategori(data, 6, keyPrefix, (group, groupIdx) => {
+            {renderWithKategori(data, 7, keyPrefix, (group, groupIdx) => {
               const flatRows: FR[] = [];
               for (const sub of group.subIndikators) {
                 const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
@@ -597,43 +618,69 @@ const [tahun, setTahun] = useState("2026");
                   : row.isLeaf && leafTarget && leafReal > 0
                     ? 'text-warning'
                     : 'text-dark';
+
+                // Non-leaf rows (L1 sub headers, or L2 in PK L3 structure) span rightward
+                if (!row.isLeaf) {
+                  return (
+                    <tr key={`${keyPrefix}-${group.id}-${rowIdx}`} style={{ background: '#f8fafc' }}>
+                      {rowIdx === 0 && (
+                        <>
+                          <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
+                          <td rowSpan={totalRowSpan} className="td-cell v-top">
+                            <div>{group.nama}</div>
+                            {group.fromUserNama && (
+                              <div style={{ marginTop: 4 }}>
+                                <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
+                                  dari {group.fromUserNama}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                        </>
+                      )}
+                      <td colSpan={5} className="td-cell" style={{
+                        paddingLeft: row.level === 2 ? 32 : 16,
+                        fontWeight: 600,
+                        color: row.level === 2 ? '#4b5563' : '#374151',
+                        fontSize: 12,
+                        background: '#f8fafc',
+                        borderBottom: '1px solid #f0f0f0',
+                      }}>
+                        {row.level === 2 && <span style={{ marginRight: 5, color: '#94a3b8' }}>↳</span>}
+                        {row.kode} {row.nama}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                // Leaf rows: show all data columns normally
                 return (
                   <tr key={`${keyPrefix}-${group.id}-${rowIdx}`}>
-                    {rowIdx === 0 && (
-                      <>
-                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
-                        <td rowSpan={totalRowSpan} className="td-cell v-top">
-                          <div>{group.nama}</div>
-                          {group.fromUserNama && (
-                            <div style={{ marginTop: 4 }}>
-                              <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
-                                dari {group.fromUserNama}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-                      </>
-                    )}
-                    <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
+                    <td className="td-cell" style={{
+                      paddingLeft: row.level === 3 ? 48 : row.level === 2 ? 28 : 16,
+                      color: '#6b7280',
+                    }}>
+                      <span style={{ marginRight: 4, color: '#c4c9d0' }}>↳</span>
                       {row.kode} {row.nama}
                     </td>
                     <td className="td-cell td-cell--center td-cell--bold">
-                      {row.isLeaf ? (leafTarget !== null ? leafTarget : '-') : ''}
+                      {leafTarget !== null ? leafTarget : '-'}
+                    </td>
+                    <td className="td-cell td-cell--center" style={{ color: '#6b7280', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {group.tenggat ?? '—'}
                     </td>
                     <td className={`td-cell td-cell--center fw-700 ${leafCapaianClass}`}>
-                      {row.isLeaf ? leafCapaianPct : ''}
+                      {leafCapaianPct}
                     </td>
                     <td className="action-cell">
-                      {row.isLeaf && (
-                        <button
-                          onClick={() => row.actionSumberData === 'ikupk'
-                            ? handleDirectInputClick(row.actionId, row.actionNama)
-                            : handleInputFileClick(row.actionId, row.actionNama, Number(leafTarget || 0), [])}
-                          className="btn-small btn-small--green"
-                        >
-                          {row.actionSumberData === 'ikupk' ? 'Input Data' : 'Input File'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => row.actionSumberData === 'ikupk'
+                          ? handleDirectInputClick(row.actionId, row.actionNama)
+                          : handleInputFileClick(row.actionId, row.actionNama, Number(leafTarget || 0), [])}
+                        className="btn-small btn-small--green"
+                      >
+                        {row.actionSumberData === 'ikupk' ? 'Input Data' : 'Input File'}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1482,45 +1529,59 @@ const [tahun, setTahun] = useState("2026");
                                 const leafDisposisi = row.level === 3
                                   ? (row.l3Obj?.disposisiJumlah ?? null)
                                   : (row.child?.disposisiJumlah ?? null);
+
+                                if (!isLeaf) {
+                                  return (
+                                    <tr key={`disp-${group.id}-${rowIdx}`} style={{ background: '#f8fafc' }}>
+                                      {rowIdx === 0 && (
+                                        <>
+                                          <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
+                                          <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
+                                        </>
+                                      )}
+                                      <td colSpan={3} className="td-cell" style={{
+                                        paddingLeft: row.level === 2 ? 32 : 16,
+                                        fontWeight: 600,
+                                        color: row.level === 2 ? '#4b5563' : '#374151',
+                                        fontSize: 12,
+                                        background: '#f8fafc',
+                                        borderBottom: '1px solid #f0f0f0',
+                                      }}>
+                                        {row.level === 2 && <span style={{ marginRight: 5, color: '#94a3b8' }}>↳</span>}
+                                        {row.kode} {row.nama}
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
                                 return (
                                   <tr key={`disp-${group.id}-${rowIdx}`}>
-                                    {rowIdx === 0 && (
-                                      <>
-                                        <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
-                                        <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
-                                      </>
-                                    )}
-                                    <td className={`td-cell ${row.level === 2 ? 'td-cell--indent' : ''} ${row.level === 3 ? 'td-cell--indent2' : ''}`}>
+                                    <td className="td-cell" style={{
+                                      paddingLeft: row.level === 3 ? 48 : row.level === 2 ? 28 : 16,
+                                      color: '#6b7280',
+                                    }}>
+                                      <span style={{ marginRight: 4, color: '#c4c9d0' }}>↳</span>
                                       {row.kode} {row.nama}
                                     </td>
-                                    {isLeaf ? (
-                                      <>
-                                        <td className="td-cell td-cell--center td-cell--bold">
-                                          {leafDisposisi !== null ? leafDisposisi : "-"}
-                                        </td>
-                                        <td className="action-cell">
-                                          <div className="action-cell-inner">
-                                            <button
-                                              onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)}
-                                              className="btn-small btn-small--blue btn-small--w100"
-                                            >
-                                              Redisposisi
-                                            </button>
-                                            <button
-                                              onClick={() => handleInputFileClick(row.id, row.nama, Number(leafDisposisi || 0), [], true)}
-                                              className="btn-small btn-small--outline btn-small--w100"
-                                            >
-                                              Lihat Progress
-                                            </button>
-                                          </div>
-                                        </td>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <td className="td-cell" />
-                                        <td className="td-cell" />
-                                      </>
-                                    )}
+                                    <td className="td-cell td-cell--center td-cell--bold">
+                                      {leafDisposisi !== null ? leafDisposisi : "-"}
+                                    </td>
+                                    <td className="action-cell">
+                                      <div className="action-cell-inner">
+                                        <button
+                                          onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)}
+                                          className="btn-small btn-small--blue btn-small--w100"
+                                        >
+                                          Redisposisi
+                                        </button>
+                                        <button
+                                          onClick={() => handleInputFileClick(row.id, row.nama, Number(leafDisposisi || 0), [], true)}
+                                          className="btn-small btn-small--outline btn-small--w100"
+                                        >
+                                          Lihat Progress
+                                        </button>
+                                      </div>
+                                    </td>
                                   </tr>
                                 );
                               });

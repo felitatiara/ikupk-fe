@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
@@ -106,8 +106,8 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
 
         if (jenis === "IKU") {
           // Header 2 baris, 8 kolom
-          // No | Sasaran Strategis | Indikator Kinerja Kegiatan | Target Universitas | Tenggat | Realisasi(%) | Realisasi(Angka) | Data Link
-          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
+          // No | Sasaran Program | Indikator Kinerja Kegiatan | Target Universitas | Tenggat | Realisasi(%) | Realisasi(Angka) | Data Link
+          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
           aoa.push(["", "", "", "", "", "%", "Angka", ""]);
           merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
           merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
@@ -167,8 +167,8 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
 
         } else {
           // PK — Header 1 baris, 8 kolom
-          // No | Sasaran Strategis | Indikator Kinerja Kegiatan | Waktu Pelaporan | Satuan | Target[tahun] | Realisasi | Data Link
-          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
+          // No | Sasaran Program | Indikator Kinerja Kegiatan | Waktu Pelaporan | Satuan | Target[tahun] | Realisasi | Data Link
+          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
 
           let no = 1;
           for (const group of grouped) {
@@ -308,7 +308,7 @@ export default function ValidasiIKUPKContent({ role = 'user' }: ValidasiIKUPKCon
                 <tr>
                   <th>Tenggat</th>
                   <th>Target</th>
-                  <th>Sasaran Strategis</th>
+                  <th>Sasaran Program</th>
                   <th className="text-center">Capaian</th>
                   <th className="text-center">Aksi</th>
                 </tr>

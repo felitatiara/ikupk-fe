@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import PageTransition from "@/components/PageTransition";
@@ -337,7 +337,7 @@ export default function MonitoringUnitKerjaContent() {
                       color: "#374151",
                     }}
                   >
-                    Sasaran Strategis
+                    Sasaran Program
                   </th>
                   <th
                     style={{

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -290,11 +290,11 @@ export default function TambahIndikatorForm() {
   // ── Submit ──
   async function handleSubmit() {
     if (mode === "new") {
-      if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Strategis wajib diisi."); return; }
+      if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Program wajib diisi."); return; }
       if (jenis === "IKU" && (!targetUniversitas.trim() || isNaN(Number(targetUniversitas)) || Number(targetUniversitas) < 0)) { toast.error("Target wajib diisi dengan angka positif."); return; }
       if (jenis === "IKU" && !tenggat) { toast.error("Pilih Tenggat terlebih dahulu."); return; }
     } else {
-      if (!appendL0Id) { toast.error("Pilih Sasaran Strategis terlebih dahulu."); return; }
+      if (!appendL0Id) { toast.error("Pilih Sasaran Program terlebih dahulu."); return; }
       if (!nav1.nama.trim()) { toast.error("Isi Level 1 terlebih dahulu."); return; }
       if (nav1.id === null && !nav1.kode.trim()) { toast.error("Isi kode untuk Level 1 baru."); return; }
       if (nav2.nama.trim()) {
@@ -448,7 +448,7 @@ export default function TambahIndikatorForm() {
             <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 14, padding: "20px 24px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
                 {levelBadge("#fff", "#FF7900", "Level 0")}
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Sasaran Strategis</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Sasaran Program</span>
               </div>
 
               <div className="row g-3 mb-3">
@@ -529,7 +529,7 @@ export default function TambahIndikatorForm() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", margin: "0 0 2px" }}>Level 1 — Indikator Kinerja</p>
-                  <p style={{ fontSize: 11, color: "#9ca3af", margin: 0 }}>Tambahkan indikator kinerja dan sub-indikator di bawah sasaran strategis ini.</p>
+                  <p style={{ fontSize: 11, color: "#9ca3af", margin: 0 }}>Tambahkan indikator kinerja dan sub-indikator di bawah Sasaran Program ini.</p>
                 </div>
                 <button type="button" onClick={addGroup}
                   style={{ padding: "6px 14px", borderRadius: 8, border: "1px dashed #d1d5db", background: "#fafafa", color: "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
@@ -785,10 +785,10 @@ export default function TambahIndikatorForm() {
               <div style={{ marginBottom: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   {levelBadge("#fff", "#FF7900", "Level 0")}
-                  <label style={{ ...fieldLabel, margin: 0 }}>Sasaran Strategis</label>
+                  <label style={{ ...fieldLabel, margin: 0 }}>Sasaran Program</label>
                 </div>
                 <select style={fieldInput} value={appendL0Id ?? ""} onChange={e => setAppendL0Id(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">— Pilih Sasaran Strategis —</option>
+                  <option value="">— Pilih Sasaran Program —</option>
                   {existingL0.map(i => <option key={i.id} value={i.id}>{i.kode} — {i.nama}</option>)}
                 </select>
                 {existingL0.length === 0 && <p style={{ fontSize: 12, color: "#9ca3af", margin: "4px 0 0" }}>Tidak ada data {jenis} untuk tahun {targetTahun}.</p>}

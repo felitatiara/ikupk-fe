@@ -5,7 +5,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
-  AlertCircle,
   Bell,
   CheckCheck,
   ChevronDown,
@@ -17,13 +16,16 @@ import {
   getNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  getUpcomingDeadlines,
   type NotificationItem,
+  type UpcomingDeadlineItem,
 } from '@/services/notificationService';
 
 export default function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState<UpcomingDeadlineItem[]>([]);
   const [switchingRoleId, setSwitchingRoleId] = useState<number | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -33,8 +35,12 @@ export default function Header() {
 
   const fetchNotifications = useCallback(async () => {
     if (!token) return;
-    const data = await getNotifications(token);
+    const [data, deadlines] = await Promise.all([
+      getNotifications(token),
+      getUpcomingDeadlines(token),
+    ]);
     setNotifications(data);
+    setUpcomingDeadlines(deadlines);
   }, [token]);
 
   useEffect(() => {
@@ -104,7 +110,7 @@ export default function Header() {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = notifications.filter((n) => !n.isRead).length + upcomingDeadlines.length;
 
   const initials = user?.nama
     ? user.nama.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
@@ -157,73 +163,182 @@ export default function Header() {
               </button>
 
               {notifOpen && (
-                <div className="surface-popover absolute right-0 top-[calc(100%+10px)] w-[min(360px,calc(100vw-24px))] overflow-hidden">
-                  <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3">
-                    <div>
-                      <div className="text-sm font-bold" style={{ color: '#111827' }}>
+                <div
+                  className="absolute right-0 top-[calc(100%+10px)]"
+                  style={{
+                    width: 'min(380px, calc(100vw - 24px))',
+                    background: '#ffffff',
+                    borderRadius: 20,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.13)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{ padding: '18px 20px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{
+                        fontSize: 18, fontWeight: 800, color: '#111827',
+                        borderBottom: '3px solid #3b82f6',
+                        paddingBottom: 2, display: 'inline-block',
+                      }}>
                         Notifikasi
-                      </div>
-                      <div className="mt-0.5 text-xs" style={{ color: '#6b7280' }}>
-                        {unreadCount > 0 ? `${unreadCount} belum dibaca` : 'Semua sudah dibaca'}
-                      </div>
+                      </span>
+                      {unreadCount > 0 && (
+                        <span style={{
+                          background: '#ef4444', color: '#fff',
+                          fontSize: 11, fontWeight: 700,
+                          padding: '2px 9px', borderRadius: 99,
+                        }}>
+                          {unreadCount}
+                        </span>
+                      )}
                     </div>
-                    {unreadCount > 0 && (
-                      <button
-                        onClick={handleMarkAllRead}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-1.5 text-xs font-bold transition hover:bg-sky-100"
-                        style={{ color: '#0369a1' }}
-                        type="button"
-                      >
-                        <CheckCheck size={14} />
-                        Tandai
-                      </button>
-                    )}
                   </div>
 
-                  <div className="max-h-[360px] overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <div className="px-5 py-10 text-center">
-                        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
-                          <Bell size={20} color="#9ca3af" />
+                  <div style={{ maxHeight: 400, overflowY: 'auto', padding: '0 16px 16px' }}>
+                    {/* Empty state */}
+                    {upcomingDeadlines.length === 0 && notifications.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                        <div style={{
+                          width: 48, height: 48, borderRadius: '50%',
+                          background: '#f3f4f6',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          margin: '0 auto 12px',
+                        }}>
+                          <Bell size={22} color="#9ca3af" />
                         </div>
-                        <div className="text-sm font-semibold" style={{ color: '#6b7280' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7280' }}>
                           Tidak ada notifikasi
                         </div>
                       </div>
-                    ) : (
-                      notifications.map((n) => (
-                        <button
-                          key={n.id}
-                          onClick={() => !n.isRead && handleMarkRead(n.id)}
-                          className="flex w-full gap-3 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50"
-                          style={{ backgroundColor: n.isRead ? '#ffffff' : '#fff7ed' }}
-                          type="button"
-                        >
-                          <div
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                            style={{ backgroundColor: n.type === 'tenggat_1hari' ? '#fef2f2' : '#ffedd5' }}
-                          >
-                            <AlertCircle size={17} color={n.type === 'tenggat_1hari' ? '#dc2626' : '#f97316'} />
+                    )}
+
+                    {/* Upcoming deadline cards */}
+                    {upcomingDeadlines.map((item) => {
+                      const isOverdue  = item.daysUntil < 0;
+                      const isToday    = item.daysUntil === 0;
+                      const isTomorrow = item.daysUntil === 1;
+
+                      const cardBg      = isOverdue || isToday ? '#fef2f2' : item.daysUntil <= 3 ? '#fff7ed' : '#fefce8';
+                      const accentColor = isOverdue || isToday ? '#dc2626'  : item.daysUntil <= 3 ? '#ea580c' : '#ca8a04';
+                      const sisaLabel   = isOverdue
+                        ? `Lewat ${Math.abs(item.daysUntil)} hari`
+                        : isToday    ? 'Hari ini!'
+                        : isTomorrow ? 'Besok!'
+                        : `${item.daysUntil} hari lagi`;
+
+                      const tenggatFormatted = (() => {
+                        const d = new Date(item.tenggat);
+                        if (isNaN(d.getTime())) return item.tenggat;
+                        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+                      })();
+
+                      const shownL1s   = (item.l1Names ?? []).slice(0, 3);
+                      const extraCount = (item.l1Names ?? []).length - shownL1s.length;
+
+                      return (
+                        <div key={`${item.indikatorId}-${item.tahun}`} style={{ marginBottom: 10 }}>
+                          {/* Label above card: L0 name + tenggat date */}
+                          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 4, paddingLeft: 2 }}>
+                            {item.indikatorNama} · Tenggat {tenggatFormatted}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div
-                              className="text-xs leading-5"
-                              style={{
-                                color: '#374151',
-                                fontWeight: n.isRead ? 500 : 700,
-                              }}
-                            >
-                              {n.message}
+
+                          {/* Card */}
+                          <div style={{
+                            background: cardBg, borderRadius: 12, padding: '12px 14px',
+                            display: 'flex', alignItems: 'center', gap: 12,
+                          }}>
+                            {/* L1 names — left side */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {shownL1s.length > 0 ? (
+                                <>
+                                  {shownL1s.map((name, i) => (
+                                    <div key={i} style={{
+                                      fontSize: 13, fontWeight: 700, color: '#111827',
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                      lineHeight: 1.5,
+                                    }}>
+                                      {name}
+                                    </div>
+                                  ))}
+                                  {extraCount > 0 && (
+                                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                                      +{extraCount} lainnya
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                                  {item.indikatorNama}
+                                </div>
+                              )}
                             </div>
-                            <div className="mt-1 text-[11px]" style={{ color: '#9ca3af' }}>
+
+                            {/* Days label — right side */}
+                            <span style={{ fontSize: 13, fontWeight: 800, color: accentColor, flexShrink: 0, textAlign: 'right' }}>
+                              {sisaLabel}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* DB notification history */}
+                    {notifications.length > 0 && (
+                      <div style={{ marginTop: upcomingDeadlines.length > 0 ? 8 : 0 }}>
+                        {upcomingDeadlines.length > 0 && (
+                          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 8, paddingLeft: 2 }}>
+                            Riwayat
+                          </div>
+                        )}
+                        {notifications.map((n) => (
+                          <button
+                            key={n.id}
+                            onClick={() => !n.isRead && handleMarkRead(n.id)}
+                            style={{
+                              width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                              padding: 0, marginBottom: 8, cursor: n.isRead ? 'default' : 'pointer',
+                            }}
+                            type="button"
+                          >
+                            <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600, marginBottom: 4, paddingLeft: 2 }}>
                               {formatDate(n.createdAt)}
                             </div>
-                          </div>
-                          {!n.isRead && (
-                            <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#ff7900]" />
-                          )}
-                        </button>
-                      ))
+                            <div style={{
+                              background: n.isRead ? '#f9fafb' : '#fff7ed',
+                              borderRadius: 12,
+                              padding: '12px 14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 10,
+                            }}>
+                              <span style={{ fontSize: 13, fontWeight: n.isRead ? 500 : 700, color: '#374151', flex: 1, minWidth: 0 }}>
+                                {n.message}
+                              </span>
+                              {!n.isRead && (
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316', flexShrink: 0, display: 'block' }} />
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                        {notifications.some(n => !n.isRead) && (
+                          <button
+                            onClick={handleMarkAllRead}
+                            style={{
+                              width: '100%', marginTop: 4,
+                              padding: '8px', borderRadius: 10,
+                              border: '1px solid #e5e7eb', background: '#f9fafb',
+                              fontSize: 12, fontWeight: 600, color: '#6b7280',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            }}
+                            type="button"
+                          >
+                            <CheckCheck size={13} />
+                            Tandai semua sudah dibaca
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

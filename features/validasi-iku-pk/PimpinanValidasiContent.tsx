@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
@@ -100,7 +100,7 @@ export default function PimpinanValidasiContent() {
       No: i + 1,
       Tahun: item.tenggat,
       Target: item.target,
-      "Sasaran Strategis": item.sasaranStrategis,
+      "Sasaran Program": item.sasaranStrategis,
       "Capaian (%)": item.capaian,
       Status: item.status,
     }));
@@ -184,7 +184,7 @@ export default function PimpinanValidasiContent() {
                   <tr>
                     <th>Tahun</th>
                     <th>Target</th>
-                    <th>Sasaran Strategis</th>
+                    <th>Sasaran Program</th>
                     <th className="text-center">Capaian</th>
                     <th className="text-center">Aksi</th>
                   </tr>

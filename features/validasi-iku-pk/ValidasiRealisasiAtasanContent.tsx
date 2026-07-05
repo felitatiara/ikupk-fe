@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -339,7 +339,7 @@ export default function ValidasiRealisasiAtasanContent() {
         const emptyRow = () => ["", "", "", "", "", "", "", ""];
 
         if (jenisExport === "IKU") {
-          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
+          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
           aoa.push(["", "", "", "", "", "%", "Angka", ""]);
           merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
           merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
@@ -355,7 +355,7 @@ export default function ValidasiRealisasiAtasanContent() {
           XLSX.utils.book_append_sheet(wb, ws, "Laporan IKU");
 
         } else {
-          aoa.push(["No.", "Sasaran Strategis", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
+          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
           for (let i = 0; i < totalRows; i++) aoa.push(emptyRow());
           const ws = XLSX.utils.aoa_to_sheet(aoa);
           ws["!merges"] = merges;
@@ -496,7 +496,7 @@ export default function ValidasiRealisasiAtasanContent() {
               {/* File list */}
               <div style={{ flex: 1, overflowY: "auto", padding: "14px 24px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Daftar File</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>Daftar File</span>
                   {!detailLoading && detailFiles.length > 0 && (
                     <span style={{ fontSize: 11, background: "#f3f4f6", color: "#6b7280", borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{detailFiles.length}</span>
                   )}
@@ -647,7 +647,7 @@ export default function ValidasiRealisasiAtasanContent() {
                       const validCount = dg.submissions.filter((s) => s.validFileCount !== null).length;
                       return (
                         <>
-                          <tr key={`gh-${dg.dosenId}`} style={{ background: "#f8fafc" }}>
+                          <tr key={`gh-${dg.dosenId}`} style={{ background: "#fafafa" }}>
                             <td colSpan={7} style={{ padding: "8px 16px" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #0f9f6e, #087a55)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
@@ -716,7 +716,7 @@ export default function ValidasiRealisasiAtasanContent() {
                       const validCount = g.submissions.filter((s) => s.validFileCount !== null).length;
                       return (
                         <>
-                          <tr key={`gh-${g.indikator.id}`} style={{ background: "#f8fafc" }}>
+                          <tr key={`gh-${g.indikator.id}`} style={{ background: "#fafafa" }}>
                             <td colSpan={7} style={{ padding: "8px 16px" }}>
                               <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{g.indikator.kode}</span>
                               <span style={{ fontSize: 12, color: "#6b7280", marginLeft: 8 }}>{g.indikator.nama}</span>

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import InputTargetIKUPK from './InputTargetIKUPK';
 
@@ -115,7 +115,7 @@ export default function TargetIKUPKAdmin({ apiBaseUrl = 'http://localhost:4000' 
                       <tr>
                         <th className="border px-4 py-3 text-left">Tenggat</th>
                         <th className="border px-4 py-3 text-left">Target</th>
-                        <th className="border px-4 py-3 text-left">Sasaran Strategis</th>
+                        <th className="border px-4 py-3 text-left">Sasaran Program</th>
                         <th className="border px-4 py-3 text-center">Capaian</th>
                         <th className="border px-4 py-3 text-center">Aksi</th>
                       </tr>

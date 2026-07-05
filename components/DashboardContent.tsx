@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import PageTransition from '@/components/PageTransition';
@@ -140,7 +140,7 @@ export default function DashboardContent() {
                       borderBottom: "2px solid #e2e8f0",
                     }}
                   >
-                    {["Tanggal", "Target", "Sasaran Strategis", "Capaian", "Aksi"].map((h, i) => (
+                    {["Tanggal", "Target", "Sasaran Program", "Capaian", "Aksi"].map((h, i) => (
                       <th
                         key={h}
                         style={{

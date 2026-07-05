@@ -40,6 +40,7 @@ interface PersonalRow {
   target: number | null;
   realisasi: number | null;
   capaian: number | null;
+  tenggat: string | null;
   level?: number;
 }
 
@@ -400,7 +401,7 @@ function DetailModal({
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {selectedPerson.files.map((f, idx) => (
-                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#f8fafc", borderRadius: 8, padding: "10px 14px", border: "1px solid #e5e7eb" }}>
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fafafa", borderRadius: 8, padding: "10px 14px", border: "1px solid #e5e7eb" }}>
                     <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0, fontWeight: 600, minWidth: 20 }}>{idx + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
@@ -577,7 +578,7 @@ function BawahanCellModal({
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
               {files.map((f) => (
-                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#f8fafc", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb" }}>
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fafafa", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb" }}>
                   <span style={{ fontSize: 16 }}>📄</span>
                   <div style={{ flex: 1, overflow: "hidden" }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
@@ -891,7 +892,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       const h1 = ws.addRow(Array(TOTAL_COLS).fill(""));
       h1.height = 30;
       h1.getCell(1).value = "No.";
-      h1.getCell(2).value = "Sasaran Strategis";
+      h1.getCell(2).value = "Sasaran Program";
       h1.getCell(3).value = "Indikator Kinerja Kegiatan";
       h1.getCell(5).value = `TARGET UNIVERSITAS\n${selectedTahun}`;
       h1.getCell(7).value = "FIK";
@@ -1136,6 +1137,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           target: null,
           realisasi: null,
           capaian: null,
+          tenggat: group.tenggat,
           level: 0,
         });
         for (const sub of group.subIndikators) {
@@ -1154,7 +1156,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           const realisasi = sub.realisasiJumlah !== null ? aggReal : (aggReal > 0 ? aggReal : null);
           const capaian =
             target !== null && target > 0 && realisasi !== null
-              ? Math.min((realisasi / target) * 100, 100)
+              ? (realisasi / target) * 100
               : null;
           rows.push({
             kode: sub.kode,
@@ -1163,6 +1165,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             target,
             realisasi,
             capaian,
+            tenggat: group.tenggat,
             level: 1,
           });
           for (const child of (sub.children ?? [])) {
@@ -1170,7 +1173,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             const cRealisasi = child.realisasiJumlah ?? null;
             const cCapaian =
               cTarget !== null && cTarget > 0 && cRealisasi !== null
-                ? Math.min((cRealisasi / cTarget) * 100, 100)
+                ? (cRealisasi / cTarget) * 100
                 : null;
             rows.push({
               kode: child.kode,
@@ -1179,6 +1182,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               target: cTarget,
               realisasi: cRealisasi,
               capaian: cCapaian,
+              tenggat: group.tenggat,
               level: 2,
             });
           }
@@ -1202,6 +1206,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     target: r.target ?? 0,
     realisasi: r.realisasi ?? 0,
     capaian: r.capaian !== null ? Number(r.capaian.toFixed(1)) : 0,
+    actualProgress: r.capaian !== null ? Number(r.capaian.toFixed(1)) : 0,
     progress: r.capaian !== null ? Math.min(100, Number(r.capaian.toFixed(1))) : 0,
     status: r.capaian !== null && r.capaian >= 100 ? "Done" : "Proses",
   }));
@@ -1232,7 +1237,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     realisasi: d.realisasi,
     realisasiBiroPKU: d.realisasiBiroPKU,
     persentaseRealisasi: d.persentaseRealisasi,
-    realProgress: d.progress,
+    realProgress: d.actualProgress ?? d.progress,
+    actualProgress: d.actualProgress ?? d.progress,
     progress: d.chartProgress,
   }));
 
@@ -1259,7 +1265,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               <div style={{ marginBottom: 16 }}>
                 <div style={{
                   display: "inline-flex",
-                  backgroundColor: "#f8fafc",
+                  backgroundColor: "#fafafa",
                   border: "1px solid #e2e8f0",
                   borderRadius: 10,
                   padding: 3,
@@ -1307,7 +1313,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
           }}>
             <div>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Jenis Indikator
               </label>
               <select
@@ -1321,7 +1327,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               </select>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Tahun
               </label>
               <select
@@ -1365,7 +1371,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<BarTooltip />} cursor={false} />
                     <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
-                      <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                      <LabelList dataKey="actualProgress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                       {globalChartItems.map((entry, i) => (
                         <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#FF7900"} />
                       ))}
@@ -1421,7 +1427,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ backgroundColor: "#f8fafc" }}>
+                    <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
                       {[
                         { label: "No", w: 48 },
                         { label: "Sasaran", w: 130 },
@@ -1432,11 +1438,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         { label: "Status", w: 90 },
                         { label: "Hasil Validasi", w: 110 },
                       ].map((h) => (
-                        <th key={h.label} style={{ minWidth: h.w, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
+                        <th key={h.label} style={{ minWidth: h.w, padding: "11px 16px", fontWeight: 700, color: "#9ca3af", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
                           {h.label}
                         </th>
                       ))}
-                      <th style={{ minWidth: 80, padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "2px solid #e2e8f0", background: "#f8fafc", textAlign: "center", whiteSpace: "nowrap", position: "sticky", right: 0, zIndex: 3, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                      <th style={{ minWidth: 80, padding: "11px 16px", fontWeight: 700, color: "#9ca3af", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", whiteSpace: "nowrap", position: "sticky", right: 0, zIndex: 3, background: "#fafafa", boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
                         Aksi
                       </th>
                     </tr>
@@ -1484,7 +1490,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         if (item.__kategoriHeader) {
                           rows.push(
                             <tr key={`kategori-${item.__kategoriHeader}`}>
-                              <td colSpan={9} style={{ padding: "8px 14px", backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
+                              <td colSpan={9} style={{ padding: "8px 14px", backgroundColor: "#fafafa", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.__label}</span>
                               </td>
                             </tr>
@@ -1506,7 +1512,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         if (subs.length === 0) {
                           globalNo++;
                           rows.push(
-                            <tr key={`${item.id}-empty`} style={{ borderBottom: "1px solid #edf2f7" }}>
+                            <tr key={`${item.id}-empty`} style={{ borderBottom: "1px solid #f8f8f8" }}>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 700, fontFamily: "monospace" }}>{globalNo}</td>
                               <td style={{ padding: "10px 14px", color: "#334155", fontWeight: 600 }}>{item.kode} — {item.nama}</td>
                               <td colSpan={6} style={{ padding: "10px 14px", color: "#9ca3af", textAlign: "center" }}>—</td>
@@ -1520,9 +1526,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                           globalNo++;
                           const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
                           rows.push(
-                            <tr key={`${item.id}-collapsed`} style={{ borderBottom: "1px solid #edf2f7", backgroundColor: "#f8fafc" }}>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, borderRight: "1px solid #f0f0f0" }}>{item.kode}</td>
-                              <td style={{ padding: "10px 14px", borderRight: "1px solid #f0f0f0" }}>
+                            <tr key={`${item.id}-collapsed`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fafafa" }}>
+                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12 }}>{item.kode}</td>
+                              <td style={{ padding: "10px 14px" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                   <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>▶</button>
                                   <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
@@ -1543,7 +1549,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               <td style={{ padding: "10px 14px", textAlign: "center" }}>
                                 {val?.jumlahValid != null ? <span style={{ fontWeight: 800, color: "#0369a1" }}>{val.jumlahValid}</span> : <span style={{ color: "#d1d5db" }}>—</span>}
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", position: "sticky", right: 0, background: "#f8fafc", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                              <td style={{ padding: "10px 14px", textAlign: "center", position: "sticky", right: 0, background: "#fafafa", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
                                 {canViewDetail ? (
                                   <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Detail</button>
                                 ) : <span style={{ color: "#d1d5db" }}>—</span>}
@@ -1556,13 +1562,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         for (const sub of subs) {
                           globalNo++;
                           rows.push(
-                            <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #edf2f7", backgroundColor: "#fff" }}>
+                            <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fff" }}>
                               {firstRow && (
                                 <>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, borderRight: "1px solid #f0f0f0", verticalAlign: "top" }}>
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, verticalAlign: "top" }}>
                                     {item.kode}
                                   </td>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "top", borderRight: "1px solid #f0f0f0" }}>
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "top" }}>
                                     <div style={{ display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
                                       <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>▼</button>
                                       <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
@@ -1703,7 +1709,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   <YAxis type="category" dataKey="kode" width={44} tick={{ fontSize: 11, fill: "#4b5563", fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<BarTooltip />} cursor={false} />
                   <Bar dataKey="progress" radius={[4, 4, 4, 4]} background={{ fill: "#f1f5f9", radius: 4 }}>
-                    <LabelList dataKey="progress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
+                    <LabelList dataKey="actualProgress" position="right" formatter={(v: unknown) => `${v}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                     {personalChartData.map((entry, i) => (
                       <Cell key={i} fill={entry.status === "Done" ? "#16a34a" : "#FF7900"} />
                     ))}
@@ -1717,18 +1723,18 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
-                <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                  {["No", "Kode", "Nama Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)"].map((h) => (
+                <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                  {["No", "Kode", "Nama Indikator", "Target", "Realisasi", "Tenggat", "Capaian (%)"].map((h) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Capaian (%)" ? "center" : "left",
+                        textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Tenggat" || h === "Capaian (%)" ? "center" : "left",
                         padding: "10px 14px",
                         fontSize: 11,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "#9ca3af",
                         textTransform: "uppercase",
-                        letterSpacing: "0.04em",
+                        letterSpacing: "0.06em",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -1780,7 +1786,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                           : "#dc2626";
 
                       return (
-                        <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: isL2 ? "#fafafa" : undefined }}>
+                        <tr key={i} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: isL2 ? "#fafafa" : undefined }}>
                           <td style={{ padding: "10px 14px", textAlign: "center", color: "#9ca3af", fontSize: isL2 ? 10 : 13 }}>
                             {isL2 ? "↳" : l1Counter}
                           </td>
@@ -1788,12 +1794,14 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             {row.kode}
                           </td>
                           <td style={{ padding: "10px 14px", paddingLeft: isL2 ? 28 : 14, color: isL2 ? "#6b7280" : "#1f2937", fontWeight: isL2 ? 400 : 500 }}>{row.nama}</td>
-                          <td style={{ padding: "10px 14px", color: "#6b7280", fontSize: 12 }}>{isL2 ? "" : row.sasaran}</td>
                           <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
                             {row.target !== null ? row.target : <span style={{ color: "#9ca3af" }}>—</span>}
                           </td>
                           <td style={{ padding: "10px 14px", textAlign: "center", color: "#374151" }}>
                             {row.realisasi !== null ? row.realisasi : <span style={{ color: "#9ca3af" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" }}>
+                            {row.tenggat ?? "—"}
                           </td>
                           <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: capColor }}>
                             {row.capaian !== null ? `${row.capaian.toFixed(1)}%` : "—"}
@@ -1946,7 +1954,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               {/* Filters */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Jenis</label>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Jenis</label>
                   <select
                     value={bawahanJenis}
                     onChange={(e) => setBawahanJenis(e.target.value)}
@@ -1957,7 +1965,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Tahun</label>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Tahun</label>
                   <select
                     value={bawahanTahun}
                     onChange={(e) => setBawahanTahun(e.target.value)}
@@ -1967,7 +1975,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Dosen</label>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Dosen</label>
                   <select
                     value={bawahanFilterUser}
                     onChange={(e) => setBawahanFilterUser(e.target.value)}
@@ -2004,12 +2012,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   <div style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
-                        <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 40, whiteSpace: "nowrap" }}>No</th>
-                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 88, whiteSpace: "nowrap" }}>Kode</th>
-                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>Indikator / Dosen</th>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 100, whiteSpace: "nowrap" }}>Target</th>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", width: 100, whiteSpace: "nowrap" }}>Realisasi</th>
+                        <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 40, whiteSpace: "nowrap" }}>No</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 88, whiteSpace: "nowrap" }}>Kode</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Indikator / Dosen</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap" }}>Target</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap" }}>Realisasi</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2044,7 +2052,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 tableRows.push(
                                   <tr
                                     key={`leaf-${leaf.leafId}`}
-                                    style={{ background: "#fff", borderBottom: "1px solid #f1f5f9", cursor: "pointer", userSelect: "none" }}
+                                    style={{ background: "#fff", borderBottom: "1px solid #f8f8f8", cursor: "pointer", userSelect: "none" }}
                                     onClick={() => setExpandedLeaves(prev => {
                                       const next = new Set(prev);
                                       if (next.has(leaf.leafId)) next.delete(leaf.leafId); else next.add(leaf.leafId);
@@ -2071,7 +2079,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 if (isLeafOpen) {
                                   if (usersWithData.length === 0) {
                                     tableRows.push(
-                                      <tr key={`leaf-${leaf.leafId}-empty`} style={{ background: "#fafafa", borderBottom: "1px solid #f8fafc" }}>
+                                      <tr key={`leaf-${leaf.leafId}-empty`} style={{ background: "#fafafa", borderBottom: "1px solid #f8f8f8" }}>
                                         <td colSpan={5} style={{ padding: "6px 28px", color: "#cbd5e1", fontSize: 11, fontStyle: "italic" }}>Belum ada disposisi</td>
                                       </tr>
                                     );
@@ -2080,13 +2088,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                       const target = leaf.disposisiByUser[u.id] ?? 0;
                                       const real = leaf.realisasiByUser?.[u.id] ?? 0;
                                       tableRows.push(
-                                        <tr key={`leaf-${leaf.leafId}-user-${u.id}`} style={{ background: "#fafafa", borderBottom: "1px solid #f8fafc" }}>
+                                        <tr key={`leaf-${leaf.leafId}-user-${u.id}`} style={{ background: "#fafafa", borderBottom: "1px solid #f8f8f8" }}>
                                           <td style={{ padding: "6px 12px" }} />
                                           <td style={{ padding: "6px 12px" }} />
                                           <td style={{ padding: "6px 16px 6px 36px" }}>
                                             <button
                                               onClick={(e) => { e.stopPropagation(); setBawahanCellModal({ user: u, row: leaf, target, realisasi: real }); }}
-                                              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px 3px 8px", borderRadius: 20, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer" }}
+                                              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px 3px 8px", borderRadius: 20, border: "1px solid #e2e8f0", background: "#fafafa", cursor: "pointer" }}
                                             >
                                               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#94a3b8", display: "inline-block", flexShrink: 0 }} />
                                               <span style={{ fontSize: 12, color: "#374151", fontWeight: 500 }}>{u.nama}</span>

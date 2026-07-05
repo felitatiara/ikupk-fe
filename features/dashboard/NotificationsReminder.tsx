@@ -2,80 +2,59 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  getNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  type NotificationItem,
+  getUpcomingDeadlines,
+  type UpcomingDeadlineItem,
 } from "@/services/notificationService";
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const hours = Math.floor(diff / 3_600_000);
-  if (hours < 1) return "Baru saja";
-  if (hours < 24) return `${hours} jam lalu`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Kemarin";
-  return `${days} hari lalu`;
+function urgencyFromDays(daysUntil: number) {
+  if (daysUntil < 0)  return { label: `Lewat ${Math.abs(daysUntil)} hari!`, color: "#dc2626", bg: "#fef2f2", border: "#fecaca" };
+  if (daysUntil === 0) return { label: "Hari ini!",                           color: "#dc2626", bg: "#fef2f2", border: "#fecaca" };
+  if (daysUntil === 1) return { label: "Besok!",                              color: "#ef4444", bg: "#fef2f2", border: "#fecaca" };
+  if (daysUntil <= 3)  return { label: `${daysUntil} hari lagi`,              color: "#f97316", bg: "#fff7ed", border: "#fed7aa" };
+  return                       { label: `${daysUntil} hari lagi`,              color: "#eab308", bg: "#fefce8", border: "#fef08a" };
 }
 
-function urgencyFromType(type: string | null) {
-  if (type === "tenggat_1hari") return { label: "Hari ini!", color: "#ef4444", bg: "#fef2f2", border: "#fecaca" };
-  if (type === "tenggat_7hari") return { label: "7 hari lagi", color: "#f97316", bg: "#fff7ed", border: "#fed7aa" };
-  return { label: "", color: "#6b7280", bg: "#f9fafb", border: "#e5e7eb" };
+function deadlineMessage(item: UpcomingDeadlineItem): string {
+  const { indikatorNama, tenggat, tahun, daysUntil } = item;
+  if (daysUntil < 0)  return `Tenggat "${indikatorNama}" (${tenggat} ${tahun}) sudah lewat ${Math.abs(daysUntil)} hari. Segera input realisasi!`;
+  if (daysUntil === 0) return `Tenggat "${indikatorNama}" (${tenggat} ${tahun}) jatuh hari ini! Segera input realisasi!`;
+  return `Tenggat "${indikatorNama}" (${tenggat} ${tahun}) tinggal ${daysUntil} hari lagi. Segera input realisasi!`;
 }
 
 export default function NotificationsReminder() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [deadlines, setDeadlines] = useState<UpcomingDeadlineItem[]>([]);
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
-  const [dismissing, setDismissing] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     setToken(sessionStorage.getItem("token") ?? "");
   }, []);
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchDeadlines = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    const data = await getNotifications(token);
-    setNotifications(data.filter((n) => !n.isRead));
+    const data = await getUpcomingDeadlines(token);
+    setDeadlines(data);
     setLoading(false);
   }, [token]);
 
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
-  const handleDismiss = async (id: number) => {
-    setDismissing((prev) => new Set(prev).add(id));
-    await markNotificationRead(id, token);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    setDismissing((prev) => { const s = new Set(prev); s.delete(id); return s; });
-  };
-
-  const handleDismissAll = async () => {
-    await markAllNotificationsRead(token);
-    setNotifications([]);
-  };
+    fetchDeadlines();
+    const id = setInterval(fetchDeadlines, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [fetchDeadlines]);
 
   if (loading) return null;
 
-  // All clear state
-  if (notifications.length === 0) {
+  if (deadlines.length === 0) {
     return (
       <div style={{
-        marginBottom: 24,
-        padding: "14px 18px",
-        borderRadius: 10,
-        backgroundColor: "#f0fdf4",
-        border: "1px solid #bbf7d0",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
+        marginBottom: 24, padding: "14px 18px", borderRadius: 10,
+        backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0",
+        display: "flex", alignItems: "center", gap: 10,
       }}>
         <div style={{
-          width: 32, height: 32, borderRadius: "50%",
-          backgroundColor: "#dcfce7",
+          width: 32, height: 32, borderRadius: "50%", backgroundColor: "#dcfce7",
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -94,83 +73,47 @@ export default function NotificationsReminder() {
 
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* Section header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: "50%",
-            backgroundColor: "#fff7ed",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-          </div>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "#1f2937" }}>
-            Pengingat Tenggat
-          </span>
-          <span style={{
-            backgroundColor: "#fef3c7", color: "#92400e",
-            fontSize: 11, fontWeight: 700,
-            padding: "2px 8px", borderRadius: 10,
-          }}>
-            {notifications.length}
-          </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%", backgroundColor: "#fff7ed",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
         </div>
-
-        {notifications.length > 1 && (
-          <button
-            onClick={handleDismissAll}
-            style={{
-              background: "none", border: "none",
-              fontSize: 12, color: "#6b7280", cursor: "pointer",
-              fontWeight: 600, padding: "4px 0",
-              textDecoration: "underline", textDecorationColor: "#d1d5db",
-            }}
-          >
-            Tandai semua selesai
-          </button>
-        )}
+        <span style={{ fontWeight: 700, fontSize: 14, color: "#1f2937" }}>Pengingat Tenggat</span>
+        <span style={{
+          backgroundColor: "#fef3c7", color: "#92400e",
+          fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+        }}>
+          {deadlines.length}
+        </span>
       </div>
 
-      {/* Cards */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {notifications.map((n) => {
-          const urgency = urgencyFromType(n.type);
-          const isDismissing = dismissing.has(n.id);
+        {deadlines.map((item) => {
+          const urgency = urgencyFromDays(item.daysUntil);
           return (
             <div
-              key={n.id}
+              key={`${item.indikatorId}-${item.tahun}`}
               style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 0,
-                borderRadius: 10,
-                border: `1px solid ${urgency.border}`,
-                backgroundColor: urgency.bg,
-                overflow: "hidden",
-                opacity: isDismissing ? 0.5 : 1,
-                transition: "opacity 0.2s",
+                display: "flex", alignItems: "flex-start", gap: 0,
+                borderRadius: 10, border: `1px solid ${urgency.border}`,
+                backgroundColor: urgency.bg, overflow: "hidden",
               }}
             >
-              {/* Colored left stripe */}
               <div style={{ width: 4, backgroundColor: urgency.color, flexShrink: 0, alignSelf: "stretch" }} />
 
-              {/* Icon */}
-              <div style={{
-                padding: "14px 12px",
-                display: "flex", alignItems: "flex-start", flexShrink: 0,
-              }}>
+              <div style={{ padding: "14px 12px", display: "flex", alignItems: "flex-start", flexShrink: 0 }}>
                 <div style={{
-                  width: 32, height: 32, borderRadius: "50%",
-                  backgroundColor: "#fff",
+                  width: 32, height: 32, borderRadius: "50%", backgroundColor: "#fff",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   border: `1px solid ${urgency.border}`,
                 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                    stroke={urgency.color} strokeWidth="2.5"
-                    strokeLinecap="round" strokeLinejoin="round">
+                    stroke={urgency.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -178,58 +121,20 @@ export default function NotificationsReminder() {
                 </div>
               </div>
 
-              {/* Content */}
-              <div style={{ flex: 1, padding: "12px 0", minWidth: 0 }}>
-                {/* Urgency badge + time */}
+              <div style={{ flex: 1, padding: "12px 16px 12px 0", minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  {urgency.label && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700,
-                      color: urgency.color,
-                      backgroundColor: "#fff",
-                      border: `1px solid ${urgency.border}`,
-                      padding: "1px 6px", borderRadius: 6,
-                      textTransform: "uppercase", letterSpacing: "0.05em",
-                    }}>
-                      {urgency.label}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                    {timeAgo(n.createdAt)}
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: urgency.color,
+                    backgroundColor: "#fff", border: `1px solid ${urgency.border}`,
+                    padding: "1px 6px", borderRadius: 6,
+                    textTransform: "uppercase", letterSpacing: "0.05em",
+                  }}>
+                    {urgency.label}
                   </span>
                 </div>
-
-                {/* Message */}
-                <p style={{
-                  margin: 0,
-                  fontSize: 13,
-                  color: "#1f2937",
-                  fontWeight: 500,
-                  lineHeight: 1.5,
-                }}>
-                  {n.message}
+                <p style={{ margin: 0, fontSize: 13, color: "#1f2937", fontWeight: 500, lineHeight: 1.5 }}>
+                  {deadlineMessage(item)}
                 </p>
-              </div>
-
-              {/* Dismiss button */}
-              <div style={{ padding: "12px 14px", flexShrink: 0, display: "flex", alignItems: "center" }}>
-                <button
-                  onClick={() => handleDismiss(n.id)}
-                  disabled={isDismissing}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: 6,
-                    border: `1px solid ${urgency.border}`,
-                    backgroundColor: "#fff",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: urgency.color,
-                    cursor: isDismissing ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Selesai
-                </button>
               </div>
             </div>
           );

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React from "react";
 
@@ -17,7 +17,7 @@ export default function TargetsTable({ rows }: { rows: TargetRow[] }) {
           <tr>
             <th className="p-3 text-left text-blue-600">Tenggat</th>
             <th className="p-3 text-left">Target</th>
-            <th className="p-3 text-left">Sasaran Strategis</th>
+            <th className="p-3 text-left">Sasaran Program</th>
             <th className="p-3 text-left">Capaian</th>
             <th className="p-3 text-left">Aksi</th>
           </tr>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -619,7 +619,7 @@ export default function SKPContent() {
     <thead>
       <tr>
         <th style="width:36px">No</th>
-        <th>Sasaran Strategis</th>
+        <th>Sasaran Program</th>
         <th style="width:100px">Kode Indikator</th>
         <th>Nama Indikator</th>
         <th style="width:80px">Target</th>
@@ -1019,9 +1019,9 @@ ${kualitatifPage}
     padding: "10px 14px",
     fontWeight: 700,
     fontSize: 11,
-    color: "#374151",
+    color: "#9ca3af",
     textTransform: "uppercase",
-    letterSpacing: "0.04em",
+    letterSpacing: "0.06em",
     borderBottom: "2px solid #e2e8f0",
     backgroundColor: "#f8fafc",
     textAlign: "left",
@@ -1031,7 +1031,7 @@ ${kualitatifPage}
     padding: "10px 14px",
     fontSize: 13,
     color: "#374151",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid #f8f8f8",
     verticalAlign: "top",
   };
 
@@ -1200,7 +1200,7 @@ ${kualitatifPage}
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
                 <thead>
                   <tr>
-                    {["No", "Kode", "Indikator / Sasaran Strategis", "Target", "Realisasi", "Capaian (%)", "Predikat"].map(
+                    {["No", "Kode", "Indikator / Sasaran Program", "Target", "Realisasi", "Capaian (%)", "Predikat"].map(
                       (h) => <th key={h} style={thStyle}>{h}</th>
                     )}
                   </tr>
@@ -1773,7 +1773,7 @@ ${kualitatifPage}
               <table style={{ marginTop: 20 }}>
                 <thead>
                   <tr>
-                    {["No", "Kode", "Indikator", "Sasaran Strategis", "Target", "Realisasi", "Capaian (%)", "Predikat"].map(
+                    {["No", "Kode", "Indikator", "Sasaran Program", "Target", "Realisasi", "Capaian (%)", "Predikat"].map(
                       (h) => <th key={h}>{h}</th>
                     )}
                   </tr>

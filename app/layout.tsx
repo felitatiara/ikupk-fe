@@ -2,6 +2,7 @@
 import { Nunito_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { ConfigSyncProvider } from "@/context/ConfigSyncContext";
 import type { Metadata } from "next";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Toaster } from "sonner";
@@ -28,15 +29,17 @@ export default function RootLayout({
         style={{ fontFamily: "var(--font-nunito-sans)" }}
       >
         <AuthProvider>
-          <div className="app-root">
-            {children}
-          </div>
-          <Toaster
-            position="top-right"
-            richColors
-            closeButton
-            duration={4000}
-          />
+          <ConfigSyncProvider>
+            <div className="app-root">
+              {children}
+            </div>
+            <Toaster
+              position="top-right"
+              richColors
+              closeButton
+              duration={4000}
+            />
+          </ConfigSyncProvider>
         </AuthProvider>
       </body>
     </html>

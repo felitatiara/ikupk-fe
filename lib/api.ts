@@ -729,6 +729,20 @@ export async function getRelatedUsersFor(userId: number): Promise<UnitUser[]> {
   return response.json();
 }
 
+/** Mengambil semua bawahan secara rekursif (termasuk bawahan dari bawahan) */
+export async function getAllBawahanFor(userId: number): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/all-bawahan?userId=${userId}`);
+  if (!response.ok) return [];
+  return response.json();
+}
+
+/** Mengambil semua dosen (semua prodi) */
+export async function getAllDosen(): Promise<UnitUser[]> {
+  const response = await fetch(`${API_BASE_URL}/users/all-dosen`);
+  if (!response.ok) return [];
+  return response.json();
+}
+
 /** Cek apakah user memiliki bawahan */
 export async function hasRelatedUsers(userId: number): Promise<boolean> {
   const response = await fetch(`${API_BASE_URL}/users/has-related?userId=${userId}`);

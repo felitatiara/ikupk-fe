@@ -10,6 +10,15 @@ export interface NotificationItem {
   createdAt: string;
 }
 
+export interface UpcomingDeadlineItem {
+  indikatorId: number;
+  indikatorNama: string;
+  l1Names: string[];
+  tenggat: string;
+  tahun: string;
+  daysUntil: number;
+}
+
 export async function getNotifications(token: string): Promise<NotificationItem[]> {
   try {
     const res = await fetch(`${API_BASE_URL}/notifications`, {
@@ -34,4 +43,16 @@ export async function markAllNotificationsRead(token: string): Promise<void> {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
   });
+}
+
+export async function getUpcomingDeadlines(token: string): Promise<UpcomingDeadlineItem[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/notifications/upcoming-deadlines`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }

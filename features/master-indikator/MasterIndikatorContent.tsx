@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -485,7 +485,7 @@ export default function MasterIndikatorContent() {
 
   const handleSubmit = async () => {
     if (formMode === "baru") {
-      if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Strategis wajib diisi."); return; }
+      if (!nomor.trim() || !sasaranStrategis.trim()) { toast.error("Nomor dan Sasaran Program wajib diisi."); return; }
       if (!targetUniversitas || isNaN(Number(targetUniversitas))) { toast.error("Target Universitas wajib diisi dengan angka."); return; }
       if (!tenggat) { toast.error("Pilih Tenggat (Triwulan) terlebih dahulu."); return; }
       for (const g of groups) {
@@ -519,7 +519,7 @@ export default function MasterIndikatorContent() {
       } finally { setSubmitLoading(false); }
 
     } else {
-      if (selectedLevel0Id === "") { toast.error("Pilih Sasaran Strategis terlebih dahulu."); return; }
+      if (selectedLevel0Id === "") { toast.error("Pilih Sasaran Program terlebih dahulu."); return; }
       const parentLevel0 = indikatorList.find((i) => i.id === selectedLevel0Id);
       if (!parentLevel0) return;
       for (const g of groups) {
@@ -924,7 +924,7 @@ export default function MasterIndikatorContent() {
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#6366f1", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data Realisasi</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>Sumber Data Realisasi</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <select value={editSumberData} onChange={(e) => setEditSumberData(e.target.value)}
@@ -942,7 +942,7 @@ export default function MasterIndikatorContent() {
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#059669", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     Target per {filterJenis === 'PK' ? 'Rincian (Level 3)' : 'Sub-Indikator (Level 2)'}
                   </span>
                   {editLeafLoading && <span style={{ fontSize: 11, color: "#9ca3af" }}>Memuat…</span>}
@@ -1074,7 +1074,7 @@ export default function MasterIndikatorContent() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
         <div>
           <h3 className="ikupk-card-title">Master Indikator</h3>
-          <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>Daftar sasaran strategis dan hierarki indikator kinerja.</p>
+          <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>Daftar Sasaran Program dan hierarki indikator kinerja.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {selectedIds.size > 0 && (
@@ -1129,7 +1129,7 @@ export default function MasterIndikatorContent() {
           ))}
         </div>
         <span style={{ fontSize: 13, color: "#9ca3af" }}>
-          <b style={{ color: "#374151" }}>{hierarchy.length}</b> sasaran strategis
+          <b style={{ color: "#374151" }}>{hierarchy.length}</b> Sasaran Program
         </span>
       </div>
 
@@ -1247,7 +1247,7 @@ export default function MasterIndikatorContent() {
               <tfoot>
                 <tr style={{ background: "#fafafa", borderTop: "1px solid #f0f0f0" }}>
                   <td colSpan={5} style={{ padding: "10px 14px", fontSize: 12, color: "#9ca3af" }}>
-                    <b>{rowsPerLevel0.length}</b> sasaran strategis · <b>{hierarchy.reduce((a, h) => a + h.children.length, 0)}</b> indikator kinerja
+                    <b>{rowsPerLevel0.length}</b> Sasaran Program · <b>{hierarchy.reduce((a, h) => a + h.children.length, 0)}</b> indikator kinerja
                   </td>
                 </tr>
               </tfoot>
@@ -1418,7 +1418,7 @@ export default function MasterIndikatorContent() {
                     {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
-                <label style={labelStyle}>Pilih Sasaran Strategis (Level 0)</label>
+                <label style={labelStyle}>Pilih Sasaran Program (Level 0)</label>
                 <select
                   value={selectedLevel0Id}
                   onChange={(e) => {

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
@@ -377,9 +377,9 @@ export default function RealisasiBiroPKUContent() {
 
       // ── L0 row ──
       rows.push(
-        <tr key={`l0-${l0.id}`} style={{ background: "#eef2f7", borderBottom: "2px solid #d1dce9" }}>
-          <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontWeight: 800, color: "#1e3a5f", fontSize: 13 }}>{l0.kode}</td>
-          <td style={{ padding: "11px 16px", fontWeight: 700, color: "#1e3a5f", fontSize: 13 }}>{l0.nama}</td>
+        <tr key={`l0-${l0.id}`} style={{ background: "#f5f7fa", borderBottom: "1px solid #f0f0f0", borderTop: "1px solid #f0f0f0" }}>
+          <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13 }}>{l0.kode}</td>
+          <td style={{ padding: "11px 16px", fontWeight: 700, color: "#374151", fontSize: 13 }}>{l0.nama}</td>
           <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151" }}>
             {l0Realisasi > 0 ? <><span style={{ fontWeight: 700 }}>{l0Realisasi}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>total submisi</div></> : <span style={{ color: "#d1d5db" }}>—</span>}
           </td>
@@ -397,14 +397,14 @@ export default function RealisasiBiroPKUContent() {
 
         // ── L1 row ──
         rows.push(
-          <tr key={`l1-${sub.id}`} style={{ background: "#f8fafc", borderBottom: "1px solid #edf2f7" }}>
-            <td style={{ padding: "9px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 12, color: "#64748b" }}>{sub.kode}</td>
-            <td style={{ padding: "9px 16px 9px 32px", color: "#475569", fontSize: 12, fontWeight: 600 }}>{sub.nama}</td>
-            <td style={{ padding: "9px 16px", textAlign: "center", color: "#64748b", fontSize: 12 }}>
+          <tr key={`l1-${sub.id}`} style={{ background: "#fff", borderBottom: "1px solid #f8f8f8" }}>
+            <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>{sub.kode}</td>
+            <td style={{ padding: "11px 16px 11px 32px", color: "#374151", fontSize: 13, fontWeight: 600 }}>{sub.nama}</td>
+            <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151", fontSize: 13 }}>
               {subRealisasi > 0 ? subRealisasi : <span style={{ color: "#d1d5db" }}>—</span>}
             </td>
-            <td style={{ padding: "9px 16px", textAlign: "center" }}>{hasilCell(subHasil)}</td>
-            <td style={{ padding: "9px 16px" }}><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
+            <td style={{ padding: "11px 16px", textAlign: "center" }}>{hasilCell(subHasil)}</td>
+            <td style={{ padding: "11px 16px" }}><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
             <td /><td />
           </tr>,
         );
@@ -414,18 +414,18 @@ export default function RealisasiBiroPKUContent() {
             // ── L2 = leaf IKU ──
             const isEditing = editingId === child.id;
             rows.push(
-              <tr key={`l2-${child.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f3f6fa" }}>
-                <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#94a3b8" }}>{child.kode}</td>
-                <td style={{ padding: "8px 16px 8px 48px", color: "#374151", fontSize: 12 }}>{child.nama}</td>
-                <td style={{ padding: "8px 16px", textAlign: "center", color: "#374151" }}>
+              <tr key={`l2-${child.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f8f8f8" }}>
+                <td style={{ padding: "13px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{child.kode}</td>
+                <td style={{ padding: "13px 16px 13px 48px", color: "#374151", fontSize: 13 }}>{child.nama}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center", color: "#374151" }}>
                   {(realisasiCounts[child.id] ?? 0) > 0
                     ? <><span style={{ fontWeight: 600 }}>{realisasiCounts[child.id]}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>submisi</div></>
                     : <span style={{ color: "#d1d5db" }}>—</span>}
                 </td>
-                <td style={{ padding: "8px 16px", textAlign: "center" }}>{renderLeafInputCell(child.id)}</td>
-                <td style={{ padding: "8px 16px" }}>{renderLeafKeteranganCell(child.id)}</td>
-                <td style={{ padding: "8px 16px", textAlign: "center" }}>{renderFolderLink(child.id)}</td>
-                <td style={{ padding: "8px 16px", textAlign: "center" }}>{renderLeafAksiCell(child.id)}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafInputCell(child.id)}</td>
+                <td style={{ padding: "13px 16px" }}>{renderLeafKeteranganCell(child.id)}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderFolderLink(child.id)}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafAksiCell(child.id)}</td>
               </tr>,
             );
           } else {
@@ -434,13 +434,13 @@ export default function RealisasiBiroPKUContent() {
             const childHasil = sumHasil(childIds);
             const childRealisasi = sumRealisasiIds(child.children.map((l3) => l3.id));
             rows.push(
-              <tr key={`l2pk-${child.id}`} style={{ background: "#f8fafc", borderBottom: "1px solid #edf2f7" }}>
-                <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#94a3b8" }}>{child.kode}</td>
-                <td style={{ padding: "8px 16px 8px 48px", color: "#475569", fontSize: 12, fontWeight: 500 }}>{child.nama}</td>
-                <td style={{ padding: "8px 16px", textAlign: "center", color: "#64748b", fontSize: 12 }}>
+              <tr key={`l2pk-${child.id}`} style={{ background: "#fff", borderBottom: "1px solid #f8f8f8" }}>
+                <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{child.kode}</td>
+                <td style={{ padding: "11px 16px 11px 48px", color: "#374151", fontSize: 13, fontWeight: 500 }}>{child.nama}</td>
+                <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151", fontSize: 13 }}>
                   {childRealisasi > 0 ? childRealisasi : <span style={{ color: "#d1d5db" }}>—</span>}
                 </td>
-                <td style={{ padding: "8px 16px", textAlign: "center" }}>{hasilCell(childHasil)}</td>
+                <td style={{ padding: "11px 16px", textAlign: "center" }}>{hasilCell(childHasil)}</td>
                 <td><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
                 <td /><td />
               </tr>,
@@ -451,18 +451,18 @@ export default function RealisasiBiroPKUContent() {
               const l3Realisasi = realisasiCounts[l3.id] ?? 0;
               const isEditing = editingId === l3.id;
               rows.push(
-                <tr key={`l3-${l3.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f3f6fa" }}>
-                  <td style={{ padding: "7px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#94a3b8" }}>{l3.kode}</td>
-                  <td style={{ padding: "7px 16px 7px 64px", color: "#374151", fontSize: 12 }}>{l3.nama}</td>
-                  <td style={{ padding: "7px 16px", textAlign: "center", color: "#374151" }}>
+                <tr key={`l3-${l3.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f8f8f8" }}>
+                  <td style={{ padding: "13px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{l3.kode}</td>
+                  <td style={{ padding: "13px 16px 13px 64px", color: "#374151", fontSize: 13 }}>{l3.nama}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center", color: "#374151" }}>
                     {l3Realisasi > 0
                       ? <><span style={{ fontWeight: 600 }}>{l3Realisasi}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>submisi</div></>
                       : <span style={{ color: "#d1d5db" }}>—</span>}
                   </td>
-                  <td style={{ padding: "7px 16px", textAlign: "center" }}>{renderLeafInputCell(l3.id)}</td>
-                  <td style={{ padding: "7px 16px" }}>{renderLeafKeteranganCell(l3.id)}</td>
-                  <td style={{ padding: "7px 16px", textAlign: "center" }}>{renderFolderLink(l3.id)}</td>
-                  <td style={{ padding: "7px 16px", textAlign: "center" }}>{renderLeafAksiCell(l3.id)}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafInputCell(l3.id)}</td>
+                  <td style={{ padding: "13px 16px" }}>{renderLeafKeteranganCell(l3.id)}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderFolderLink(l3.id)}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafAksiCell(l3.id)}</td>
                 </tr>,
               );
             }
@@ -535,7 +535,7 @@ export default function RealisasiBiroPKUContent() {
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
-                <tr style={{ background: "#f8fafc" }}>
+                <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
                   {[
                     { label: "Kode", w: "7%" },
                     { label: "Indikator", w: "auto" },
@@ -545,7 +545,7 @@ export default function RealisasiBiroPKUContent() {
                     { label: "Link Folder", w: "9%" },
                     { label: "Aksi", w: "9%" },
                   ].map((h) => (
-                    <th key={h.label} style={{ width: h.w, padding: "11px 16px", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", color: "#374151", borderBottom: "2px solid #e2e8f0", textAlign: h.label === "Indikator" || h.label === "Keterangan" ? "left" : "center" }}>
+                    <th key={h.label} style={{ width: h.w, padding: "11px 16px", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#9ca3af", textAlign: h.label === "Indikator" || h.label === "Keterangan" ? "left" : "center" }}>
                       {h.label}
                     </th>
                   ))}

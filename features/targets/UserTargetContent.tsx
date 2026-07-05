@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -153,9 +153,9 @@ export default function UserTargetContent() {
               />
             </div>
 
-            {/* Sasaran Strategis */}
+            {/* Sasaran Program */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Sasaran Strategis</label>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 700 }}>Sasaran Program</label>
               <input
                 value={selectedRow.sasaranStrategis}
                 readOnly
@@ -316,16 +316,16 @@ export default function UserTargetContent() {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, borderRadius: 10, overflow: "hidden", border: "1px solid #e2e8f0" }}>
                 <thead>
-                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                    {["Waktu Capaian", "Target", "Sasaran Strategis", "Status", "Aksi"].map((h, i) => (
-                      <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 11, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i >= 3 ? "center" : "left", whiteSpace: "nowrap" }}>{h}</th>
+                  <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                    {["Waktu Capaian", "Target", "Sasaran Program", "Status", "Aksi"].map((h, i) => (
+                      <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: i >= 3 ? "center" : "left", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length > 0 ? (
                     filteredRows.map((row) => (
-                      <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: "#fff" }}>
+                      <tr key={row.id} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fff" }}>
                         <td style={{ padding: "10px 12px", color: "#2563eb", fontWeight: 600 }}>{row.waktuCapaian}</td>
                         <td style={{ padding: "10px 12px", color: "#374151" }}>{row.target}</td>
                         <td style={{ padding: "10px 12px", color: "#4b5563" }}>{row.sasaranStrategis}</td>

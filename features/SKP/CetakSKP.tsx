@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -431,7 +431,7 @@ export default function CetakSKP() {
                 <thead>
                   <tr>
                     <th style={{ ...th, width: 32 }}>No.</th>
-                    <th style={{ ...th, width: "28%" }}>Sasaran Strategis / Program</th>
+                    <th style={{ ...th, width: "28%" }}>Sasaran Program</th>
                     <th style={{ ...th, width: 50 }}>Kode</th>
                     <th style={th}>Indikator Kinerja Utama</th>
                     <th style={{ ...th, width: 70 }}>Satuan</th>
@@ -480,7 +480,7 @@ export default function CetakSKP() {
                 <thead>
                   <tr>
                     <th style={{ ...th, width: 28 }}>No.</th>
-                    <th style={{ ...th, width: "22%" }}>Sasaran Strategis</th>
+                    <th style={{ ...th, width: "22%" }}>Sasaran Program</th>
                     <th style={{ ...th, width: 44 }} colSpan={2}>Indikator Kinerja Kegiatan</th>
                     <th style={{ ...th, width: 70 }}>Satuan</th>
                     <th style={{ ...th, width: 50 }}>Target</th>

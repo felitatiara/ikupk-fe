@@ -28,6 +28,15 @@ export default function CascadeIndikatorForm({ l0Id: indikatorId, jenis, tahun }
   const [chain, setChain] = useState<Chain>([[0]]);
   const [submitLoading, setSubmitLoading] = useState(false);
 
+  // Remove app-main bottom padding so sticky footer sits flush at the bottom
+  useEffect(() => {
+    const main = document.querySelector('.app-main') as HTMLElement | null;
+    if (!main) return;
+    const prev = main.style.paddingBottom;
+    main.style.paddingBottom = '0';
+    return () => { main.style.paddingBottom = prev; };
+  }, []);
+
   useEffect(() => {
     Promise.all([getIndikatorById(indikatorId), getAllRoles(), getIndikatorCascadeChain(indikatorId)])
       .then(([indikator, roles, existingChain]) => {
@@ -68,8 +77,9 @@ export default function CascadeIndikatorForm({ l0Id: indikatorId, jenis, tahun }
   const hasAnyValid = chain.some(s => s.some(id => id > 0));
 
   return (
+    <>
     <PageTransition>
-      <div style={{ padding: "4px 0 100px", fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+      <div style={{ padding: "4px 0 24px", fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
 
         {/* Breadcrumb */}
         <nav style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 22, fontSize: 13 }}>
@@ -312,60 +322,61 @@ export default function CascadeIndikatorForm({ l0Id: indikatorId, jenis, tahun }
           </div>
         )}
 
-        {/* Sticky footer */}
-        <div style={{
-          position: "sticky", bottom: 0,
-          background: "rgba(255,255,255,0.98)", backdropFilter: "blur(16px)",
-          borderTop: "2px solid #FF7900",
-          boxShadow: "0 -4px 24px rgba(0,0,0,0.09)",
-          padding: "12px 20px", marginTop: 32,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          {/* Left: info */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              fontSize: 12, fontWeight: 700, color: "#FF7900",
-              background: "#fff7ed", border: "1.5px solid #fed7aa",
-              padding: "4px 12px", borderRadius: 20,
-            }}>
-              {chain.filter(s => s.some(id => id > 0)).length} langkah dikonfigurasi
-            </span>
-            {l0 && (
-              <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>
-                {l0.kode} — {l0.nama}
-              </span>
-            )}
-          </div>
-          {/* Right: actions */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}
-              style={{
-                padding: "9px 20px", borderRadius: 9,
-                border: "1.5px solid #e5e7eb", background: "#fff",
-                color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              }}>
-              Batal
-            </button>
-            <button type="button" onClick={handleSubmit} disabled={submitLoading || !l0 || loadingInfo}
-              style={{
-                padding: "9px 24px", borderRadius: 9, border: "none",
-                background: submitLoading || !l0 || loadingInfo ? "#fdba74" : "#FF7900",
-                color: "#fff", fontSize: 13, fontWeight: 700,
-                cursor: submitLoading || !l0 || loadingInfo ? "not-allowed" : "pointer",
-                boxShadow: submitLoading || !l0 || loadingInfo ? "none" : "0 3px 10px rgba(255,121,0,0.4)",
-                transition: "background 0.2s, box-shadow 0.2s",
-                display: "flex", alignItems: "center", gap: 7,
-              }}>
-              {submitLoading
-                ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Menyimpan…</>
-                : <>💾 Simpan Alur</>
-              }
-            </button>
-          </div>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </PageTransition>
+
+    {/* Sticky footer — sibling of PageTransition so transform doesn't trap it */}
+    <div style={{
+      position: "sticky", bottom: 0, zIndex: 50,
+      background: "rgba(255,255,255,0.98)", backdropFilter: "blur(16px)",
+      borderTop: "2px solid #FF7900",
+      boxShadow: "0 -4px 24px rgba(0,0,0,0.09)",
+      padding: "12px 32px",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      marginLeft: -32, marginRight: -32,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{
+          fontSize: 12, fontWeight: 700, color: "#FF7900",
+          background: "#fff7ed", border: "1.5px solid #fed7aa",
+          padding: "4px 12px", borderRadius: 20,
+        }}>
+          {chain.filter(s => s.some(id => id > 0)).length} langkah dikonfigurasi
+        </span>
+        {l0 && (
+          <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>
+            {l0.kode} — {l0.nama}
+          </span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="button" onClick={() => router.push("/admin/master-indikator")} disabled={submitLoading}
+          style={{
+            padding: "9px 20px", borderRadius: 9,
+            border: "1.5px solid #e5e7eb", background: "#fff",
+            color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>
+          Batal
+        </button>
+        <button type="button" onClick={handleSubmit} disabled={submitLoading || !l0 || loadingInfo}
+          style={{
+            padding: "9px 24px", borderRadius: 9, border: "none",
+            background: submitLoading || !l0 || loadingInfo ? "#fdba74" : "#FF7900",
+            color: "#fff", fontSize: 13, fontWeight: 700,
+            cursor: submitLoading || !l0 || loadingInfo ? "not-allowed" : "pointer",
+            boxShadow: submitLoading || !l0 || loadingInfo ? "none" : "0 3px 10px rgba(255,121,0,0.4)",
+            transition: "background 0.2s, box-shadow 0.2s",
+            display: "flex", alignItems: "center", gap: 7,
+          }}>
+          {submitLoading
+            ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Menyimpan…</>
+            : <>💾 Simpan Alur</>
+          }
+        </button>
+      </div>
+    </div>
+    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </>
   );
 }
 
