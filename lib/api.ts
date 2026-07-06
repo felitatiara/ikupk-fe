@@ -703,6 +703,9 @@ export interface UnitUser {
   nama: string;
   email: string;
   role: string;
+  jenis?: string;
+  unitId?: number | null;
+  atasanId?: number | null;
 }
 
 export interface CreateUserPayload {

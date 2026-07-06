@@ -8,6 +8,8 @@ import * as XLSX from "xlsx";
 import { getIndikator, createIndikator, updateIndikator, deleteIndikator, deleteAllIndikator, upsertTargetUniversitas, getTargetUniversitas, getBaselineByJenisData, getAvailableYears, importIndikatorBulk, Indikator, IndikatorImportRow } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import DistribusiTargetModal from "./DistribusiTargetModal";
+import ImportTurunanModal from "./ImportTurunanModal";
 
 
 // Type/interface definitions
@@ -261,6 +263,10 @@ export default function MasterIndikatorContent() {
   const [targetTahun, setTargetTahun] = useState("");
   const [selectedLevel0Id, setSelectedLevel0Id] = useState<number | "">("");
   const [groups, setGroups] = useState<IndikatorGroupForm[]>([blankGroup()]);
+
+  // Distribusi target modal state
+  const [distribusiModalOpen, setDistribusiModalOpen] = useState(false);
+  const [importTurunanOpen, setImportTurunanOpen] = useState(false);
 
   // Import Excel state
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -744,6 +750,21 @@ export default function MasterIndikatorContent() {
   return (
     <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
 
+      {/* ── Distribusi Target Modal ── */}
+      <DistribusiTargetModal
+        open={distribusiModalOpen}
+        onClose={() => setDistribusiModalOpen(false)}
+        defaultJenis={filterJenis}
+        defaultTahun={targetTahun || String(new Date().getFullYear())}
+      />
+
+      {/* ── Import Rencana Turunan Modal ── */}
+      <ImportTurunanModal
+        open={importTurunanOpen}
+        onClose={() => setImportTurunanOpen(false)}
+        defaultTahun={targetTahun || String(new Date().getFullYear())}
+      />
+
       {/* ── Import Excel Modal ── */}
       {importModalOpen && createPortal(
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(3px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -1094,6 +1115,16 @@ export default function MasterIndikatorContent() {
             Hapus Semua
           </button>
           <button
+            onClick={() => setDistribusiModalOpen(true)}
+            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #16a34a", background: "#f0fdf4", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#15803d" }}>
+            Distribusi Target
+          </button>
+          <button
+            onClick={() => setImportTurunanOpen(true)}
+            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #FF7900", background: "#fff8f0", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#c05a00" }}>
+            Import Turunan
+          </button>
+          <button
             onClick={() => {
               setImportJenis(filterJenis);
               setImportTahun(targetTahun || String(new Date().getFullYear()));
@@ -1227,7 +1258,7 @@ export default function MasterIndikatorContent() {
                   if (filterJenis !== 'IKU') return renderRows(rowsPerLevel0);
 
                   const grouped: Record<string, typeof rowsPerLevel0> = { Wajib: [], Pilihan: [], Partisipatif: [] };
-                  rowsPerLevel0.forEach(r => { const k = r.parent.kategori ?? IKU_KAT[r.parent.kode] ?? 'Partisipatif'; grouped[k].push(r); });
+                  rowsPerLevel0.forEach(r => { const raw = r.parent.kategori || IKU_KAT[r.parent.kode] || 'Partisipatif'; const k = KAT_ORDER.includes(raw) ? raw : 'Partisipatif'; grouped[k].push(r); });
                   return KAT_ORDER.flatMap(kat => {
                     const items = grouped[kat];
                     if (items.length === 0) return [];
