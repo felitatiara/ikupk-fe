@@ -774,11 +774,11 @@ export async function getIndikatorCascadeChain(id: number): Promise<(number | nu
   return response.json();
 }
 
-export async function saveIndikatorCascadeChain(id: number, chain: (number | number[])[]): Promise<void> {
+export async function saveIndikatorCascadeChain(id: number, chain: (number | number[])[], tahun?: string, skipMaterialize?: boolean): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/indikator/${id}/cascade-chain`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chain }),
+    body: JSON.stringify({ chain, tahun, ...(skipMaterialize ? { skipMaterialize } : {}) }),
   });
   if (!response.ok) throw new Error('Failed to save cascade chain');
 }

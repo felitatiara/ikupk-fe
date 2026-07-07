@@ -9,6 +9,7 @@ import {
   getAllRoles,
   getUsersByRole,
   upsertDisposisi,
+  saveIndikatorCascadeChain,
   type IndikatorGrouped,
   type UnitUser,
 } from "../../lib/api";
@@ -18,6 +19,11 @@ import {
 interface ParsedAmount {
   excelName: string;
   amount: number;
+}
+
+interface VMarkEntry {
+  roleLabel: string; // "Wakil Dekan 1", "Kepala Jurusan", "Koordinator Prodi"
+  colNama: string;   // user name from header row
 }
 
 interface ParsedEntry {
@@ -67,6 +73,7 @@ interface DoneStats {
   skippedInd: number;
   skippedUser: number;
   maxDepth: number;
+  chainsSaved: number;
 }
 
 interface ImportTurunanModalProps {
@@ -90,39 +97,50 @@ function normalizeName(s: string): string {
 }
 
 function stripSubPrefix(label: string): string {
-  return label.replace(/^[a-z]\.\s*/i, "").replace(/\*+$/, "").trim();
+  return label.trim().replace(/^[a-z]\.\s*/i, "").replace(/\*+$/, "").trim();
 }
 
 function parseSheet(
   aoa: (string | number | boolean | null)[][],
   sheetName: string,
-): ParsedEntry[] {
-  if (!aoa.length) return [];
+): { entries: ParsedEntry[]; sheetChain: VMarkEntry[] } {
+  if (!aoa.length) return { entries: [], sheetChain: [] };
   const h0 = (aoa[0] as (string | null)[]).map((c) => String(c ?? "").trim());
+
+  // Check for role row (row 1) — present in new template format
+  const h1 = aoa.length > 1 ? (aoa[1] as (string | null)[]).map((c) => String(c ?? "").trim()) : [];
+  const hasRoleRow = h1.slice(6).some((v) =>
+    /wakil dekan|kepala jurusan|koordinator prodi|dosen/i.test(v),
+  );
 
   const jumlahIdx = h0.findIndex((v) => v === "Jumlah");
   const sisaIdx = h0.findIndex((v) => v.toLowerCase() === "sisa");
   const isDetailed = jumlahIdx >= 6;
 
-  let dosenNames: string[];
+  let colNames: string[];
+  let colRoles: string[]; // role label per user column (empty string if no role row)
   let amtOffset: number;
   let dataStart: number;
 
   if (isDetailed) {
-    dosenNames = h0.slice(6, jumlahIdx).filter(Boolean);
+    colNames = h0.slice(6, jumlahIdx).filter(Boolean);
+    colRoles = hasRoleRow ? h1.slice(6, jumlahIdx) : colNames.map(() => "");
     amtOffset = jumlahIdx + 3;
     dataStart = 2;
   } else {
     const endCol = sisaIdx > 6 ? sisaIdx : h0.length;
-    dosenNames = h0.slice(6, endCol).filter(Boolean);
+    colNames = h0.slice(6, endCol).filter(Boolean);
+    colRoles = hasRoleRow ? h1.slice(6, endCol) : colNames.map(() => "");
     amtOffset = 6;
-    dataStart = 1;
+    dataStart = hasRoleRow ? 2 : 1;
   }
 
-  if (!dosenNames.length) return [];
+  if (!colNames.length) return { entries: [], sheetChain: [] };
 
   const entries: ParsedEntry[] = [];
   let currentIKU = "";
+  // Collect V marks at sheet level (deduplicated by column name)
+  const sheetChainMap = new Map<string, VMarkEntry>();
 
   for (let r = dataStart; r < aoa.length; r++) {
     const row = aoa[r];
@@ -133,22 +151,35 @@ function parseSheet(
     const satuan = String(row[3] ?? "");
     const targetTotal = Number(row[4] ?? 0);
 
-    if (/^IKU\s*\d+/i.test(c0)) currentIKU = c0.replace(/\s+/g, " ");
+    if (/^(IKU|PK)\s*\d+/i.test(c0)) currentIKU = c0.replace(/\s+/g, " ");
     if (!c1) continue;
 
     const amounts: ParsedAmount[] = [];
-    for (let d = 0; d < dosenNames.length; d++) {
+    for (let d = 0; d < colNames.length; d++) {
       const raw = row[amtOffset + d];
-      if (raw === null || raw === "" || raw === false || raw === true) continue;
-      const amt = Number(raw);
-      if (!isNaN(amt) && amt > 0) amounts.push({ excelName: dosenNames[d], amount: amt });
+      const roleLabel = colRoles[d] ?? "";
+      const isPimpinan = hasRoleRow && /wakil dekan|kepala jurusan|koordinator prodi/i.test(roleLabel);
+
+      if (isPimpinan) {
+        // Collect V mark for cascade chain configuration
+        const val = String(raw ?? "").trim().toUpperCase();
+        if (val === "V") {
+          const colNama = colNames[d];
+          if (!sheetChainMap.has(colNama)) sheetChainMap.set(colNama, { roleLabel, colNama });
+        }
+      } else {
+        // Dosen column: numeric target amount
+        if (raw === null || raw === "" || raw === false || raw === true) continue;
+        const amt = Number(raw);
+        if (!isNaN(amt) && amt > 0) amounts.push({ excelName: colNames[d], amount: amt });
+      }
     }
     if (!amounts.length) continue;
 
-    const ikuCode = /^IKU\s*\d+/i.test(c0) ? c0.replace(/\s+/g, " ") : currentIKU || c0;
+    const ikuCode = /^(IKU|PK)\s*\d+/i.test(c0) ? c0.replace(/\s+/g, " ") : currentIKU || c0;
     entries.push({ ikuCode, subLabel: c1, satuan, targetTotal, amounts, sheetName });
   }
-  return entries;
+  return { entries, sheetChain: Array.from(sheetChainMap.values()) };
 }
 
 function matchIndicator(
@@ -257,6 +288,110 @@ async function executeCascade(
   return calls;
 }
 
+// ─── Unit user data (for template generation) ────────────────────────────────
+
+interface TplUser { nama: string; role: string; }
+
+const UNIT_DOSEN_TEMPLATE: { sheetName: string; users: TplUser[] }[] = [
+  {
+    sheetName: "S1 SI Fixed",
+    users: [
+      { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
+      { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
+      { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Kajur SI",                 role: "Kepala Jurusan"     },
+      { nama: "Anita Muliati",            role: "Koordinator Prodi"  },
+      { nama: "Dosen SI 1",               role: "Dosen"              },
+      { nama: "Dosen SI 2",               role: "Dosen"              },
+      { nama: "Susanto",                  role: "Dosen"              },
+      { nama: "Rio Wirawan",              role: "Dosen"              },
+      { nama: "Tjajanto",                 role: "Dosen"              },
+      { nama: "Bambang Tri Wahyono",      role: "Dosen"              },
+      { nama: "I Wayan Widi Pradnyana",   role: "Dosen"              },
+      { nama: "Kraugusteeliana",          role: "Dosen"              },
+      { nama: "Catur Nugrahaeni Puspita Dewi", role: "Dosen"         },
+      { nama: "Ria Astriratma",           role: "Dosen"              },
+      { nama: "Ruth Mariana Bunga Wadu",  role: "Dosen"              },
+      { nama: "Sarika",                   role: "Dosen"              },
+      { nama: "Artika Arista",            role: "Dosen"              },
+      { nama: "Ika Nurlaili",             role: "Dosen"              },
+      { nama: "Zatin Niqotaini",          role: "Dosen"              },
+      { nama: "Rifka Dwi Amalia",         role: "Dosen"              },
+      { nama: "Ade Hikma Tiana",          role: "Dosen"              },
+      { nama: "Mardiah",                  role: "Dosen"              },
+    ],
+  },
+  {
+    sheetName: "S1 IF Fixed",
+    users: [
+      { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
+      { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
+      { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Kajur IF",                 role: "Kepala Jurusan"     },
+      { nama: "Ridwan Raafiudin",         role: "Koordinator Prodi"  },
+      { nama: "Dosen IF 1",               role: "Dosen"              },
+      { nama: "Widya Cholil",             role: "Dosen"              },
+      { nama: "Radinal Setyadinsa",       role: "Dosen"              },
+      { nama: "Didit Widiyanto",          role: "Dosen"              },
+      { nama: "Jayanta",                  role: "Dosen"              },
+      { nama: "Henki Bayu Seta",          role: "Dosen"              },
+      { nama: "Indra Permana Solihin",    role: "Dosen"              },
+      { nama: "Noor Falih",               role: "Dosen"              },
+      { nama: "Ichsan Mardani",           role: "Dosen"              },
+      { nama: "Desta Sandya Prasvita",    role: "Dosen"              },
+      { nama: "Mayanda Mega Santoni",     role: "Dosen"              },
+      { nama: "Nurul Chamidah",           role: "Dosen"              },
+      { nama: "Bayu Hananto",             role: "Dosen"              },
+      { nama: "Hamonangan Kinantan Prabu",role: "Dosen"              },
+      { nama: "Neny Rosmawarni",          role: "Dosen"              },
+      { nama: "I Wayan Rangga Pinastawa", role: "Dosen"              },
+      { nama: "Kharisma Wiati Gusti",     role: "Dosen"              },
+      { nama: "Nurhuda Maulana",          role: "Dosen"              },
+      { nama: "Nurul Afifah Arifuddin",   role: "Dosen"              },
+      { nama: "Sanggi Bayu Ardika",       role: "Dosen"              },
+      { nama: "Anis Fitri Nur Masruiyah", role: "Dosen"              },
+      { nama: "Wildan Alrasyid",          role: "Dosen"              },
+    ],
+  },
+  {
+    sheetName: "D3 SI Fixed",
+    users: [
+      { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
+      { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
+      { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Andhika Octa Indarso",     role: "Koordinator Prodi"  },
+      { nama: "Rizky Tito Prasetyo",      role: "Dosen"              },
+      { nama: "Bobby Suryo Prakoso",      role: "Dosen"              },
+      { nama: "Budi Arif Dermawan",       role: "Dosen"              },
+      { nama: "Galih Prakoso Rizky",      role: "Dosen"              },
+      { nama: "Rasenda",                  role: "Dosen"              },
+      { nama: "Octanty Mulianingtyas",    role: "Dosen"              },
+      { nama: "Intan Hesti Indriana",     role: "Dosen"              },
+      { nama: "Iin Ernawati",             role: "Dosen"              },
+      { nama: "Theresia Wati",            role: "Dosen"              },
+      { nama: "Tri Rahayu",               role: "Dosen"              },
+      { nama: "Nur Hafifah Matondang",    role: "Dosen"              },
+      { nama: "Bayu Wibisono",            role: "Dosen"              },
+      { nama: "Helena Nurramdhani Irmanda", role: "Dosen"            },
+    ],
+  },
+  {
+    sheetName: "S1 SD Fixed",
+    users: [
+      { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
+      { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
+      { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Novi Trisman Hadi",        role: "Koordinator Prodi"  },
+      { nama: "Hengki Tamando Sihotang",  role: "Dosen"              },
+      { nama: "Musthofa Galih Pradana",   role: "Dosen"              },
+      { nama: "Muhammad Adrezo",          role: "Dosen"              },
+      { nama: "Nindy Irzavika",           role: "Dosen"              },
+      { nama: "Muhammad Panji Muslim",    role: "Dosen"              },
+      { nama: "Oktaviano",                role: "Dosen"              },
+    ],
+  },
+];
+
 // ─── Spinner ──────────────────────────────────────────────────────────────────
 
 function Spinner() {
@@ -298,10 +433,228 @@ export default function ImportTurunanModal({
   const [allUsers, setAllUsers] = useState<Map<number, UnitUser>>(new Map());
   const [doneStats, setDoneStats] = useState<DoneStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Role labels detected from V marks (e.g. ["Wadek / WD", "Kajur", "Kaprodi", "Dosen"])
+  const [vChainLabels, setVChainLabels] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Data refs for cascade chain building (populated in handleFile, consumed in handleImport)
+  const allRolesRef = useRef<any[]>([]);
+  const nameIndexRef = useRef<Map<string, UnitUser>>(new Map());
+  const userIdToRoleIdsRef = useRef<Map<number, number[]>>(new Map());
+  const sheetChainsRef = useRef<Map<string, VMarkEntry[]>>(new Map());
+  // Maps matched indicator ID (L2/L3) → parent L1 indicator ID (for cascade chain saving)
+  const childToL1Ref = useRef<Map<number, number>>(new Map());
+
   function reset() {
-    setStep("upload"); setMatched([]); setCascadePreviews([]); setDoneStats(null); setError(null);
+    setStep("upload"); setMatched([]); setCascadePreviews([]); setDoneStats(null); setError(null); setVChainLabels([]);
+  }
+
+  // ── Download Template ─────────────────────────────────────────────────────
+
+  async function handleDownloadTemplate() {
+    setLoading(true);
+    try {
+      const [ikuGrouped, pkGrouped] = await Promise.all([
+        getIndikatorGrouped("IKU", tahun).catch(() => [] as IndikatorGrouped[]),
+        getIndikatorGrouped("PK", tahun).catch(() => [] as IndikatorGrouped[]),
+      ]);
+
+      const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+      const FIXED_COLS = 6; // Kode | Nama | Dokumen | Satuan | Target | Target Min
+
+      // ── Style definitions ──────────────────────────────────────────────────
+      const border = {
+        top:    { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left:   { style: "thin", color: { rgb: "000000" } },
+        right:  { style: "thin", color: { rgb: "000000" } },
+      };
+      const hdrStyle = {
+        font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+        fill: { fgColor: { rgb: "1D4ED8" }, patternType: "solid" },
+        alignment: { horizontal: "center" as const, vertical: "center" as const, wrapText: true },
+        border,
+      };
+      const roleStyle = {
+        font: { bold: true, color: { rgb: "1F2937" }, sz: 10 },
+        fill: { fgColor: { rgb: "BFDBFE" }, patternType: "solid" },
+        alignment: { horizontal: "center" as const, vertical: "center" as const, wrapText: true },
+        border,
+      };
+      const ikuL0Style = {
+        font: { bold: true, color: { rgb: "1E3A8A" }, sz: 10 },
+        fill: { fgColor: { rgb: "DBEAFE" }, patternType: "solid" },
+        border,
+      };
+      const ikuL1Style = {
+        font: { bold: true, color: { rgb: "1F2937" }, sz: 10 },
+        fill: { fgColor: { rgb: "F0F9FF" }, patternType: "solid" },
+        border,
+      };
+      const pkL1Style = {
+        font: { bold: true, color: { rgb: "4C1D95" }, sz: 10 },
+        fill: { fgColor: { rgb: "EDE9FE" }, patternType: "solid" },
+        border,
+      };
+      const pkL2Style = {
+        font: { italic: true, color: { rgb: "374151" }, sz: 10 },
+        fill: { fgColor: { rgb: "F5F3FF" }, patternType: "solid" },
+        border,
+      };
+      const leafStyle = { font: { sz: 10 }, border };
+      const emptyStyle = { border };
+
+      function applyRowStyle(ws: XLSX.WorkSheet, rowIdx: number, totalCols: number, style: object) {
+        for (let c = 0; c < totalCols; c++) {
+          const addr = XLSX.utils.encode_cell({ r: rowIdx, c });
+          if (!ws[addr]) ws[addr] = { v: "", t: "s" };
+          (ws[addr] as any).s = style;
+        }
+      }
+
+      function applyRangeStyle(ws: XLSX.WorkSheet, rowIdx: number, totalCols: number, fixedStyle: object, userStyle: object) {
+        for (let c = 0; c < totalCols; c++) {
+          const addr = XLSX.utils.encode_cell({ r: rowIdx, c });
+          if (!ws[addr]) ws[addr] = { v: "", t: "s" };
+          (ws[addr] as any).s = c < FIXED_COLS ? fixedStyle : userStyle;
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+
+      for (const { sheetName, users } of UNIT_DOSEN_TEMPLATE) {
+        const totalCols = FIXED_COLS + users.length;
+        const E = () => users.map(() => "");
+
+        // ── Build rows ────────────────────────────────────────────────────────
+        // Row 0: header (name labels)
+        // Row 1: role sub-header
+        // Row 2+: data
+
+        const rows: (string | number)[][] = [];
+
+        // Row 0 — column headers
+        rows.push([
+          "Kode", "Indikator Kinerja Kegiatan", "Dokumen", "Satuan",
+          "Target", "Target Prodi Min",
+          ...users.map((u) => u.nama),
+        ]);
+
+        // Row 1 — role labels
+        rows.push(["", "", "", "", "", "", ...users.map((u) => u.role)]);
+
+        // Track which row index each data row lands on
+        const rowMeta: { type: "ikuL0"|"ikuL1"|"pkL1"|"pkL2"|"leaf"|"blank" }[] = [];
+        rowMeta.push({ type: "blank" }); // row 0 placeholder (header)
+        rowMeta.push({ type: "blank" }); // row 1 placeholder (role)
+
+        // ── IKU data ─────────────────────────────────────────────────────────
+        for (const l0 of ikuGrouped) {
+          rows.push([`IKU ${l0.kode}`, l0.nama, "", "", "", "", ...E()]);
+          rowMeta.push({ type: "ikuL0" });
+
+          for (const l1 of l0.subIndikators) {
+            rows.push(["", l1.nama, "", "", l1.nilaiTarget ?? "", "", ...E()]);
+            rowMeta.push({ type: "ikuL1" });
+
+            let li = 0;
+            for (const l2 of l1.children) {
+              if (l2.children.length > 0) {
+                for (const l3 of l2.children) {
+                  rows.push(["", `${LETTERS[li++] ?? "?"}. ${l3.nama}`, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
+                  rowMeta.push({ type: "leaf" });
+                }
+              } else {
+                rows.push(["", `${LETTERS[li++] ?? "?"}. ${l2.nama}`, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
+                rowMeta.push({ type: "leaf" });
+              }
+            }
+          }
+          // blank spacer between IKU groups
+          rows.push(Array(totalCols).fill(""));
+          rowMeta.push({ type: "blank" });
+        }
+
+        // blank separator before PK
+        rows.push(Array(totalCols).fill(""));
+        rowMeta.push({ type: "blank" });
+
+        // ── PK data ───────────────────────────────────────────────────────────
+        for (const l0 of pkGrouped) {
+          let isFirstL1 = true;
+          for (const l1 of l0.subIndikators) {
+            rows.push([isFirstL1 ? `PK ${l0.kode}` : "", l1.nama, "", "", "", "", ...E()]);
+            rowMeta.push({ type: "pkL1" });
+            isFirstL1 = false;
+
+            for (const l2 of l1.children) {
+              rows.push(["", `  ${l2.nama}`, "", "", "", "", ...E()]);
+              rowMeta.push({ type: "pkL2" });
+
+              let li = 0;
+              if (l2.children.length > 0) {
+                for (const l3 of l2.children) {
+                  rows.push(["", `    ${LETTERS[li++] ?? "?"}. ${l3.nama}`, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
+                  rowMeta.push({ type: "leaf" });
+                }
+              } else {
+                rows.push(["", `    ${LETTERS[li++] ?? "?"}. ${l2.nama}`, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
+                rowMeta.push({ type: "leaf" });
+              }
+            }
+          }
+          rows.push(Array(totalCols).fill(""));
+          rowMeta.push({ type: "blank" });
+        }
+
+        // ── Create worksheet ──────────────────────────────────────────────────
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // ── Apply styles row by row ───────────────────────────────────────────
+        for (let ri = 0; ri < rowMeta.length; ri++) {
+          const { type } = rowMeta[ri];
+          if (type === "blank") continue;
+
+          if (ri === 0) {
+            applyRowStyle(ws, ri, totalCols, hdrStyle);
+          } else if (ri === 1) {
+            // role row: fixed cols get hdrStyle, user cols get roleStyle
+            applyRangeStyle(ws, ri, totalCols, hdrStyle, roleStyle);
+          } else if (type === "ikuL0") {
+            applyRowStyle(ws, ri, totalCols, ikuL0Style);
+          } else if (type === "ikuL1") {
+            applyRowStyle(ws, ri, totalCols, ikuL1Style);
+          } else if (type === "pkL1") {
+            applyRowStyle(ws, ri, totalCols, pkL1Style);
+          } else if (type === "pkL2") {
+            applyRowStyle(ws, ri, totalCols, pkL2Style);
+          } else if (type === "leaf") {
+            // fixed cols: leaf style; user cols: empty with border
+            for (let c = 0; c < totalCols; c++) {
+              const addr = XLSX.utils.encode_cell({ r: ri, c });
+              if (!ws[addr]) ws[addr] = { v: "", t: "s" };
+              (ws[addr] as any).s = c < FIXED_COLS ? leafStyle : emptyStyle;
+            }
+          }
+        }
+
+        // ── Row heights & col widths ──────────────────────────────────────────
+        ws["!rows"] = [{ hpt: 36 }, { hpt: 28 }]; // header rows taller
+        ws["!cols"] = [
+          { wch: 10 }, { wch: 60 }, { wch: 10 }, { wch: 14 },
+          { wch: 10 }, { wch: 16 },
+          ...users.map(() => ({ wch: 22 })),
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+
+      XLSX.writeFile(wb, `template-cascade-${tahun}.xlsx`);
+    } catch (e: any) {
+      toast.error("Gagal generate template: " + (e?.message ?? "error"));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // ── Parse + Match ─────────────────────────────────────────────────────────
@@ -315,13 +668,16 @@ export default function ImportTurunanModal({
 
       // Only process Fixed sheets
       const allEntries: ParsedEntry[] = [];
+      const sheetChains = new Map<string, VMarkEntry[]>();
       for (const sheetName of wb.SheetNames) {
         if (!/fixed/i.test(sheetName)) continue;
         const ws = wb.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(ws, {
           header: 1, defval: null, raw: true,
         });
-        allEntries.push(...parseSheet(aoa, sheetName));
+        const { entries, sheetChain } = parseSheet(aoa, sheetName);
+        allEntries.push(...entries);
+        if (sheetChain.length > 0) sheetChains.set(sheetName, sheetChain);
       }
 
       if (!allEntries.length) {
@@ -339,18 +695,57 @@ export default function ImportTurunanModal({
       // Build user map (userId → full UnitUser including atasanId)
       const userMap = new Map<number, UnitUser>();
       const nameIndex = new Map<string, UnitUser>();
+      // Track which role IDs each user was fetched under (for cascade chain role lookup)
+      const userIdToRoleIds = new Map<number, number[]>();
       const perRoleUsers = await Promise.all(
         allRoles.map((r: any) => getUsersByRole(r.id).catch(() => [])),
       );
-      for (const users of perRoleUsers) {
-        for (const u of users) {
+      for (let ri = 0; ri < allRoles.length; ri++) {
+        for (const u of perRoleUsers[ri]) {
           if (!userMap.has(u.id)) {
             userMap.set(u.id, u);
             const norm = normalizeName(u.nama);
             if (norm && !nameIndex.has(norm)) nameIndex.set(norm, u);
           }
+          // Record all role IDs for this user
+          if (!userIdToRoleIds.has(u.id)) userIdToRoleIds.set(u.id, []);
+          const rids = userIdToRoleIds.get(u.id)!;
+          if (!rids.includes(allRoles[ri].id)) rids.push(allRoles[ri].id);
         }
       }
+
+      // Build childId (L2/L3) → L1 indicator ID map for cascade chain saving
+      const childToL1 = new Map<number, number>();
+      for (const l0 of [...ikuGrouped, ...pkGrouped]) {
+        for (const l1 of l0.subIndikators) {
+          childToL1.set(l1.id, l1.id);
+          for (const l2 of l1.children) {
+            childToL1.set(l2.id, l1.id);
+            for (const l3 of (l2 as any).children ?? []) {
+              childToL1.set(l3.id, l1.id);
+            }
+          }
+        }
+      }
+
+      // Store in refs for use in handleImport
+      allRolesRef.current = allRoles;
+      nameIndexRef.current = nameIndex;
+      userIdToRoleIdsRef.current = userIdToRoleIds;
+      sheetChainsRef.current = sheetChains;
+      childToL1Ref.current = childToL1;
+
+      // Build display labels from V marks (for "Alur terdeteksi" badge in preview)
+      const chainLabels: string[] = [];
+      for (const vMarks of sheetChains.values()) {
+        if (!vMarks.length) continue;
+        if (vMarks.some((v) => /wakil dekan/i.test(v.roleLabel))) chainLabels.push("Wadek / WD");
+        if (vMarks.some((v) => /kepala jurusan/i.test(v.roleLabel))) chainLabels.push("Kajur");
+        if (vMarks.some((v) => /koordinator prodi/i.test(v.roleLabel))) chainLabels.push("Kaprodi");
+        chainLabels.push("Dosen");
+        break; // use first sheet with V marks as representative
+      }
+      setVChainLabels(chainLabels);
 
       function findUser(excelName: string): UnitUser | null {
         const norm = normalizeName(excelName);
@@ -412,6 +807,7 @@ export default function ImportTurunanModal({
       }
       console.log("[ImportTurunan] Sample users:", Array.from(userMap.values()).slice(0, 5).map((u) => ({ id: u.id, nama: u.nama, role: u.role, atasanId: u.atasanId })));
       console.log("[ImportTurunan] Cascade previews:", previews.map((p) => ({ kode: p.indicatorKode, label: p.subLabel, levels: p.levels.length, maxDepth: p.levels.reduce((m, l) => Math.max(m, l.depth), 0) })));
+      console.log("[ImportTurunan] V-mark chains detected:", Object.fromEntries(Array.from(sheetChains.entries()).map(([s, v]) => [s, v.map((x) => `${x.colNama} (${x.roleLabel})`)])));
 
       setMatched(matchedEntries);
       setCascadePreviews(previews);
@@ -429,10 +825,96 @@ export default function ImportTurunanModal({
   async function handleImport() {
     setStep("importing");
     setLoading(true);
-    let indicatorsOk = 0, cascadeCalls = 0, skippedInd = 0, skippedUser = 0, maxDepth = 0;
+    let indicatorsOk = 0, cascadeCalls = 0, skippedInd = 0, skippedUser = 0, maxDepth = 0, chainsSaved = 0;
     try {
+      // Helpers for cascade chain building (use refs populated in handleFile)
+      const localRoles = allRolesRef.current;
+      const localNameIndex = nameIndexRef.current;
+      const localUserRoleIds = userIdToRoleIdsRef.current;
+      const localSheetChains = sheetChainsRef.current;
+      const localChildToL1 = childToL1Ref.current;
+
+      function findUserLocal(excelName: string): UnitUser | null {
+        const norm = normalizeName(excelName);
+        if (!norm) return null;
+        const exact = localNameIndex.get(norm);
+        if (exact) return exact;
+        let best: UnitUser | null = null;
+        let bestScore = 999;
+        for (const [dbNorm, u] of localNameIndex.entries()) {
+          if (dbNorm.includes(norm) || norm.includes(dbNorm)) {
+            const diff = Math.abs(dbNorm.length - norm.length);
+            if (diff < bestScore) { bestScore = diff; best = u; }
+          }
+        }
+        return bestScore <= 8 ? best : null;
+      }
+
+      function findRoleIdForUser(userId: number, roleLabel: string): number | null {
+        const roleIds = localUserRoleIds.get(userId) ?? [];
+        // Prefer exact role name match for this user
+        for (const rId of roleIds) {
+          const role = localRoles.find((r: any) => r.id === rId);
+          if (role && role.name.toLowerCase() === roleLabel.toLowerCase()) return rId;
+        }
+        // Fallback: any non-dosen role for this user
+        for (const rId of roleIds) {
+          const role = localRoles.find((r: any) => r.id === rId);
+          if (role && !/dosen/i.test(role.name)) return rId;
+        }
+        // Last fallback: find by role name alone (might be wrong unit)
+        const byName = localRoles.find((r: any) => r.name.toLowerCase() === roleLabel.toLowerCase());
+        return byName?.id ?? null;
+      }
+
+      function buildChainFromVMarks(vMarks: VMarkEntry[]): (number | number[])[] {
+        const wdRoleIds: number[] = [];
+        let kajurRoleId: number | null = null;
+        let kaprodiRoleId: number | null = null;
+
+        for (const { roleLabel, colNama } of vMarks) {
+          const user = findUserLocal(colNama);
+          const roleId = user ? findRoleIdForUser(user.id, roleLabel) : null;
+          if (!roleId) continue;
+
+          if (/wakil dekan/i.test(roleLabel)) {
+            if (!wdRoleIds.includes(roleId)) wdRoleIds.push(roleId);
+          } else if (/kepala jurusan/i.test(roleLabel)) {
+            kajurRoleId = roleId;
+          } else if (/koordinator prodi/i.test(roleLabel)) {
+            kaprodiRoleId = roleId;
+          }
+        }
+
+        const chain: (number | number[])[] = [];
+        if (wdRoleIds.length === 1) chain.push(wdRoleIds[0]);
+        else if (wdRoleIds.length > 1) chain.push(wdRoleIds);
+        if (kajurRoleId !== null) chain.push(kajurRoleId);
+        if (kaprodiRoleId !== null) chain.push(kaprodiRoleId);
+        return chain;
+      }
+
+      // Track which L1 indicators have already had their cascade chain saved
+      const l1ChainSaved = new Set<number>();
+
       for (const me of matched) {
         if (!me.indicatorId) { skippedInd++; continue; }
+
+        // Save cascade chain to the parent L1 indicator (once per L1, first sheet wins)
+        const l1Id = localChildToL1.get(me.indicatorId) ?? null;
+        if (l1Id && !l1ChainSaved.has(l1Id)) {
+          const vMarks = localSheetChains.get(me.sheetName) ?? [];
+          if (vMarks.length > 0) {
+            const chain = buildChainFromVMarks(vMarks);
+            if (chain.length > 0) {
+              await saveIndikatorCascadeChain(l1Id, chain, tahun, true);
+              l1ChainSaved.add(l1Id);
+              chainsSaved++;
+            }
+          }
+        }
+
+        // Create cascade disposisi from dosen amounts (via atasanId rollup)
         const leaf = me.amounts
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
@@ -445,9 +927,11 @@ export default function ImportTurunanModal({
         maxDepth = Math.max(maxDepth, levels.reduce((m, l) => Math.max(m, l.depth), 0));
         indicatorsOk++;
       }
-      setDoneStats({ indicators: indicatorsOk, cascadeCalls, skippedInd, skippedUser, maxDepth });
+
+      setDoneStats({ indicators: indicatorsOk, cascadeCalls, skippedInd, skippedUser, maxDepth, chainsSaved });
       setStep("done");
-      toast.success(`${indicatorsOk} indikator berhasil dikaskade ke ${maxDepth + 1} level jabatan.`);
+      const chainMsg = chainsSaved > 0 ? ` · ${chainsSaved} alur indikator disimpan` : "";
+      toast.success(`${indicatorsOk} indikator berhasil dikaskade ke ${maxDepth + 1} level jabatan${chainMsg}.`);
     } catch (e: any) {
       toast.error("Import gagal: " + (e?.message ?? "error"));
       setStep("preview");
@@ -502,11 +986,13 @@ export default function ImportTurunanModal({
               <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 16px", fontSize: 12, lineHeight: 1.8 }}>
                 <div style={{ fontWeight: 700, color: "#374151", marginBottom: 6 }}>Cara kerja</div>
                 {[
-                  ["1", "Baca sheet Fixed (S1 SI Fixed, SI IF FIxed, S1 SD Fixed, D3 SI Fixed)"],
-                  ["2", "Cocokkan nama dosen di Excel → user di database"],
-                  ["3", "Cocokkan kode IKU → indikator di database"],
-                  ["4", "Hitung target tiap level via atasanId: Kaprodi = Σ dosen, Kajur = Σ Kaprodi, dst."],
-                  ["5", "Buat disposisi serentak di semua level jenjang"],
+                  ["1", "Baca sheet Fixed (S1 SI Fixed, S1 IF Fixed, S1 SD Fixed, D3 SI Fixed)"],
+                  ["2", "Baca tanda V di kolom Wadek/Kajur/Kaprodi → tentukan alur cascade indikator"],
+                  ["3", "Cocokkan nama dosen di Excel → user di database"],
+                  ["4", "Cocokkan kode IKU/PK → indikator di database"],
+                  ["5", "Simpan konfigurasi alur ke halaman Alur Indikator"],
+                  ["6", "Hitung target tiap level via atasanId: Kaprodi = Σ dosen, Kajur = Σ Kaprodi, dst."],
+                  ["7", "Buat disposisi serentak di semua level jenjang"],
                 ].map(([n, t]) => (
                   <div key={n} style={{ display: "flex", gap: 10, color: "#6b7280" }}>
                     <span style={{ minWidth: 18, height: 18, borderRadius: "50%", background: "#e5e7eb", color: "#374151", fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
@@ -519,6 +1005,22 @@ export default function ImportTurunanModal({
               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#1e40af", marginRight: 4 }}>Alur:</span>
                 <CascadeFlowBadge maxDepth={3} />
+              </div>
+
+              {/* Download template */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#14532d" }}>Belum punya template?</div>
+                  <div style={{ fontSize: 11, color: "#166534", marginTop: 2 }}>Download template Excel dengan format yang benar (IKU + PK, 4 sheet prodi)</div>
+                </div>
+                <button
+                  onClick={handleDownloadTemplate}
+                  disabled={loading}
+                  style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: loading ? "#d1d5db" : "#16a34a", color: "#fff", fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+                >
+                  {loading ? <Spinner /> : null}
+                  Download Template
+                </button>
               </div>
 
               {/* Drop zone */}
@@ -557,10 +1059,25 @@ export default function ImportTurunanModal({
           {(step === "preview" || step === "importing") && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* Cascade flow detected */}
+              {/* Cascade flow detected — from V marks if present, else from atasanId depth */}
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", flexShrink: 0 }}>Alur terdeteksi:</span>
-                <CascadeFlowBadge maxDepth={maxCascadeDepth} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", flexShrink: 0 }}>
+                  Alur terdeteksi{vChainLabels.length > 0 ? " (dari tanda V)" : ""}:
+                </span>
+                {vChainLabels.length > 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    {vChainLabels.map((label, i) => (
+                      <span key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, border: "1px solid", background: i === 0 ? "#dbeafe" : i === vChainLabels.length - 1 ? "#dcfce7" : "#f3f4f6", color: i === 0 ? "#1e40af" : i === vChainLabels.length - 1 ? "#166534" : "#374151", borderColor: i === 0 ? "#bfdbfe" : i === vChainLabels.length - 1 ? "#bbf7d0" : "#e5e7eb" }}>
+                          {label}
+                        </span>
+                        {i < vChainLabels.length - 1 && <span style={{ color: "#9ca3af", fontSize: 13 }}>→</span>}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <CascadeFlowBadge maxDepth={maxCascadeDepth} />
+                )}
               </div>
 
               {/* Stats */}
@@ -683,14 +1200,30 @@ export default function ImportTurunanModal({
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#16a34a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, boxShadow: "0 3px 10px rgba(22,163,74,0.3)" }}>✓</div>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#14532d" }}>Import cascade berhasil!</div>
-                  <div style={{ fontSize: 12, color: "#166534", marginTop: 2 }}>Disposisi dibuat di {doneStats.maxDepth + 1} level jenjang · Tahun {tahun}</div>
+                  <div style={{ fontSize: 12, color: "#166534", marginTop: 2 }}>
+                    Disposisi dibuat di {doneStats.maxDepth + 1} level jenjang · Tahun {tahun}
+                    {doneStats.chainsSaved > 0 ? ` · ${doneStats.chainsSaved} alur indikator tersimpan` : ""}
+                  </div>
                 </div>
               </div>
 
               {/* Cascade flow result */}
               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", marginRight: 4 }}>Alur dibuat:</span>
-                <CascadeFlowBadge maxDepth={doneStats.maxDepth} />
+                {vChainLabels.length > 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    {vChainLabels.map((label, i) => (
+                      <span key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, border: "1px solid", background: i === 0 ? "#dbeafe" : i === vChainLabels.length - 1 ? "#dcfce7" : "#f3f4f6", color: i === 0 ? "#1e40af" : i === vChainLabels.length - 1 ? "#166534" : "#374151", borderColor: i === 0 ? "#bfdbfe" : i === vChainLabels.length - 1 ? "#bbf7d0" : "#e5e7eb" }}>
+                          {label}
+                        </span>
+                        {i < vChainLabels.length - 1 && <span style={{ color: "#9ca3af", fontSize: 13 }}>→</span>}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <CascadeFlowBadge maxDepth={doneStats.maxDepth} />
+                )}
               </div>
 
               {/* Stats */}
@@ -699,6 +1232,7 @@ export default function ImportTurunanModal({
                   { v: doneStats.indicators, label: "Indikator", bg: "#eff6ff", border: "#bfdbfe", col: "#1e3a8a" },
                   { v: doneStats.cascadeCalls, label: "Disposisi Dibuat", bg: "#f5f3ff", border: "#ddd6fe", col: "#5b21b6" },
                   { v: doneStats.maxDepth + 1, label: "Level Jenjang", bg: "#f0fdf4", border: "#bbf7d0", col: "#14532d" },
+                  ...(doneStats.chainsSaved > 0 ? [{ v: doneStats.chainsSaved, label: "Alur Disimpan", bg: "#ecfdf5", border: "#6ee7b7", col: "#065f46" }] : []),
                   ...(doneStats.skippedInd > 0 ? [{ v: doneStats.skippedInd, label: "Ind. Skip", bg: "#fef2f2", border: "#fecaca", col: "#dc2626" }] : []),
                   ...(doneStats.skippedUser > 0 ? [{ v: doneStats.skippedUser, label: "Dosen Skip", bg: "#fffbeb", border: "#fde68a", col: "#92400e" }] : []),
                 ].map(({ v, label, bg, border, col }) => (

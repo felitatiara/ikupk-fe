@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   LayoutDashboard,
   LucideIcon,
+  PieChart,
   Sparkles,
   Target,
   UsersRound,
@@ -64,6 +65,7 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
       { key: "realisasi_biro_pku", label: "Verifikasi Biro PKU", href: "/admin/realisasi-biro-pku", icon: ClipboardCheck },
       ...(isAdminRole ? [
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator", icon: Target },
+        { key: "monitoring_target", label: "Monitoring Target", href: "/admin/monitoring-target", icon: PieChart },
         { key: "master_user", label: "Master User", href: "/admin/master-user", icon: UsersRound },
         { key: "master_data", label: "Master Data", href: "/admin/master-data", icon: Database },
       ] : []),

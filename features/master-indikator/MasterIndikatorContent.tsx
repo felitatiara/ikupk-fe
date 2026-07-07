@@ -1133,7 +1133,7 @@ export default function MasterIndikatorContent() {
               setImportModalOpen(true);
             }}
             style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #0284c7", background: "#f0f9ff", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#0369a1" }}>
-            Import Excel
+            Import Indikator
           </button>
           <button onClick={() => { window.location.href = "/admin/master-indikator/tambah"; }}
             style={{
