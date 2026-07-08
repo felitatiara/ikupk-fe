@@ -68,6 +68,7 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
         { key: "monitoring_target", label: "Monitoring Target", href: "/admin/monitoring-target", icon: PieChart },
         { key: "master_user", label: "Master User", href: "/admin/master-user", icon: UsersRound },
         { key: "master_data", label: "Master Data", href: "/admin/master-data", icon: Database },
+        { key: "master_skp", label: "Master SKP", href: "/admin/master-skp", icon: FileSpreadsheet },
       ] : []),
     ];
   };

@@ -1244,6 +1244,7 @@ export interface MySkpStatus {
   status: 'approved' | 'rejected' | 'pending';
   realisasi: SkpBawahanRealisasiRow[];
   atasan: { nama: string; nip: string | null } | null;
+  atasanPenilai: { nama: string; nip: string | null } | null;
 }
 
 /** Status SKP milik sendiri: status aggregate + daftar realisasi + info atasan */
@@ -1252,10 +1253,10 @@ export async function getMySkpStatus(userId: number, tahun: string): Promise<MyS
     const res = await fetch(
       `${API_BASE_URL}/realisasi/my-skp?userId=${userId}&tahun=${encodeURIComponent(tahun)}`,
     );
-    if (!res.ok) return { status: 'pending', realisasi: [], atasan: null };
+    if (!res.ok) return { status: 'pending', realisasi: [], atasan: null, atasanPenilai: null };
     return res.json();
   } catch {
-    return { status: 'pending', realisasi: [], atasan: null };
+    return { status: 'pending', realisasi: [], atasan: null, atasanPenilai: null };
   }
 }
 
@@ -1467,4 +1468,170 @@ export async function getMonitoringScope(
   const res = await fetch(`${API_BASE_URL}/monitoring/scope?${params}`);
   if (!res.ok) return [];
   return res.json();
+}
+
+// ── SKP Penilai Config ────────────────────────────────────────────────────────
+
+export interface SkpPenilaiConfigRow {
+  id: number;
+  roleId: number;
+  roleName: string;
+  roleLevel: number;
+  unitNama: string;
+  // Rencana SKP
+  pihakKeduaUserId: number | null;
+  pihakKeduaNama: string | null;
+  // EKP
+  penilaiUserId: number | null;
+  penilaiNama: string | null;
+  penilaiNip: string | null;
+}
+
+export interface SkpPenilaiRole {
+  id: number;
+  name: string;
+  unitNama: string;
+  level: number;
+}
+
+export interface SkpPenilaiUser {
+  id: number;
+  nama: string;
+  nip: string | null;
+  jabatan: string;
+}
+
+export async function getSkpPenilaiConfigs(): Promise<SkpPenilaiConfigRow[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-penilai`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function getSkpPenilaiRoles(): Promise<SkpPenilaiRole[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-penilai/roles`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function getSkpPenilaiUsers(): Promise<SkpPenilaiUser[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-penilai/users`);
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertSkpPenilai(
+  roleId: number,
+  body: { pihakKeduaUserId?: number | null; penilaiUserId?: number | null },
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/skp-penilai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roleId, ...body }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan konfigurasi penilai');
+}
+
+export async function deleteSkpPenilai(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/skp-penilai/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Gagal menghapus konfigurasi penilai');
+}
+
+export interface SkpCheckerUser {
+  userId: number;
+  nama: string;
+  nip: string | null;
+  email: string;
+  jabatan: string;
+  roleId: number;
+  skpStatus: string;
+  rencanaStatus?: string;
+}
+
+// ── Rencana SKP Signature Status ─────────────────────────────────────────────
+
+export interface SkpRencanaStatusData {
+  userId: number;
+  tahun: string;
+  status: 'draft' | 'signed_pegawai' | 'signed_pihak_kedua';
+  signaturePegawai: string | null;
+  signaturePihakKedua: string | null;
+  signedAtPegawai: string | null;
+  signedAtPihakKedua: string | null;
+}
+
+export async function getSkpRencanaStatus(userId: number, tahun: string): Promise<SkpRencanaStatusData> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-rencana/status?userId=${userId}&tahun=${encodeURIComponent(tahun)}`);
+    if (!res.ok) return { userId, tahun, status: 'draft', signaturePegawai: null, signaturePihakKedua: null, signedAtPegawai: null, signedAtPihakKedua: null };
+    return res.json();
+  } catch {
+    return { userId, tahun, status: 'draft', signaturePegawai: null, signaturePihakKedua: null, signedAtPegawai: null, signedAtPihakKedua: null };
+  }
+}
+
+export async function signRencanaSKPPegawai(userId: number, tahun: string, signature: string | null): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/sign-pegawai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, tahun, signature }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan tanda tangan');
+  return res.json();
+}
+
+export async function setujuRencanaSKPPegawai(userId: number, tahun: string): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/setuju-pegawai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal menyetujui Rencana SKP');
+  return res.json();
+}
+
+export async function validasiRencanaSKPAtasan(targetUserId: number, tahun: string): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/validasi-atasan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId, tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal memvalidasi Rencana SKP');
+  return res.json();
+}
+
+export async function signRencanaSKPPihakKedua(targetUserId: number, tahun: string, signature: string | null): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/sign-pihak-kedua`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId, tahun, signature }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan tanda tangan Pihak Kedua');
+  return res.json();
+}
+
+export interface SkpCheckerBawahan {
+  rencanaSKPBawahan: SkpCheckerUser[];
+  ekpBawahan: SkpCheckerUser[];
+}
+
+export async function getSkpCheckerBawahan(userId: number, tahun: string): Promise<SkpCheckerBawahan> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-penilai/checker/${userId}?tahun=${encodeURIComponent(tahun)}`);
+    if (!res.ok) return { rencanaSKPBawahan: [], ekpBawahan: [] };
+    return res.json();
+  } catch {
+    return { rencanaSKPBawahan: [], ekpBawahan: [] };
+  }
 }

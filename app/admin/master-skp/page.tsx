@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import MasterSKPContent from "@/features/SKP/masterSKP";
 
 export default function AdminMasterSKPPage() {
-  redirect('/admin/dashboard');
+  return <MasterSKPContent role="admin" />;
 }

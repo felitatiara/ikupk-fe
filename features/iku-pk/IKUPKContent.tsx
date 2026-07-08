@@ -466,12 +466,17 @@ const [tahun, setTahun] = useState("2026");
             if (emails.length > 0) {
               allowedEmails = new Set(emails);
             } else {
-              // toUser.email not returned — fallback to UserRelation
+              // toUser.email not populated — fallback to org relations
               const bawahanUsers = await getRelatedUsersFor(authUser.id);
-              if (bawahanUsers.length > 0) {
-                allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
-              }
+              allowedEmails = new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean));
             }
+          } else {
+            // No disposisi set for this indicator: fall back to org bawahan.
+            // Empty set prevents showing all-user files (which would happen with undefined).
+            const bawahanUsers = await getRelatedUsersFor(authUser.id);
+            allowedEmails = bawahanUsers.length > 0
+              ? new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean))
+              : new Set<string>();
           }
           // Dekan/WD (roleLevel <= 1): allowedEmails undefined → tampilkan semua
         } catch {
@@ -492,6 +497,12 @@ const [tahun, setTahun] = useState("2026");
           allowedEmails = new Set(emails);
         }
       } catch { }
+    }
+
+    // Include atasan's own files in the "Lihat Progress" view so their own
+    // contribution is counted in capaian and shown as a separate row.
+    if (showAtasanView && allowedEmails !== undefined && authUser?.email) {
+      allowedEmails.add(authUser.email.toLowerCase());
     }
 
     // Hanya Dekan/WD (roleLevel <= 1) tanpa disposisi terkirim yang melihat semua file.
@@ -856,22 +867,42 @@ const [tahun, setTahun] = useState("2026");
                   {fileRepoIsAtasan ? (
                     <>
                       {/* Stats bar */}
-                      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                        <div style={{ flex: 1, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px' }}>
-                          <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Total File</div>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: fileRepoFiles.length > 0 ? '#16a34a' : '#9ca3af' }}>{fileRepoFiles.length}</div>
-                        </div>
-                        <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
-                          <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Pengumpul</div>
-                          <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName)).size}</div>
-                        </div>
-                        {fileRepoTarget > 0 && (
-                          <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
-                            <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Target</div>
-                            <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{fileRepoTarget}</div>
+                      {(() => {
+                        const capaianPct = fileRepoTarget > 0 ? Math.round((fileRepoFiles.length / fileRepoTarget) * 100) : 0;
+                        const capaianColor = capaianPct >= 100 ? '#16a34a' : capaianPct >= 50 ? '#d97706' : capaianPct > 0 ? '#ea580c' : '#9ca3af';
+                        const capaianBg = capaianPct >= 100 ? '#f0fdf4' : capaianPct >= 50 ? '#fffbeb' : capaianPct > 0 ? '#fff7ed' : '#f9fafb';
+                        const capaianBorder = capaianPct >= 100 ? '#bbf7d0' : capaianPct >= 50 ? '#fde68a' : capaianPct > 0 ? '#fed7aa' : '#e5e7eb';
+                        return (
+                          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                            <div style={{ flex: 1, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px' }}>
+                              <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Total File</div>
+                              <div style={{ fontSize: 20, fontWeight: 700, color: fileRepoFiles.length > 0 ? '#16a34a' : '#9ca3af' }}>{fileRepoFiles.length}</div>
+                            </div>
+                            <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
+                              <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Pengumpul</div>
+                              <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName)).size}</div>
+                            </div>
+                            {fileRepoTarget > 0 && (
+                              <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px' }}>
+                                <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Target</div>
+                                <div style={{ fontSize: 20, fontWeight: 700, color: '#374151' }}>{fileRepoTarget}</div>
+                              </div>
+                            )}
+                            {fileRepoTarget > 0 && (
+                              <div style={{ flex: 1, background: capaianBg, border: `1px solid ${capaianBorder}`, borderRadius: 10, padding: '10px 14px' }}>
+                                <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 500, marginBottom: 2 }}>Capaian Anda</div>
+                                <div style={{ fontSize: 20, fontWeight: 700, color: capaianColor }}>{capaianPct}%</div>
+                                <div style={{ marginTop: 4 }}>
+                                  <div style={{ height: 4, background: '#e5e7eb', borderRadius: 99, overflow: 'hidden' }}>
+                                    <div style={{ width: `${Math.min(100, capaianPct)}%`, height: '100%', background: capaianColor, borderRadius: 99, transition: 'width 0.4s' }} />
+                                  </div>
+                                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{fileRepoFiles.length} dari {fileRepoTarget}</div>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
 
                       {fileRepoFiles.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -879,21 +910,49 @@ const [tahun, setTahun] = useState("2026");
                             const ownerFiles = fileRepoFiles.filter(f => (f.ownerEmail || f.ownerName || 'Tidak diketahui') === ownerKey);
                             const ownerName = ownerFiles[0]?.ownerName || ownerKey;
                             const initials = ownerName.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
+                            const isSelf = authUser?.email && ownerKey.toLowerCase() === authUser.email.toLowerCase();
                             return (
-                              <div key={ownerKey} style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+                              <div key={ownerKey} style={{ border: `1px solid ${isSelf ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, overflow: 'hidden' }}>
                                 {/* Owner header */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #0f9f6e, #087a55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                                    {initials}
-                                  </div>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ownerName}</div>
-                                    <div style={{ fontSize: 11, color: '#6b7280' }}>{ownerFiles.length} file diunggah</div>
-                                  </div>
-                                  <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
-                                    {ownerFiles.length} file
-                                  </span>
-                                </div>
+                                {(() => {
+                                  const ownerPct = fileRepoTarget > 0 ? Math.round((ownerFiles.length / fileRepoTarget) * 100) : 0;
+                                  const ownerCapColor = ownerPct >= 100 ? '#16a34a' : ownerPct >= 50 ? '#d97706' : ownerPct > 0 ? '#ea580c' : '#9ca3af';
+                                  return (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: isSelf ? '#eff6ff' : '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: isSelf ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)' : 'linear-gradient(135deg, #0f9f6e, #087a55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                        {initials}
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                          <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ownerName}</div>
+                                          {isSelf && <span style={{ fontSize: 10, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', borderRadius: 20, padding: '1px 8px', flexShrink: 0 }}>Anda</span>}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: '#6b7280' }}>{ownerFiles.length} file diunggah</div>
+                                      </div>
+                                      {/* Capaian per bawahan */}
+                                      {fileRepoTarget > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
+                                              {ownerFiles.length} file
+                                            </span>
+                                            <span style={{ fontSize: 12, fontWeight: 800, color: ownerCapColor }}>
+                                              {ownerPct}%
+                                            </span>
+                                          </div>
+                                          <div style={{ width: 90, height: 4, background: '#e5e7eb', borderRadius: 99, overflow: 'hidden' }}>
+                                            <div style={{ width: `${Math.min(100, ownerPct)}%`, height: '100%', background: ownerCapColor, borderRadius: 99 }} />
+                                          </div>
+                                          <span style={{ fontSize: 9.5, color: '#9ca3af' }}>{ownerFiles.length}/{fileRepoTarget} target</span>
+                                        </div>
+                                      ) : (
+                                        <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
+                                          {ownerFiles.length} file
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                                 {/* File list */}
                                 <div>
                                   {ownerFiles.map((f, idx) => (

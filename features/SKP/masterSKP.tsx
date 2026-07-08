@@ -1,8 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
-import { getMasterSKP, updateUserSKPStatus, type MasterSKPRow } from "@/lib/api";
+import {
+  getMasterSKP, updateUserSKPStatus, type MasterSKPRow,
+  getSkpPenilaiConfigs, getSkpPenilaiRoles, getSkpPenilaiUsers,
+  upsertSkpPenilai, deleteSkpPenilai,
+  type SkpPenilaiConfigRow, type SkpPenilaiRole, type SkpPenilaiUser,
+} from "@/lib/api";
 
 // ─────────────────────────────────────────────
 //  Mock data  — fallback jika API belum siap
@@ -105,6 +111,9 @@ function progressBar(current: number, total: number) {
 //  Component
 // ─────────────────────────────────────────────
 export default function MasterSKPContent({ role = "admin" }: { role?: string }) {
+  const [activeTab, setActiveTab] = useState<"status" | "penilai">("status");
+
+  // ── Tab: Status SKP ──
   const [data, setData] = useState<MasterSKPRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterUnit, setFilterUnit] = useState("semua");
@@ -116,6 +125,21 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     action: "approved" | "rejected";
     nama: string;
   }>({ open: false, id: 0, action: "approved", nama: "" });
+
+  // ── Tab: Konfigurasi Penilai ──
+  const [penilaiConfigs, setPenilaiConfigs] = useState<SkpPenilaiConfigRow[]>([]);
+  const [penilaiLoading, setPenilaiLoading] = useState(false);
+  const [penilaiModal, setPenilaiModal] = useState<{
+    open: boolean;
+    editId: number | null;
+    roleId: number | string;
+    pihakKeduaUserId: number | string;
+    penilaiEKPUserId: number | string;
+    roles: SkpPenilaiRole[];
+    users: SkpPenilaiUser[];
+    loadingOptions: boolean;
+  }>({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
+  const [penilaiSaving, setPenilaiSaving] = useState(false);
 
   // ── Fetch data dari API ──
   useEffect(() => {
@@ -133,6 +157,52 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     }
     fetchAll();
   }, []);
+
+  // Load configs saat tab penilai aktif
+  useEffect(() => {
+    if (activeTab !== "penilai") return;
+    setPenilaiLoading(true);
+    getSkpPenilaiConfigs()
+      .then((configs) => setPenilaiConfigs(configs))
+      .finally(() => setPenilaiLoading(false));
+  }, [activeTab]);
+
+  const openPenilaiModal = (config?: SkpPenilaiConfigRow) => {
+    setPenilaiModal({
+      open: true,
+      editId: config?.id ?? null,
+      roleId: config?.roleId ?? "",
+      pihakKeduaUserId: config?.pihakKeduaUserId ?? "",
+      penilaiEKPUserId: config?.penilaiUserId ?? "",
+      roles: [],
+      users: [],
+      loadingOptions: true,
+    });
+    Promise.all([getSkpPenilaiRoles(), getSkpPenilaiUsers()]).then(([roles, users]) => {
+      setPenilaiModal((prev) => ({ ...prev, roles, users, loadingOptions: false }));
+    });
+  };
+
+  const savePenilai = async () => {
+    if (!penilaiModal.roleId) return;
+    setPenilaiSaving(true);
+    try {
+      await upsertSkpPenilai(Number(penilaiModal.roleId), {
+        pihakKeduaUserId: penilaiModal.pihakKeduaUserId ? Number(penilaiModal.pihakKeduaUserId) : null,
+        penilaiUserId: penilaiModal.penilaiEKPUserId ? Number(penilaiModal.penilaiEKPUserId) : null,
+      });
+      const configs = await getSkpPenilaiConfigs();
+      setPenilaiConfigs(configs);
+      setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
+    } finally {
+      setPenilaiSaving(false);
+    }
+  };
+
+  const removePenilai = async (id: number) => {
+    await deleteSkpPenilai(id);
+    setPenilaiConfigs((prev) => prev.filter((c) => c.id !== id));
+  };
 
   // ── Options ──
   const unitOptions = ["semua", ...Array.from(new Set(data.map((r) => r.unitKerja)))];
@@ -193,13 +263,123 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     verticalAlign: "middle",
   };
 
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: "8px 20px",
+    borderRadius: "8px 8px 0 0",
+    border: "1px solid",
+    borderColor: active ? "#e5e7eb" : "transparent",
+    borderBottom: active ? "1px solid white" : "1px solid #e5e7eb",
+    background: active ? "white" : "transparent",
+    color: active ? "#FF7900" : "#6b7280",
+    fontWeight: active ? 700 : 500,
+    fontSize: 13,
+    cursor: "pointer",
+    marginBottom: -1,
+  });
+
   return (
     <div>
       <PageTransition>
         <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Master SKP  
+          Master SKP
         </p>
 
+        {/* ── Tab switcher ── */}
+        <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #e5e7eb", marginBottom: 20 }}>
+          <button style={tabStyle(activeTab === "status")} onClick={() => setActiveTab("status")}>
+            Status SKP Pegawai
+          </button>
+          <button style={tabStyle(activeTab === "penilai")} onClick={() => setActiveTab("penilai")}>
+            Konfigurasi Penilai
+          </button>
+        </div>
+
+        {/* ══════════════════════════════════════════
+            TAB: KONFIGURASI PEJABAT PENILAI KINERJA
+        ══════════════════════════════════════════ */}
+        {activeTab === "penilai" && (
+          <div className="page-card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: 0 }}>
+                  Pejabat Penilai Kinerja per Jabatan
+                </h3>
+                <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+                  Tetapkan siapa yang menandatangani Rencana SKP &amp; Formulir EKP untuk setiap jabatan.
+                </p>
+              </div>
+              <button
+                onClick={() => openPenilaiModal()}
+                style={{
+                  padding: "8px 18px", borderRadius: 8, border: "none",
+                  background: "#FF7900", color: "white", fontWeight: 600,
+                  fontSize: 13, cursor: "pointer",
+                }}
+              >
+                + Tambah Konfigurasi
+              </button>
+            </div>
+
+            {penilaiLoading ? (
+              <p style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data…</p>
+            ) : penilaiConfigs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
+                <p style={{ fontSize: 13 }}>Belum ada konfigurasi. Klik &quot;Tambah Konfigurasi&quot; untuk mulai.</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      {["No", "Jabatan (Role)", "Level", "Pihak Kedua (Rencana SKP)", "Pejabat Penilai (EKP)", "Aksi"].map((h) => (
+                        <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", textAlign: "left", whiteSpace: "nowrap" }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {penilaiConfigs.map((row, idx) => (
+                      <tr key={row.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <td style={{ padding: "10px 14px", fontSize: 12, textAlign: "center", width: 36, color: "#374151" }}>{idx + 1}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, fontWeight: 600, color: "#1f2937" }}>{row.roleName}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, textAlign: "center" }}>
+                          <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 20, background: "#f3f4f6", color: "#374151", fontWeight: 600, fontSize: 11 }}>
+                            L{row.roleLevel}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.pihakKeduaNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.penilaiNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
+                        <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button
+                              onClick={() => openPenilaiModal(row)}
+                              style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #d1d5db", background: "white", color: "#374151", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => removePenilai(row.id)}
+                              style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#fee2e2", color: "#991b1b", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════
+            TAB: STATUS SKP PEGAWAI (existing)
+        ══════════════════════════════════════════ */}
+        {activeTab === "status" && (
         <div className="page-card">
 
         {/* ── Ringkasan statistik ── */}
@@ -330,7 +510,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                       </td>
                       <td style={td}>{skpStatusBadge(row.statusSKP)}</td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
-                        {row.statusSKP === "submitted" ? (
+                        {row.statusSKP !== "approved" && row.statusSKP !== "rejected" ? (
                           <div style={{ display: "flex", gap: 6 }}>
                             <button
                               onClick={() => openConfirm(row.id, "approved", row.namaPegawai)}
@@ -365,7 +545,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                           </div>
                         ) : (
                           <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                            {row.statusSKP === "approved" ? "Sudah disetujui" : row.statusSKP === "rejected" ? "Sudah ditolak" : "Belum diajukan"}
+                            {row.statusSKP === "approved" ? "Sudah disetujui" : "Sudah ditolak"}
                           </span>
                         )}
                       </td>
@@ -376,9 +556,117 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
             </div>
           )}
         </div>
-</div>
-        {/* ── Modal konfirmasi ── */}
-        {confirmModal.open && (
+        </div>
+        )} {/* end activeTab === "status" */}
+
+        {/* Modals are rendered via portal to escape PageTransition's CSS transform */}
+        {penilaiModal.open && createPortal(
+          <div
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
+            onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+          >
+            <div
+              style={{ backgroundColor: "white", borderRadius: 14, padding: "28px 32px", maxWidth: 520, width: "92%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h4 style={{ margin: "0 0 4px", fontSize: 18, color: "#1f2937", fontWeight: 700 }}>
+                {penilaiModal.editId ? "Edit Konfigurasi Penilai" : "Tambah Konfigurasi Penilai"}
+              </h4>
+              <p style={{ margin: "0 0 24px", fontSize: 13, color: "#6b7280" }}>
+                Tetapkan siapa pejabat penilai kinerja untuk jabatan ini.
+              </p>
+
+              {penilaiModal.loadingOptions ? (
+                <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 13 }}>
+                  Memuat data…
+                </div>
+              ) : (
+                <>
+                  {/* Jabatan */}
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+                      Jabatan (Role) <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <select
+                      value={penilaiModal.roleId}
+                      onChange={(e) => setPenilaiModal((p) => ({ ...p, roleId: e.target.value }))}
+                      style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#1f2937", background: "white" }}
+                    >
+                      <option value="">— Pilih jabatan —</option>
+                      {penilaiModal.roles.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name} ({r.unitNama})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Divider Rencana SKP */}
+                  <div style={{ borderTop: "1px solid #e5e7eb", margin: "4px 0 16px" }} />
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#FF7900", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
+                    Rencana SKP
+                  </p>
+
+                  <div style={{ marginBottom: 20 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+                      Pihak Kedua
+                    </label>
+                    <select
+                      value={penilaiModal.pihakKeduaUserId}
+                      onChange={(e) => setPenilaiModal((p) => ({ ...p, pihakKeduaUserId: e.target.value }))}
+                      style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#1f2937", background: "white" }}
+                    >
+                      <option value="">— Pilih Pihak Kedua —</option>
+                      {penilaiModal.users.map((u) => (
+                        <option key={u.id} value={u.id}>{u.nama}{u.jabatan ? ` (${u.jabatan})` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Divider EKP */}
+                  <div style={{ borderTop: "1px solid #e5e7eb", margin: "4px 0 16px" }} />
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#FF7900", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
+                    Formulir EKP
+                  </p>
+
+                  <div style={{ marginBottom: 28 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
+                      Pejabat Penilai Kinerja
+                    </label>
+                    <select
+                      value={penilaiModal.penilaiEKPUserId}
+                      onChange={(e) => setPenilaiModal((p) => ({ ...p, penilaiEKPUserId: e.target.value }))}
+                      style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#1f2937", background: "white" }}
+                    >
+                      <option value="">— Pilih Pejabat Penilai —</option>
+                      {penilaiModal.users.map((u) => (
+                        <option key={u.id} value={u.id}>{u.nama}{u.jabatan ? ` (${u.jabatan})` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+                  style={{ padding: "10px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={savePenilai}
+                  disabled={!penilaiModal.roleId || penilaiSaving || penilaiModal.loadingOptions}
+                  style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: (penilaiSaving || penilaiModal.loadingOptions) ? "#9ca3af" : "#16a34a", color: "white", fontWeight: 600, fontSize: 13, cursor: (penilaiSaving || penilaiModal.loadingOptions) ? "not-allowed" : "pointer" }}
+                >
+                  {penilaiSaving ? "Menyimpan…" : "Simpan"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* ── Modal konfirmasi (status SKP) ── */}
+        {confirmModal.open && createPortal(
           <div
             style={{
               position: "fixed",
@@ -387,7 +675,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              zIndex: 1000,
+              zIndex: 9999,
             }}
             onClick={() => setConfirmModal((p) => ({ ...p, open: false }))}
           >
@@ -436,7 +724,8 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </PageTransition>
     </div>

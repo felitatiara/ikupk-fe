@@ -31,6 +31,7 @@ interface ParsedEntry {
   subLabel: string;
   satuan: string;
   targetTotal: number;
+  targetProdiMin: number;
   amounts: ParsedAmount[];
   sheetName: string;
 }
@@ -45,6 +46,7 @@ interface MatchedEntry {
   subLabel: string;
   satuan: string;
   targetTotal: number;
+  targetProdiMin: number;
   sheetName: string;
   indicatorId: number | null;
   indicatorKode: string;
@@ -150,6 +152,7 @@ function parseSheet(
     const c1 = String(row[1] ?? "").trim();
     const satuan = String(row[3] ?? "");
     const targetTotal = Number(row[4] ?? 0);
+    const targetProdiMin = Number(row[5] ?? 0);
 
     if (/^(IKU|PK)\s*\d+/i.test(c0)) currentIKU = c0.replace(/\s+/g, " ");
     if (!c1) continue;
@@ -177,7 +180,7 @@ function parseSheet(
     if (!amounts.length) continue;
 
     const ikuCode = /^(IKU|PK)\s*\d+/i.test(c0) ? c0.replace(/\s+/g, " ") : currentIKU || c0;
-    entries.push({ ikuCode, subLabel: c1, satuan, targetTotal, amounts, sheetName });
+    entries.push({ ikuCode, subLabel: c1, satuan, targetTotal, targetProdiMin, amounts, sheetName });
   }
   return { entries, sheetChain: Array.from(sheetChainMap.values()) };
 }
@@ -772,12 +775,17 @@ export default function ImportTurunanModal({
           if (!indMatch) indMatch = matchIndicator(e.ikuCode, e.subLabel, pkGrouped);
           entryMap.set(key, {
             ikuCode: e.ikuCode, subLabel: e.subLabel, satuan: e.satuan,
-            targetTotal: e.targetTotal, sheetName: e.sheetName,
+            targetTotal: e.targetTotal, targetProdiMin: e.targetProdiMin,
+            sheetName: e.sheetName,
             indicatorId: indMatch?.id ?? null, indicatorKode: indMatch?.kode ?? "?",
             amounts: [],
           });
         }
         const me = entryMap.get(key)!;
+        // Accumulate targetProdiMin across sheets (each sheet = one prodi)
+        if (e.targetProdiMin > 0 && e.sheetName !== me.sheetName) {
+          me.targetProdiMin += e.targetProdiMin;
+        }
         for (const a of e.amounts) {
           if (me.amounts.some((x) => x.excelName === a.excelName)) continue;
           const u = findUser(a.excelName);
@@ -795,7 +803,24 @@ export default function ImportTurunanModal({
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
         if (!leaf.length) continue;
-        const levels = buildCascadeLevels(leaf, userMap);
+        const vMarksPreview = sheetChains.get(me.sheetName) ?? [];
+        const kaprodiMarkPreview = vMarksPreview.find((v) => /koordinator prodi/i.test(v.roleLabel));
+        const kaprodiUserPreview = kaprodiMarkPreview
+          ? (nameIndex.get(normalizeName(kaprodiMarkPreview.colNama)) ?? null)
+          : null;
+        let levels: CascadeLevel[];
+        if (kaprodiUserPreview) {
+          const depth0: CascadeLevel = {
+            depth: 0, roleLabel: 'Dosen',
+            fromUserId: kaprodiUserPreview.id, fromNama: kaprodiUserPreview.nama,
+            items: leaf.map((a) => ({ toUserId: a.userId, toNama: userMap.get(a.userId)?.nama ?? String(a.userId), jumlahTarget: a.amount })),
+          };
+          const kaprodiAmount = me.targetProdiMin > 0 ? me.targetProdiMin : leaf.reduce((s, a) => s + a.amount, 0);
+          const upper = buildCascadeLevels([{ userId: kaprodiUserPreview.id, amount: kaprodiAmount }], userMap);
+          levels = [depth0, ...upper];
+        } else {
+          levels = buildCascadeLevels(leaf, userMap);
+        }
         previews.push({ indicatorId: me.indicatorId, indicatorKode: me.indicatorKode, subLabel: me.subLabel, levels });
       }
 
@@ -914,14 +939,44 @@ export default function ImportTurunanModal({
           }
         }
 
-        // Create cascade disposisi from dosen amounts (via atasanId rollup)
+        // Create cascade disposisi from dosen amounts
         const leaf = me.amounts
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
         skippedUser += me.amounts.filter((a) => a.userId === null).length;
         if (!leaf.length) continue;
 
-        const levels = buildCascadeLevels(leaf, allUsers);
+        // Use V-mark kaprodi as explicit fromUserId for dosen-level disposisi so that
+        // the redisposisi modal can pre-populate even without atasanId being set.
+        const vMarks = localSheetChains.get(me.sheetName) ?? [];
+        const kaprodiMark = vMarks.find((v) => /koordinator prodi/i.test(v.roleLabel));
+        const kaprodiUser = kaprodiMark ? findUserLocal(kaprodiMark.colNama) : null;
+
+        let levels: CascadeLevel[];
+        if (kaprodiUser) {
+          // Explicit depth-0: kaprodi → dosens
+          const depth0: CascadeLevel = {
+            depth: 0,
+            roleLabel: 'Dosen',
+            fromUserId: kaprodiUser.id,
+            fromNama: kaprodiUser.nama,
+            items: leaf.map((a) => ({
+              toUserId: a.userId,
+              toNama: allUsers.get(a.userId)?.nama ?? String(a.userId),
+              jumlahTarget: a.amount,
+            })),
+          };
+          // Upper levels (kaprodi → kajur → WD → …) using targetProdiMin if available
+          const kaprodiAmount = me.targetProdiMin > 0
+            ? me.targetProdiMin
+            : leaf.reduce((s, a) => s + a.amount, 0);
+          const upperLevels = buildCascadeLevels([{ userId: kaprodiUser.id, amount: kaprodiAmount }], allUsers);
+          levels = [depth0, ...upperLevels];
+        } else {
+          // Fallback: atasanId-based rollup
+          levels = buildCascadeLevels(leaf, allUsers);
+        }
+
         const calls = await executeCascade(me.indicatorId, tahun, levels);
         cascadeCalls += calls;
         maxDepth = Math.max(maxDepth, levels.reduce((m, l) => Math.max(m, l.depth), 0));

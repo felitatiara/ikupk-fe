@@ -1,14 +1,18 @@
 ﻿"use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import {
   getIndikatorGroupedForUser,
   getMySkpStatus,
   getAvailableYears,
+  getSkpRencanaStatus,
+  setujuRencanaSKPPegawai,
   type IndikatorGrouped,
+  type SkpRencanaStatusData,
 } from "@/lib/api";
+import { toast } from "sonner";
 
 const INSTITUSI = 'Universitas Pembangunan Nasional "Veteran" Jakarta';
 
@@ -156,6 +160,73 @@ function SignatureRow({ leftLabel, leftName, rightDate, rightLabel, rightName }:
   );
 }
 
+// ─── Canvas draw handler factory ──────────────────────────────────────────────
+
+function makeDrawHandlers(
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  isDrawingRef: React.MutableRefObject<boolean>,
+  setHasDrawn: (v: boolean) => void,
+) {
+  function getPos(e: React.MouseEvent<HTMLCanvasElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const scaleX = e.currentTarget.width / r.width;
+    const scaleY = e.currentTarget.height / r.height;
+    return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+  }
+  function getTouchPos(e: React.TouchEvent<HTMLCanvasElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const t = e.touches[0];
+    const scaleX = e.currentTarget.width / r.width;
+    const scaleY = e.currentTarget.height / r.height;
+    return { x: (t.clientX - r.left) * scaleX, y: (t.clientY - r.top) * scaleY };
+  }
+  return {
+    onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+      isDrawingRef.current = true;
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+      const { x, y } = getPos(e);
+      ctx.beginPath(); ctx.moveTo(x, y);
+    },
+    onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+      if (!isDrawingRef.current) return;
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+      const { x, y } = getPos(e);
+      ctx.lineTo(x, y); ctx.stroke();
+      setHasDrawn(true);
+    },
+    onMouseUp() { isDrawingRef.current = false; },
+    onTouchStart(e: React.TouchEvent<HTMLCanvasElement>) {
+      e.preventDefault();
+      isDrawingRef.current = true;
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+      const { x, y } = getTouchPos(e);
+      ctx.beginPath(); ctx.moveTo(x, y);
+    },
+    onTouchMove(e: React.TouchEvent<HTMLCanvasElement>) {
+      e.preventDefault();
+      if (!isDrawingRef.current) return;
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+      const { x, y } = getTouchPos(e);
+      ctx.lineTo(x, y); ctx.stroke();
+      setHasDrawn(true);
+    },
+    onTouchEnd() { isDrawingRef.current = false; },
+    clear() {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      setHasDrawn(false);
+    },
+  };
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function CetakSKP() {
@@ -165,8 +236,10 @@ export default function CetakSKP() {
   const [years, setYears] = useState<string[]>(["2025", "2026", "2027"]);
   const [ikuRows, setIkuRows] = useState<IkuRow[]>([]);
   const [pkGroups, setPkGroups] = useState<PkGroup[]>([]);
-  const [atasan, setAtasan] = useState<{ nama: string; nip: string | null } | null>(null);
+  const [dekan, setDekan] = useState<{ nama: string; nip: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rencanaStatus, setRencanaStatus] = useState<SkpRencanaStatusData | null>(null);
+  const [setujuSaving, setSetujuSaving] = useState(false);
 
   const roleId: number =
     user?.roleId ??
@@ -191,20 +264,36 @@ export default function CetakSKP() {
       getIndikatorGroupedForUser("IKU", tahun, user.id, roleId),
       getIndikatorGroupedForUser("PK", tahun, user.id, roleId),
       getMySkpStatus(user.id, tahun),
+      getSkpRencanaStatus(user.id, tahun),
     ])
-      .then(([iku, pk, skpStatus]) => {
+      .then(([iku, pk, skpStatus, rStatus]) => {
         setIkuRows(buildIkuRows(iku));
         setPkGroups(buildPkGroups(pk));
-        setAtasan(skpStatus.atasan ?? null);
+        setDekan(skpStatus.atasanPenilai ?? skpStatus.atasan ?? null);
+        setRencanaStatus(rStatus);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [user, tahun, roleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  async function handleSetuju() {
+    if (!user?.id) return;
+    setSetujuSaving(true);
+    try {
+      const result = await setujuRencanaSKPPegawai(user.id, tahun);
+      setRencanaStatus(result);
+      toast.success('Rencana SKP berhasil disetujui. Menunggu validasi atasan.');
+    } catch {
+      toast.error('Gagal menyetujui Rencana SKP.');
+    } finally {
+      setSetujuSaving(false);
+    }
+  }
+
   const jabatan = [user?.role, user?.unitNama].filter(Boolean).join(" ");
   const spDipa = `SP DIPA-139.03.2.693372/${tahun}`;
   const tanggalTtd = `Jakarta, ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`;
-  const atasanNama = atasan?.nama ?? "...";
+  const atasanNama = dekan?.nama ?? "...";
   const unitUpper = (user?.unitNama ?? "Fakultas Ilmu Komputer").toUpperCase();
 
   return (
@@ -296,21 +385,47 @@ export default function CetakSKP() {
 
         <div style={{ flex: 1 }} />
 
-        <button
-          onClick={() => window.print()}
-          style={{
-            display: "flex", alignItems: "center", gap: 7,
-            padding: "7px 20px", border: "none", borderRadius: 8,
-            background: "linear-gradient(135deg, #0f9f6e 0%, #087a55 100%)",
-            color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13,
-            boxShadow: "0 2px 8px rgba(15,159,110,.30)",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
-          </svg>
-          Cetak / Unduh PDF
-        </button>
+        {rencanaStatus?.status === 'draft' || !rencanaStatus ? (
+          <button
+            onClick={handleSetuju}
+            disabled={setujuSaving}
+            style={{
+              display: "flex", alignItems: "center", gap: 7,
+              padding: "7px 20px", border: "none", borderRadius: 8,
+              background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+              color: "#fff", fontWeight: 600, fontSize: 13,
+              cursor: setujuSaving ? "not-allowed" : "pointer",
+              boxShadow: "0 2px 8px rgba(245,158,11,.30)",
+              opacity: setujuSaving ? 0.7 : 1,
+            }}
+          >
+            ✅ {setujuSaving ? "Menyimpan…" : "Setuju Rencana SKP"}
+          </button>
+        ) : rencanaStatus.status === 'disetujui_pegawai' ? (
+          <span style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: "#dbeafe", color: "#1d4ed8",
+          }}>
+            ⏳ Menunggu Validasi Atasan
+          </span>
+        ) : (
+          <button
+            onClick={() => window.print()}
+            style={{
+              display: "flex", alignItems: "center", gap: 7,
+              padding: "7px 20px", border: "none", borderRadius: 8,
+              background: "linear-gradient(135deg, #0f9f6e 0%, #087a55 100%)",
+              color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 13,
+              boxShadow: "0 2px 8px rgba(15,159,110,.30)",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            Cetak Rencana SKP
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -550,6 +665,7 @@ export default function CetakSKP() {
           )}
         </div>
       )}
+
     </div>
   );
 }

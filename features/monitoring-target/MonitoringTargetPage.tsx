@@ -7,10 +7,12 @@ import {
   getAllRoles,
   getIndikatorCascadeChain,
   getAvailableYears,
+  getDisposisi,
   type IndikatorGrouped,
   type IndikatorGroupedSub,
   type IndikatorGroupedChild,
   type RoleOption,
+  type DisposisiItem,
 } from "../../lib/api";
 
 const PRODI_DEFS = [
@@ -117,13 +119,36 @@ function ChainBadge({ step, idx, total, allRoles }: {
   );
 }
 
-function L1Row({ entry, allRoles, router }: {
+function L1Row({ entry, allRoles, router, tahun }: {
   entry: L1Entry;
   allRoles: RoleOption[];
   router: ReturnType<typeof useRouter>;
+  tahun: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedL2s, setExpandedL2s] = useState<Set<number>>(new Set());
+  const [dosenCache, setDosenCache] = useState<Map<number, DisposisiItem[]>>(new Map());
+  const [dosenLoading, setDosenLoading] = useState<Set<number>>(new Set());
   const { l1, chain } = entry;
+
+  async function toggleDosenDrilldown(l2id: number) {
+    if (expandedL2s.has(l2id)) {
+      setExpandedL2s(prev => { const next = new Set(prev); next.delete(l2id); return next; });
+      return;
+    }
+    setExpandedL2s(prev => new Set(prev).add(l2id));
+    if (!dosenCache.has(l2id)) {
+      setDosenLoading(prev => new Set(prev).add(l2id));
+      try {
+        const items = await getDisposisi(l2id, tahun);
+        setDosenCache(prev => new Map(prev).set(l2id, items));
+      } catch {
+        setDosenCache(prev => new Map(prev).set(l2id, []));
+      } finally {
+        setDosenLoading(prev => { const next = new Set(prev); next.delete(l2id); return next; });
+      }
+    }
+  }
 
   const l2s: IndikatorGroupedChild[] = l1.children ?? [];
   const totalTarget = l2s.reduce((s, c) => s + (c.nilaiTarget ?? 0), 0);
@@ -296,14 +321,14 @@ function L1Row({ entry, allRoles, router }: {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "72px 1fr 100px 100px 56px 80px",
+                  gridTemplateColumns: "72px 1fr 100px 100px 56px 80px 80px",
                   padding: "5px 12px",
                   background: "#f8fafc",
                   borderBottom: "1px solid #e5e7eb",
                   gap: 8,
                 }}
               >
-                {["Kode", "Nama", "Target", "Disposisi", "Progress", "Status"].map((h) => (
+                {["Kode", "Nama", "Target", "Disposisi", "Progress", "Status", "Dosen"].map((h) => (
                   <span key={h} style={{ fontSize: 9.5, fontWeight: 800, color: "#9ca3af", letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
                     {h}
                   </span>
@@ -313,14 +338,17 @@ function L1Row({ entry, allRoles, router }: {
               {/* L2 rows */}
               {l2s.map((l2, idx) => {
                 const hasSubs = (l2.children ?? []).length > 0;
+                const l2DosenExpanded = expandedL2s.has(l2.id);
+                const l2DosenItems = dosenCache.get(l2.id) ?? [];
+                const l2DosenLoading = dosenLoading.has(l2.id);
                 return (
                   <div key={l2.id}>
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "72px 1fr 100px 100px 56px 80px",
+                        gridTemplateColumns: "72px 1fr 100px 100px 56px 80px 80px",
                         padding: "6px 12px",
-                        borderBottom: idx < l2s.length - 1 || hasSubs ? "1px solid #f3f4f6" : "none",
+                        borderBottom: idx < l2s.length - 1 || hasSubs || l2DosenExpanded ? "1px solid #f3f4f6" : "none",
                         gap: 8,
                         alignItems: "center",
                       }}
@@ -339,7 +367,65 @@ function L1Row({ entry, allRoles, router }: {
                       </span>
                       <ProgressBar value={l2.disposisiJumlah ?? 0} max={l2.nilaiTarget ?? 0} />
                       <DistStatus disposisi={l2.disposisiJumlah ?? null} target={l2.nilaiTarget ?? null} />
+                      <button
+                        onClick={() => toggleDosenDrilldown(l2.id)}
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${l2DosenExpanded ? "#a5b4fc" : "#e5e7eb"}`,
+                          background: l2DosenExpanded ? "#eef2ff" : "#fff",
+                          color: l2DosenExpanded ? "#4f46e5" : "#6b7280",
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap" as const,
+                        }}
+                      >
+                        {l2DosenLoading ? "…" : l2DosenExpanded ? "▲ Tutup" : "👤 Dosen"}
+                      </button>
                     </div>
+
+                    {/* Dosen drill-down */}
+                    {l2DosenExpanded && (
+                      <div style={{ padding: "8px 12px 10px 24px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb" }}>
+                        {l2DosenLoading ? (
+                          <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>Memuat data dosen…</p>
+                        ) : l2DosenItems.length === 0 ? (
+                          <p style={{ margin: 0, fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Belum ada distribusi ke dosen.</p>
+                        ) : (
+                          <>
+                            <p style={{ margin: "0 0 6px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                              {l2DosenItems.length} Dosen Penerima Target
+                            </p>
+                            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
+                              {l2DosenItems.map((item) => (
+                                <div
+                                  key={item.toUserId}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "5px 12px",
+                                    borderRadius: 8,
+                                    background: "#fff",
+                                    border: "1px solid #ddd6fe",
+                                    fontSize: 11.5,
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
+                                  {item.toUser?.role && (
+                                    <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
+                                      {item.toUser.role}
+                                    </span>
+                                  )}
+                                  <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {/* L3 sub-rows */}
                     {hasSubs && l2.children.map((l3, l3idx) => (
@@ -347,7 +433,7 @@ function L1Row({ entry, allRoles, router }: {
                         key={l3.id}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "72px 1fr 100px 100px 56px 80px",
+                          gridTemplateColumns: "72px 1fr 100px 100px 56px 80px 80px",
                           padding: "4px 12px 4px 24px",
                           background: "#fafafa",
                           borderBottom: l3idx < l2.children.length - 1 ? "1px solid #f3f4f6" : "1px solid #e9ecf0",
@@ -361,6 +447,7 @@ function L1Row({ entry, allRoles, router }: {
                         <span style={{ fontSize: 11, color: "#6b7280" }}>{fmt(l3.disposisiJumlah ?? null)}</span>
                         <ProgressBar value={l3.disposisiJumlah ?? 0} max={l3.nilaiTarget ?? 0} />
                         <DistStatus disposisi={l3.disposisiJumlah ?? null} target={l3.nilaiTarget ?? null} />
+                        <span />
                       </div>
                     ))}
                   </div>
@@ -371,7 +458,7 @@ function L1Row({ entry, allRoles, router }: {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "72px 1fr 100px 100px 56px 80px",
+                  gridTemplateColumns: "72px 1fr 100px 100px 56px 80px 80px",
                   padding: "6px 12px",
                   background: "#f8fafc",
                   borderTop: "1px solid #e5e7eb",
@@ -389,6 +476,7 @@ function L1Row({ entry, allRoles, router }: {
                 </span>
                 <ProgressBar value={totalDisposisi} max={totalTarget} />
                 <DistStatus disposisi={totalDisposisi} target={totalTarget} />
+                <span />
               </div>
             </div>
           )}
@@ -425,10 +513,11 @@ export default function MonitoringTargetPage() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    setL1Entries([]);
-    getIndikatorGrouped(jenis, tahun)
-      .then(async (grouped: IndikatorGrouped[]) => {
+    async function load() {
+      setLoading(true);
+      setL1Entries([]);
+      try {
+        const grouped = await getIndikatorGrouped(jenis, tahun);
         const l1List: { l0: IndikatorGrouped; l1: IndikatorGroupedSub }[] = [];
         for (const l0 of grouped) {
           for (const l1 of l0.subIndikators) l1List.push({ l0, l1 });
@@ -445,9 +534,13 @@ export default function MonitoringTargetPage() {
             prodi: "",
           }))
         );
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, [jenis, tahun]);
 
   const entriesWithProdi = useMemo(() => {
@@ -639,7 +732,7 @@ export default function MonitoringTargetPage() {
                 </div>
 
                 {l1s.map((entry) => (
-                  <L1Row key={entry.l1.id} entry={entry} allRoles={allRoles} router={router} />
+                  <L1Row key={entry.l1.id} entry={entry} allRoles={allRoles} router={router} tahun={tahun} />
                 ))}
               </div>
             );

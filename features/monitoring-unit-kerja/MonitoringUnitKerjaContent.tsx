@@ -1141,17 +1141,21 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           level: 0,
         });
         for (const sub of group.subIndikators) {
-          // Aggregate target from children when sub has no direct disposisi
+          // Aggregate L1 target: direct disposisi → sum L2 → sum L3
           const childTarget = (sub.children ?? []).reduce((s, c) => {
             const ct = c.disposisiJumlah ?? c.nilaiTarget ?? 0;
             if (ct > 0) return s + ct;
             return s + (c.children ?? []).reduce((gs, gc) => gs + (gc.disposisiJumlah ?? gc.nilaiTarget ?? 0), 0);
           }, 0);
-          const childRealisasi = (sub.children ?? []).reduce((s, c) => s + (c.realisasiJumlah ?? 0), 0);
+          // L1 realisasi: backend already aggregates own + bawahan across all levels
+          const subReal = sub.realisasiJumlah ?? 0;
+          // Fallback: sum L2+L3 from frontend in case backend hasn't aggregated yet
+          const childRealisasi = (sub.children ?? []).reduce((s, c) => {
+            const gcR = (c.children ?? []).reduce((gs, gc) => gs + (gc.realisasiJumlah ?? 0), 0);
+            return s + (c.realisasiJumlah ?? 0) + gcR;
+          }, 0);
 
           const target = sub.disposisiJumlah ?? (childTarget > 0 ? childTarget : null);
-          // Take max of sub-level and children in case backend doesn't aggregate up
-          const subReal = sub.realisasiJumlah ?? 0;
           const aggReal = Math.max(subReal, childRealisasi);
           const realisasi = sub.realisasiJumlah !== null ? aggReal : (aggReal > 0 ? aggReal : null);
           const capaian =
@@ -1169,22 +1173,49 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             level: 1,
           });
           for (const child of (sub.children ?? [])) {
-            const cTarget = child.disposisiJumlah ?? child.nilaiTarget ?? null;
-            const cRealisasi = child.realisasiJumlah ?? null;
-            const cCapaian =
-              cTarget !== null && cTarget > 0 && cRealisasi !== null
-                ? (cRealisasi / cTarget) * 100
-                : null;
-            rows.push({
-              kode: child.kode,
-              nama: child.nama,
-              sasaran: group.nama,
-              target: cTarget,
-              realisasi: cRealisasi,
-              capaian: cCapaian,
-              tenggat: group.tenggat,
-              level: 2,
-            });
+            const hasL3 = (child.children ?? []).length > 0;
+
+            if (hasL3) {
+              // PK with L3 rincian: skip the L2 wrapper row, show only L3 leaves
+              for (const gc of (child.children ?? [])) {
+                const gcTargetSum = (child.children ?? []).reduce((gs, g) => gs + (g.disposisiJumlah ?? g.nilaiTarget ?? 0), 0);
+                // Use L3's own target if set, fall back to even split of L2 target
+                const gcTarget = gc.disposisiJumlah ?? gc.nilaiTarget ?? (gcTargetSum > 0 ? null : null);
+                const gcReal = gc.realisasiJumlah ?? null;
+                const gcCapaian =
+                  gcTarget !== null && gcTarget > 0 && gcReal !== null
+                    ? (gcReal / gcTarget) * 100
+                    : null;
+                rows.push({
+                  kode: gc.kode,
+                  nama: gc.nama,
+                  sasaran: group.nama,
+                  target: gcTarget,
+                  realisasi: gcReal,
+                  capaian: gcCapaian,
+                  tenggat: group.tenggat,
+                  level: 2,
+                });
+              }
+            } else {
+              // IKU or PK leaf at L2: show normally
+              const cTarget = child.disposisiJumlah ?? child.nilaiTarget ?? null;
+              const cRealisasi = child.realisasiJumlah ?? null;
+              const cCapaian =
+                cTarget !== null && cTarget > 0 && cRealisasi !== null
+                  ? (cRealisasi / cTarget) * 100
+                  : null;
+              rows.push({
+                kode: child.kode,
+                nama: child.nama,
+                sasaran: group.nama,
+                target: cTarget,
+                realisasi: cRealisasi,
+                capaian: cCapaian,
+                tenggat: group.tenggat,
+                level: 2,
+              });
+            }
           }
         }
       }
