@@ -1478,7 +1478,10 @@ export interface SkpPenilaiConfigRow {
   roleName: string;
   roleLevel: number;
   unitNama: string;
-  // Rencana SKP
+  // Checker (Rencana SKP — step 1)
+  checkerUserId: number | null;
+  checkerNama: string | null;
+  // Pihak Kedua (Rencana SKP — step 2)
   pihakKeduaUserId: number | null;
   pihakKeduaNama: string | null;
   // EKP
@@ -1533,7 +1536,7 @@ export async function getSkpPenilaiUsers(): Promise<SkpPenilaiUser[]> {
 
 export async function upsertSkpPenilai(
   roleId: number,
-  body: { pihakKeduaUserId?: number | null; penilaiUserId?: number | null },
+  body: { checkerUserId?: number | null; pihakKeduaUserId?: number | null; penilaiUserId?: number | null },
 ): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/skp-penilai`, {
     method: 'POST',
@@ -1564,20 +1567,22 @@ export interface SkpCheckerUser {
 export interface SkpRencanaStatusData {
   userId: number;
   tahun: string;
-  status: 'draft' | 'signed_pegawai' | 'signed_pihak_kedua';
+  status: 'draft' | 'signed_pegawai' | 'checked' | 'signed_pihak_kedua';
   signaturePegawai: string | null;
+  signatureChecker: string | null;
   signaturePihakKedua: string | null;
   signedAtPegawai: string | null;
+  checkedAt: string | null;
   signedAtPihakKedua: string | null;
 }
 
 export async function getSkpRencanaStatus(userId: number, tahun: string): Promise<SkpRencanaStatusData> {
   try {
     const res = await fetch(`${API_BASE_URL}/skp-rencana/status?userId=${userId}&tahun=${encodeURIComponent(tahun)}`);
-    if (!res.ok) return { userId, tahun, status: 'draft', signaturePegawai: null, signaturePihakKedua: null, signedAtPegawai: null, signedAtPihakKedua: null };
+    if (!res.ok) return { userId, tahun, status: 'draft', signaturePegawai: null, signatureChecker: null, signaturePihakKedua: null, signedAtPegawai: null, checkedAt: null, signedAtPihakKedua: null };
     return res.json();
   } catch {
-    return { userId, tahun, status: 'draft', signaturePegawai: null, signaturePihakKedua: null, signedAtPegawai: null, signedAtPihakKedua: null };
+    return { userId, tahun, status: 'draft', signaturePegawai: null, signatureChecker: null, signaturePihakKedua: null, signedAtPegawai: null, checkedAt: null, signedAtPihakKedua: null };
   }
 }
 
@@ -1622,6 +1627,7 @@ export async function signRencanaSKPPihakKedua(targetUserId: number, tahun: stri
 }
 
 export interface SkpCheckerBawahan {
+  checkerBawahan: SkpCheckerUser[];
   rencanaSKPBawahan: SkpCheckerUser[];
   ekpBawahan: SkpCheckerUser[];
 }
@@ -1629,9 +1635,19 @@ export interface SkpCheckerBawahan {
 export async function getSkpCheckerBawahan(userId: number, tahun: string): Promise<SkpCheckerBawahan> {
   try {
     const res = await fetch(`${API_BASE_URL}/skp-penilai/checker/${userId}?tahun=${encodeURIComponent(tahun)}`);
-    if (!res.ok) return { rencanaSKPBawahan: [], ekpBawahan: [] };
+    if (!res.ok) return { checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] };
     return res.json();
   } catch {
-    return { rencanaSKPBawahan: [], ekpBawahan: [] };
+    return { checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] };
   }
+}
+
+export async function checkRencanaSKPChecker(targetUserId: number, tahun: string, signature: string | null): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/check-checker`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId, tahun, signature }),
+  });
+  if (!res.ok) throw new Error('Gagal memvalidasi Rencana SKP');
+  return res.json();
 }

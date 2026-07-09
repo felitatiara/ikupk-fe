@@ -133,12 +133,13 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     open: boolean;
     editId: number | null;
     roleId: number | string;
+    checkerUserId: number | string;
     pihakKeduaUserId: number | string;
     penilaiEKPUserId: number | string;
     roles: SkpPenilaiRole[];
     users: SkpPenilaiUser[];
     loadingOptions: boolean;
-  }>({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
+  }>({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
   const [penilaiSaving, setPenilaiSaving] = useState(false);
 
   // ── Fetch data dari API ──
@@ -172,6 +173,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
       open: true,
       editId: config?.id ?? null,
       roleId: config?.roleId ?? "",
+      checkerUserId: config?.checkerUserId ?? "",
       pihakKeduaUserId: config?.pihakKeduaUserId ?? "",
       penilaiEKPUserId: config?.penilaiUserId ?? "",
       roles: [],
@@ -188,12 +190,13 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     setPenilaiSaving(true);
     try {
       await upsertSkpPenilai(Number(penilaiModal.roleId), {
+        checkerUserId: penilaiModal.checkerUserId ? Number(penilaiModal.checkerUserId) : null,
         pihakKeduaUserId: penilaiModal.pihakKeduaUserId ? Number(penilaiModal.pihakKeduaUserId) : null,
         penilaiUserId: penilaiModal.penilaiEKPUserId ? Number(penilaiModal.penilaiEKPUserId) : null,
       });
       const configs = await getSkpPenilaiConfigs();
       setPenilaiConfigs(configs);
-      setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
+      setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
     } finally {
       setPenilaiSaving(false);
     }
@@ -332,7 +335,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
-                      {["No", "Jabatan (Role)", "Level", "Pihak Kedua (Rencana SKP)", "Pejabat Penilai (EKP)", "Aksi"].map((h) => (
+                      {["No", "Jabatan (Role)", "Level", "Checker", "Pihak Kedua (Rencana SKP)", "Pejabat Penilai (EKP)", "Aksi"].map((h) => (
                         <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", textAlign: "left", whiteSpace: "nowrap" }}>
                           {h}
                         </th>
@@ -349,6 +352,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                             L{row.roleLevel}
                           </span>
                         </td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.checkerNama ?? <span style={{ color: "#9ca3af" }}>—</span>}</td>
                         <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.pihakKeduaNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
                         <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.penilaiNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
                         <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
@@ -563,7 +567,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
         {penilaiModal.open && createPortal(
           <div
             style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
-            onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+            onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
           >
             <div
               style={{ backgroundColor: "white", borderRadius: 14, padding: "28px 32px", maxWidth: 520, width: "92%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
@@ -605,9 +609,26 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                     Rencana SKP
                   </p>
 
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
+                      Checker
+                      <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: "#6b7280" }}>— memvalidasi sebelum pihak kedua menandatangani</span>
+                    </label>
+                    <select
+                      value={penilaiModal.checkerUserId}
+                      onChange={(e) => setPenilaiModal((p) => ({ ...p, checkerUserId: e.target.value }))}
+                      style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#1f2937", background: "white" }}
+                    >
+                      <option value="">— Tidak ada checker —</option>
+                      {penilaiModal.users.map((u) => (
+                        <option key={u.id} value={u.id}>{u.nama}{u.jabatan ? ` (${u.jabatan})` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div style={{ marginBottom: 20 }}>
                     <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
-                      Pihak Kedua
+                      Pihak Kedua (Penjabat)
                     </label>
                     <select
                       value={penilaiModal.pihakKeduaUserId}
@@ -647,7 +668,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
 
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+                  onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
                   style={{ padding: "10px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
                 >
                   Batal

@@ -427,6 +427,7 @@ const [tahun, setTahun] = useState("2026");
       }, token);
       toast.success('Realisasi berhasil disimpan.');
       setDirectModalOpen(false);
+      setRefreshKey(k => k + 1);
     } catch {
       toast.error('Gagal menyimpan realisasi.');
     } finally {
@@ -516,7 +517,7 @@ const [tahun, setTahun] = useState("2026");
   };
 
   const handleFileRepoSubmit = async () => {
-    if (!fileRepoIndikatorId || !token || !unitId) return;
+    if (!fileRepoIndikatorId || !token) return;
     setFileRepoSubmitting(true);
     try {
       await submitFileRealisasiWithAuth({
@@ -527,11 +528,7 @@ const [tahun, setTahun] = useState("2026");
       }, token);
       setFileRepoModalOpen(false);
       toast.success("Realisasi berhasil disimpan.");
-      // Re-fetch agar capaian (termasuk bawahan) langsung ter-update
-      if (authUser?.id) {
-        const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
-        setGroupedData(d);
-      }
+      setRefreshKey(k => k + 1);
     } catch {
       toast.error("Gagal menyimpan realisasi");
     } finally {

@@ -12,8 +12,10 @@ import {
   getAllRealisasiFiles,
   getAvailableYears,
   getSkpCheckerBawahan,
+  checkRencanaSKPChecker,
   signRencanaSKPPihakKedua,
   validasiRencanaSKPAtasan,
+  getSkpRencanaStatus,
   type SkpBawahanRow,
   type MySkpStatus,
   type SkpCheckerUser,
@@ -127,7 +129,7 @@ export default function SKPContent() {
   const [bulkSigHasDrawn, setBulkSigHasDrawn] = useState(false);
 
   // Atasan checker: bawahan berdasarkan konfigurasi penilai
-  const [checkerBawahan, setCheckerBawahan] = useState<{ rencanaSKPBawahan: SkpCheckerUser[]; ekpBawahan: SkpCheckerUser[] }>({ rencanaSKPBawahan: [], ekpBawahan: [] });
+  const [checkerBawahan, setCheckerBawahan] = useState<{ checkerBawahan: SkpCheckerUser[]; rencanaSKPBawahan: SkpCheckerUser[]; ekpBawahan: SkpCheckerUser[] }>({ checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] });
   const [checkerLoading, setCheckerLoading] = useState(false);
 
 
@@ -1111,7 +1113,7 @@ ${kualitatifPage}
   }
 
   function toggleRencanaSelectAll() {
-    const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'tervalidasi_atasan');
+    const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'checked' || b.rencanaStatus === 'signed_pegawai');
     if (rencanaSelected.size === eligible.length) {
       setRencanaSelected(new Set());
     } else {
@@ -1176,37 +1178,167 @@ ${kualitatifPage}
       const tanggal = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 
       if (docType === 'rencana') {
+        const rencanaStatus = await getSkpRencanaStatus(b.userId, tahun).catch(() => null);
         const pihakKeduaNama = bawahanSkpStatus?.atasanPenilai?.nama ?? bawahanSkpStatus?.atasan?.nama ?? "—";
         const pihakKeduaNip = bawahanSkpStatus?.atasanPenilai?.nip ?? bawahanSkpStatus?.atasan?.nip ?? "—";
-        const tableRows = bawahanRows.map((row, i) => `
-          <tr>
-            <td style="text-align:center">${i + 1}</td>
-            <td>${row.sasaranStrategis}</td>
-            <td style="font-family:monospace;font-size:10pt;text-align:center">${row.kodeIndikator}</td>
-            <td>${row.namaIndikator}</td>
-            <td style="text-align:center">${row.targetKuantitas !== null ? row.targetKuantitas : "—"}</td>
-          </tr>`).join("");
+        const sigPeg = (rencanaStatus as any)?.signaturePegawai ?? null;
+        const sigPK = (rencanaStatus as any)?.signaturePihakKedua ?? null;
+        const INSTITUSI = 'Universitas Pembangunan Nasional "Veteran" Jakarta';
+        const spDipa = `SP DIPA-139.03.2.693372/${tahun}`;
+        const logoUrl = `${window.location.origin}/logo-upnvj.png`;
+
+        // derive unit name from jabatan: "dosen S1 Sistem Informasi" → "S1 Sistem Informasi"
+        const unitNama = jabatan.replace(/^(dosen|kaprodi|kajur|wakil dekan|wd|dekan|kepala jurusan|kepala program studi)\s+/i, "").trim();
+        const pihakKeduaJabatan = unitNama ? `Dekan ${unitNama}` : "Dekan";
+
+        const resolveTarget = (item: any): string => {
+          const v = item.disposisiJumlah ?? item.nilaiTarget;
+          return v !== null && v !== undefined ? String(v) : "-";
+        };
+
+        // ── IKU rows ──
+        interface IRow { no: number; sasaran: string; kode: string; ikuNama: string; satuan: string; target: string; }
+        const ikuRows: IRow[] = [];
+        let ikuNo = 1;
+        for (const group of ikuData as IndikatorGroup[]) {
+          for (const sub of group.subIndikators) {
+            const children = sub.children ?? [];
+            if (children.length === 0) {
+              ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (sub as any).kode, ikuNama: sub.nama, satuan: (sub as any).satuan ?? "", target: resolveTarget(sub) });
+            } else {
+              for (const child of children) {
+                const l3s = child.children ?? [];
+                if (l3s.length === 0) {
+                  ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (child as any).kode, ikuNama: child.nama, satuan: (child as any).satuan ?? "", target: resolveTarget(child) });
+                } else {
+                  for (const l3 of l3s) {
+                    ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (l3 as any).kode, ikuNama: (l3 as any).nama, satuan: (l3 as any).satuan ?? "", target: resolveTarget(l3) });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // ── PK groups ──
+        type PKind = 'sub-header' | 'child-header' | 'leaf';
+        interface PKRow { kind: PKind; nama?: string; kode?: string; satuan?: string; target?: string; }
+        const pkGroups: { no: number; sasaran: string; rows: PKRow[] }[] = [];
+        for (const [gi, group] of (pkData as IndikatorGroup[]).entries()) {
+          const rows: PKRow[] = [];
+          for (const sub of group.subIndikators) {
+            rows.push({ kind: 'sub-header', nama: sub.nama });
+            for (const child of sub.children ?? []) {
+              const l3s = child.children ?? [];
+              if (l3s.length === 0) {
+                rows.push({ kind: 'leaf', kode: (child as any).kode, nama: child.nama, satuan: (child as any).satuan ?? "", target: resolveTarget(child) });
+              } else {
+                rows.push({ kind: 'child-header', kode: (child as any).kode, nama: child.nama });
+                for (const l3 of l3s) {
+                  rows.push({ kind: 'leaf', kode: (l3 as any).kode, nama: (l3 as any).nama, satuan: (l3 as any).satuan ?? "", target: resolveTarget(l3) });
+                }
+              }
+            }
+          }
+          pkGroups.push({ no: gi + 1, sasaran: group.nama, rows });
+        }
+
+        // ── Shared cell style strings ──
+        const tdS = `border:1px solid #000;padding:4px 5px;font-size:9.5pt;vertical-align:top;line-height:1.35`;
+        const tdC = `${tdS};text-align:center;vertical-align:middle`;
+        const thS = `${tdC};font-weight:bold;background:#f5f5f5`;
+
+        // ── Signature block helper ──
+        const makeSig = (
+          leftLabel: string, leftName: string, leftNip: string | null, leftSig: string | null,
+          rightLabel: string, rightName: string, rightNip: string | null, rightSig: string | null,
+        ) => `<div style="display:flex;justify-content:space-between;margin-top:36px;font-size:11pt">
+<div style="width:44%"><div>${leftLabel},</div>
+${leftSig ? `<img src="${leftSig}" style="height:70px;max-width:200px;object-fit:contain;display:block;margin:4px 0"/>` : `<div style="height:70px"></div>`}
+<div style="border-top:1px solid #000;padding-top:4px;display:inline-block;min-width:180px;font-weight:bold">${leftName}</div>
+${leftNip ? `<div style="font-size:10pt">NIP. ${leftNip}</div>` : ''}</div>
+<div style="width:44%;text-align:center"><div>Jakarta, ${tanggal}</div><div>${rightLabel},</div>
+${rightSig ? `<img src="${rightSig}" style="height:70px;max-width:200px;object-fit:contain;display:block;margin:4px auto"/>` : `<div style="height:70px"></div>`}
+<div style="border-top:1px solid #000;padding-top:4px;display:inline-block;min-width:180px;font-weight:bold">${rightName}</div>
+${rightNip ? `<div style="font-size:10pt">NIP. ${rightNip}</div>` : ''}</div></div>`;
+
+        // ── Lampiran page header ──
+        const pageHeader = (lampiran: string) =>
+          `<div style="text-align:right;font-size:9pt;margin-bottom:6px">${lampiran}</div>
+<div style="text-align:center;font-weight:bold;font-size:10.5pt;text-transform:uppercase;line-height:1.7;margin-bottom:16px">
+<div>PERJANJIAN KINERJA TAHUN ${tahun}</div>
+<div>${jabatan.toUpperCase()}</div><div>DENGAN</div>
+<div>${pihakKeduaJabatan.toUpperCase()}</div>
+<div>${INSTITUSI.toUpperCase()}</div>
+<div>TAHUN ANGGARAN ${tahun}</div>
+<div>BERDASARKAN ${spDipa}</div></div>`;
+
+        // ── Lampiran 1 — IKU ──
+        const ikuTableHtml = ikuRows.length === 0 ? '' :
+          `<div style="page-break-before:always">${pageHeader('Lampiran 1')}
+<table style="width:100%;border-collapse:collapse"><thead><tr>
+<th style="${thS};width:28px">No.</th>
+<th style="${thS};width:26%">Sasaran Program</th>
+<th style="${thS};width:52px">Kode</th>
+<th style="${thS}">Indikator Kinerja Utama</th>
+<th style="${thS};width:65px">Satuan</th>
+<th style="${thS};width:52px">Target</th>
+</tr></thead><tbody>
+${ikuRows.map(r => `<tr><td style="${tdC}">${r.no}</td><td style="${tdS}">${r.sasaran}</td><td style="${tdC}">${r.kode}</td><td style="${tdS}">${r.ikuNama}</td><td style="${tdC}">${r.satuan}</td><td style="${tdC}">${r.target}</td></tr>`).join('')}
+</tbody></table>
+${makeSig(pihakKeduaJabatan, pihakKeduaNama, pihakKeduaNip, sigPK, jabatan, nama, nip, sigPeg)}</div>`;
+
+        // ── Lampiran 2 — PK ──
+        const pkTableRows = pkGroups.map(group => {
+          const rowCount = group.rows.length;
+          return group.rows.map((row, ri) => {
+            const lead = ri === 0
+              ? `<td rowspan="${rowCount}" style="${tdC};font-weight:bold">${group.no}</td><td rowspan="${rowCount}" style="${tdS}">${group.sasaran}</td>`
+              : '';
+            if (row.kind === 'sub-header') return `<tr>${lead}<td colspan="2" style="${tdS};font-weight:bold;font-style:italic">${row.nama}</td><td style="${tdS}"></td><td style="${tdS}"></td></tr>`;
+            if (row.kind === 'child-header') return `<tr>${lead}<td style="${tdC};width:44px;font-weight:bold">${row.kode ?? ''}</td><td colspan="3" style="${tdS};font-weight:bold">${row.nama ?? ''}</td></tr>`;
+            return `<tr>${lead}<td style="${tdC};width:44px">${row.kode ?? ''}</td><td style="${tdS}">${row.nama ?? ''}</td><td style="${tdC}">${row.satuan ?? ''}</td><td style="${tdC}">${row.target ?? ''}</td></tr>`;
+          }).join('');
+        }).join('');
+        const pkTableHtml = pkGroups.length === 0 ? '' :
+          `<div style="page-break-before:always">${pageHeader('Lampiran 2')}
+<table style="width:100%;border-collapse:collapse"><thead><tr>
+<th style="${thS};width:28px">No.</th>
+<th style="${thS};width:22%">Sasaran Program</th>
+<th style="${thS};width:44px">Kode</th>
+<th style="${thS}">Indikator Kinerja Kegiatan</th>
+<th style="${thS};width:65px">Satuan</th>
+<th style="${thS};width:52px">Target</th>
+</tr></thead><tbody>${pkTableRows}</tbody></table>
+${makeSig(pihakKeduaJabatan, pihakKeduaNama, pihakKeduaNip, sigPK, jabatan, nama, nip, sigPeg)}</div>`;
+
+        // ── Cover page ──
+        const coverHtml =
+          `<div style="text-align:center;margin-bottom:14px"><img src="${logoUrl}" style="height:80px;object-fit:contain" onerror="this.style.display='none'"/></div>
+<div style="font-weight:bold;font-size:13pt;line-height:1.7;margin-bottom:28px;text-align:center">
+<div>Perjanjian Kinerja Tahun ${tahun}</div>
+<div>${jabatan}</div><div>dengan</div>
+<div>${pihakKeduaJabatan}</div><div>${INSTITUSI}</div></div>
+<div style="text-align:justify;font-size:12pt;line-height:1.9;margin-bottom:20px">Dalam rangka mewujudkan manajemen pemerintahan yang efektif, transparan dan akuntabel serta berorientasi pada hasil, kami yang bertanda tangan di bawah ini:</div>
+<table style="border-collapse:collapse;margin-bottom:10px"><tbody>
+<tr><td style="width:95px;font-size:12pt;padding-bottom:3px;vertical-align:top">Nama</td><td style="width:14px;font-size:12pt;vertical-align:top">:</td><td style="font-size:12pt">${nama}</td></tr>
+<tr><td style="font-size:12pt;vertical-align:top">Jabatan</td><td style="font-size:12pt;vertical-align:top">:</td><td style="font-size:12pt;line-height:1.5">${jabatan}<br/>${INSTITUSI}</td></tr>
+</tbody></table>
+<div style="font-size:12pt;margin-bottom:22px">selanjutnya disebut <strong>PIHAK PERTAMA</strong></div>
+<table style="border-collapse:collapse;margin-bottom:10px"><tbody>
+<tr><td style="width:95px;font-size:12pt;padding-bottom:3px;vertical-align:top">Nama</td><td style="width:14px;font-size:12pt;vertical-align:top">:</td><td style="font-size:12pt">${pihakKeduaNama}</td></tr>
+<tr><td style="font-size:12pt;vertical-align:top">Jabatan</td><td style="font-size:12pt;vertical-align:top">:</td><td style="font-size:12pt;line-height:1.5">${pihakKeduaJabatan}<br/>${INSTITUSI}</td></tr>
+</tbody></table>
+<div style="font-size:12pt;margin-bottom:22px">selaku atasan pihak pertama, selanjutnya disebut <strong>PIHAK KEDUA</strong></div>
+<div style="text-align:justify;font-size:12pt;line-height:1.9;margin-bottom:14px">PIHAK PERTAMA berjanji akan mewujudkan target kinerja sesuai lampiran yang merupakan bagian tidak terpisahkan perjanjian ini, dalam rangka mencapai target kinerja jangka pendek seperti yang telah ditetapkan dalam dokumen perencanaan. Keberhasilan dan kegagalan pencapaian target kinerja tersebut menjadi tanggung jawab pihak pertama.</div>
+<div style="text-align:justify;font-size:12pt;line-height:1.9;margin-bottom:34px">PIHAK KEDUA akan melakukan supervisi yang diperlukan serta melakukan evaluasi terhadap capaian kinerja dari perjanjian ini dan mengambil tindakan yang diperlukan dalam rangka pemberian penghargaan dan sanksi.</div>
+${makeSig('Pihak Kedua', pihakKeduaNama, pihakKeduaNip, sigPK, 'Pihak Pertama', nama, nip, sigPeg)}`;
+
         const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"/>
-<title>Rencana SKP – ${nama}</title>
-<style>@page{size:A4;margin:25mm 20mm 20mm 30mm}body{font-family:'Times New Roman',serif;font-size:12pt;color:#000;margin:0}h1{text-align:center;font-size:14pt;text-transform:uppercase;margin-bottom:4px}
-.sub{text-align:center;font-size:11pt;margin-bottom:20px}.identitas table{border-collapse:collapse;margin-bottom:16px}.identitas td{padding:2px 8px 2px 0;font-size:12pt;vertical-align:top}
-table.main{width:100%;border-collapse:collapse;margin-top:12px}table.main th,table.main td{border:1px solid #000;padding:6px 8px;font-size:11pt}table.main th{background:#f3f3f3;text-align:center;font-weight:bold}
-.sig-area{display:flex;justify-content:space-between;margin-top:48px}.sig-box{text-align:center;width:220px}.sig-line{border-bottom:1px solid #000;margin:60px 0 4px}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head>
-<body>
-<h1>Rencana Sasaran Kinerja Pegawai</h1>
-<p class="sub">Periode Penilaian: 1 Januari ${tahun} s/d 31 Desember ${tahun}</p>
-<div class="identitas"><table>
-<tr><td style="width:160px;font-weight:600">NIP</td><td style="width:12px">:</td><td>${nip}</td></tr>
-<tr><td style="font-weight:600">Nama</td><td>:</td><td>${nama}</td></tr>
-<tr><td style="font-weight:600">Jabatan</td><td>:</td><td>${jabatan}</td></tr>
-</table></div>
-<table class="main"><thead><tr><th style="width:36px">No</th><th>Sasaran Program</th><th style="width:100px">Kode</th><th>Nama Indikator</th><th style="width:80px">Target</th></tr></thead>
-<tbody>${tableRows}</tbody></table>
-<div class="sig-area">
-<div class="sig-box"><p style="margin:0">Yang Membuat,</p><div class="sig-line"></div><p style="margin:0;font-weight:bold">${nama}</p><p style="margin:0;font-size:10pt">NIP. ${nip}</p></div>
-<div class="sig-box"><p style="margin:0">Jakarta, ${tanggal}</p><p style="margin:0">Pihak Kedua,</p><div class="sig-line"></div><p style="margin:0;font-weight:bold">${pihakKeduaNama}</p><p style="margin:0;font-size:10pt">NIP. ${pihakKeduaNip}</p></div>
-</div></body></html>`;
+<title>Rencana SKP – ${nama} – ${tahun}</title>
+<style>@page{size:A4;margin:25mm 20mm 20mm 30mm}body{font-family:'Times New Roman',serif;font-size:12pt;color:#000;margin:0;padding:0}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
+</head><body>${coverHtml}${ikuTableHtml}${pkTableHtml}</body></html>`;
+
         const win = window.open("", "_blank", "width=900,height=700");
         if (!win) return;
         win.document.write(html);
@@ -1238,7 +1370,7 @@ table.main{width:100%;border-collapse:collapse;margin-top:12px}table.main th,tab
 <td style="text-align:center;vertical-align:middle;padding:4px 5px;font-weight:bold">${hk.angka}</td></tr>`;
         }).join("");
         const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"/>
-<title>EKP – ${nama} – ${tahun}</title>
+<title>Hasil SKP – ${nama} – ${tahun}</title>
 <style>@page{size:A4 portrait;margin:15mm 12mm 15mm 15mm}body{font-family:'Times New Roman',serif;font-size:9pt;color:#000;margin:0;padding:0}
 .main-table{width:100%;border-collapse:collapse}.main-table td,.main-table th{border:1px solid #000;padding:3px 5px;font-size:9pt;vertical-align:top}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head>
@@ -1457,7 +1589,7 @@ ${hasilKerjaRows}
               cursor: rows.length === 0 ? "not-allowed" : "pointer",
             }}
           >
-            📄 Cetak Formulir EKP
+            📄 Cetak Hasil SKP
           </button>
 
               {rows.length === 0 && (
@@ -1726,7 +1858,7 @@ ${hasilKerjaRows}
         )}
 
         {/* ── Checker: Pemeriksaan Dokumen SKP Bawahan ── */}
-        {(checkerBawahan.rencanaSKPBawahan.length > 0 || checkerBawahan.ekpBawahan.length > 0) && (
+        {(checkerBawahan.checkerBawahan.length > 0 || checkerBawahan.rencanaSKPBawahan.length > 0 || checkerBawahan.ekpBawahan.length > 0) && (
           <div
             style={{
               backgroundColor: "white",
@@ -1743,14 +1875,14 @@ ${hasilKerjaRows}
               Daftar pegawai yang dokumen SKP-nya memerlukan persetujuan atau paraf Anda berdasarkan konfigurasi penilai.
             </p>
 
-            {/* Rencana SKP — Step 1: Validasi Atasan */}
-            {checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'disetujui_pegawai').length > 0 && (
+            {/* Rencana SKP — Checker: Validasi sebelum Pihak Kedua TTD */}
+            {checkerBawahan.checkerBawahan.length > 0 && (
               <div style={{ marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#d97706", backgroundColor: "#fef9c3", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 20 }}>
-                    Rencana SKP — Validasi Atasan
+                    Rencana SKP — Pengecekan Checker
                   </span>
-                  <span style={{ fontSize: 12, color: "#6b7280" }}>Pegawai sudah menyetujui — perlu validasi Anda sebelum dapat di-TTD Pihak Kedua</span>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>Pegawai sudah mengajukan — perlu validasi Anda sebelum Pihak Kedua menandatangani</span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
@@ -1762,50 +1894,54 @@ ${hasilKerjaRows}
                       </tr>
                     </thead>
                     <tbody>
-                      {checkerBawahan.rencanaSKPBawahan
-                        .filter(b => b.rencanaStatus === 'disetujui_pegawai')
-                        .map((b, i) => (
-                          <tr key={b.userId}>
-                            <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
-                            <td style={tdStyle}>
-                              <p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p>
-                              <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p>
-                            </td>
-                            <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
-                            <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
-                            <td style={tdStyle}>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>
-                                ✓ Disetujui Pegawai
-                              </span>
-                            </td>
-                            <td style={{ ...tdStyle, display: "flex", gap: 6 }}>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    await validasiRencanaSKPAtasan(b.userId, tahun);
-                                    const updated = await getSkpCheckerBawahan(user!.id, tahun);
-                                    setCheckerBawahan(updated);
-                                    toast.success(`Rencana SKP ${b.nama} berhasil divalidasi.`);
-                                  } catch {
-                                    toast.error('Gagal memvalidasi rencana SKP.');
-                                  }
-                                }}
-                                style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}
-                              >
-                                ✓ Validasi
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                      {checkerBawahan.checkerBawahan.map((b, i) => (
+                        <tr key={b.userId}>
+                          <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
+                          <td style={tdStyle}>
+                            <p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p>
+                            <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p>
+                          </td>
+                          <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
+                          <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
+                          <td style={tdStyle}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>
+                              ⏳ Menunggu Pengecekan
+                            </span>
+                          </td>
+                          <td style={{ ...tdStyle, display: "flex", gap: 6 }}>
+                            <button
+                              onClick={() => generateCheckerDoc(b, 'rencana')}
+                              style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #d97706", backgroundColor: "white", color: "#d97706", fontWeight: 600, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Lihat
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await checkRencanaSKPChecker(b.userId, tahun, null);
+                                  const updated = await getSkpCheckerBawahan(user!.id, tahun);
+                                  setCheckerBawahan(updated);
+                                  toast.success(`Rencana SKP ${b.nama} berhasil divalidasi.`);
+                                } catch {
+                                  toast.error('Gagal memvalidasi rencana SKP.');
+                                }
+                              }}
+                              style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              ✓ Validasi
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
 
-            {/* Rencana SKP — Step 2: TTD Pihak Kedua */}
+            {/* Rencana SKP — TTD Pihak Kedua (setelah checker validasi) */}
             {checkerBawahan.rencanaSKPBawahan.length > 0 && (() => {
-              const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'tervalidasi_atasan');
+              const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'checked' || b.rencanaStatus === 'signed_pegawai');
               const done = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'signed_pihak_kedua');
               const allSelected = eligible.length > 0 && rencanaSelected.size === eligible.length;
               if (eligible.length === 0 && done.length === 0) return null;
@@ -1868,7 +2004,9 @@ ${hasilKerjaRows}
                           <td style={tdStyle}>
                             {isDone
                               ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", backgroundColor: "#dcfce7", padding: "3px 8px", borderRadius: 20, border: "1px solid #86efac" }}>✓ TTD Selesai</span>
-                              : <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>Tervalidasi Atasan ✓</span>
+                              : b.rencanaStatus === 'checked'
+                                ? <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>✓ Sudah Dicek</span>
+                                : <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", backgroundColor: "#ecfdf5", padding: "3px 8px", borderRadius: 20, border: "1px solid #6ee7b7" }}>✓ Diajukan Pegawai</span>
                             }
                           </td>
                           <td style={{ ...tdStyle, display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1902,7 +2040,7 @@ ${hasilKerjaRows}
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", backgroundColor: "#f5f3ff", border: "1px solid #c4b5fd", padding: "3px 10px", borderRadius: 20 }}>
-                    Formulir EKP — Pejabat Penilai
+                    Hasil SKP — Pejabat Penilai
                   </span>
                   <span style={{ fontSize: 12, color: "#6b7280" }}>Anda dikonfigurasi sebagai Pejabat Penilai untuk jabatan-jabatan berikut</span>
                 </div>
@@ -1944,7 +2082,7 @@ ${hasilKerjaRows}
                                 whiteSpace: "nowrap",
                               }}
                             >
-                              Cetak Formulir EKP
+                              Cetak Hasil SKP
                             </button>
                           </td>
                         </tr>

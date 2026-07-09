@@ -8,7 +8,7 @@ import {
   getMySkpStatus,
   getAvailableYears,
   getSkpRencanaStatus,
-  setujuRencanaSKPPegawai,
+  signRencanaSKPPegawai,
   type IndikatorGrouped,
   type SkpRencanaStatusData,
 } from "@/lib/api";
@@ -138,22 +138,26 @@ function PageHeader({ lampiran, title, jabatan, unitNama, tahun, spDipa }: {
   );
 }
 
-function SignatureRow({ leftLabel, leftName, rightDate, rightLabel, rightName }: {
-  leftLabel: string; leftName: string;
-  rightDate: string; rightLabel?: string; rightName: string;
+function SignatureRow({ leftLabel, leftName, leftSig, rightDate, rightLabel, rightName, rightSig }: {
+  leftLabel: string; leftName: string; leftSig?: string | null;
+  rightDate: string; rightLabel?: string; rightName: string; rightSig?: string | null;
 }) {
   const sigStyle: React.CSSProperties = { fontSize: 10.5, lineHeight: 1.6 };
   return (
     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 32, ...sigStyle }}>
       <div style={{ width: "42%" }}>
         <div>{leftLabel},</div>
-        <div style={{ height: 70 }} />
+        {leftSig
+          ? <img src={leftSig} alt="TTD" style={{ height: 70, maxWidth: 200, objectFit: "contain" }} />
+          : <div style={{ height: 70 }} />}
         <div style={{ borderTop: "1px solid #000", paddingTop: 4, display: "inline-block", minWidth: 200 }}>{leftName}</div>
       </div>
       <div style={{ width: "42%", textAlign: "center" }}>
         <div>{rightDate}</div>
         {rightLabel && <div>{rightLabel},</div>}
-        <div style={{ height: 70 }} />
+        {rightSig
+          ? <img src={rightSig} alt="TTD" style={{ height: 70, maxWidth: 200, objectFit: "contain" }} />
+          : <div style={{ height: 70 }} />}
         <div style={{ borderTop: "1px solid #000", paddingTop: 4, display: "inline-block", minWidth: 200 }}>{rightName}</div>
       </div>
     </div>
@@ -241,6 +245,12 @@ export default function CetakSKP() {
   const [rencanaStatus, setRencanaStatus] = useState<SkpRencanaStatusData | null>(null);
   const [setujuSaving, setSetujuSaving] = useState(false);
 
+  // Signature modal (pegawai)
+  const [signModalOpen, setSignModalOpen] = useState(false);
+  const [signHasDrawn, setSignHasDrawn] = useState(false);
+  const signCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const signIsDrawing = useRef(false);
+
   const roleId: number =
     user?.roleId ??
     (user?.roles as any[])?.find((r: any) => r.isPrimary)?.id ??
@@ -276,15 +286,37 @@ export default function CetakSKP() {
       .finally(() => setLoading(false));
   }, [user, tahun, roleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleSetuju() {
+  // Initialize canvas when signature modal opens
+  useEffect(() => {
+    if (!signModalOpen) return;
+    const canvas = signCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    setSignHasDrawn(false);
+  }, [signModalOpen]);
+
+  const signHandlers = makeDrawHandlers(signCanvasRef, signIsDrawing, setSignHasDrawn);
+
+  async function handleSignConfirm() {
     if (!user?.id) return;
     setSetujuSaving(true);
     try {
-      const result = await setujuRencanaSKPPegawai(user.id, tahun);
+      const sig = signHasDrawn && signCanvasRef.current
+        ? signCanvasRef.current.toDataURL('image/png')
+        : null;
+      const result = await signRencanaSKPPegawai(user.id, tahun, sig);
       setRencanaStatus(result);
-      toast.success('Rencana SKP berhasil disetujui. Menunggu validasi atasan.');
+      setSignModalOpen(false);
+      toast.success('Rencana SKP berhasil ditandatangani. Menunggu validasi atasan.');
     } catch {
-      toast.error('Gagal menyetujui Rencana SKP.');
+      toast.error('Gagal menyimpan tanda tangan.');
     } finally {
       setSetujuSaving(false);
     }
@@ -385,31 +417,37 @@ export default function CetakSKP() {
 
         <div style={{ flex: 1 }} />
 
-        {rencanaStatus?.status === 'draft' || !rencanaStatus ? (
+        {(!rencanaStatus || rencanaStatus.status === 'draft') ? (
           <button
-            onClick={handleSetuju}
-            disabled={setujuSaving}
+            onClick={() => setSignModalOpen(true)}
             style={{
               display: "flex", alignItems: "center", gap: 7,
               padding: "7px 20px", border: "none", borderRadius: 8,
               background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
               color: "#fff", fontWeight: 600, fontSize: 13,
-              cursor: setujuSaving ? "not-allowed" : "pointer",
+              cursor: "pointer",
               boxShadow: "0 2px 8px rgba(245,158,11,.30)",
-              opacity: setujuSaving ? 0.7 : 1,
             }}
           >
-            ✅ {setujuSaving ? "Menyimpan…" : "Setuju Rencana SKP"}
+            ✅ Setuju &amp; Tandatangani Rencana SKP
           </button>
         ) : rencanaStatus.status === 'signed_pegawai' ? (
           <span style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: "#fef9c3", color: "#b45309",
+          }}>
+            ⏳ Menunggu Pengecekan Checker
+          </span>
+        ) : rencanaStatus.status === 'checked' ? (
+          <span style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
             background: "#dbeafe", color: "#1d4ed8",
           }}>
-            ⏳ Menunggu Validasi Atasan
+            ⏳ Menunggu Persetujuan Penjabat
           </span>
-        ) : (
+        ) : rencanaStatus.status === 'signed_pihak_kedua' ? (
           <button
             onClick={() => window.print()}
             style={{
@@ -425,7 +463,7 @@ export default function CetakSKP() {
             </svg>
             Cetak Rencana SKP
           </button>
-        )}
+        ) : null}
       </div>
 
       {loading ? (
@@ -522,9 +560,11 @@ export default function CetakSKP() {
             <SignatureRow
               leftLabel="Pihak Kedua"
               leftName={atasanNama}
+              leftSig={rencanaStatus?.signaturePihakKedua}
               rightDate={tanggalTtd}
               rightLabel="Pihak Pertama"
               rightName={user?.nama ?? "..."}
+              rightSig={rencanaStatus?.signaturePegawai}
             />
           </div>
 
@@ -570,9 +610,11 @@ export default function CetakSKP() {
               <SignatureRow
                 leftLabel={`Dekan ${user?.unitNama ?? ""}`}
                 leftName={atasanNama}
+                leftSig={rencanaStatus?.signaturePihakKedua}
                 rightDate={tanggalTtd}
                 rightLabel={jabatan}
                 rightName={user?.nama ?? "..."}
+                rightSig={rencanaStatus?.signaturePegawai}
               />
             </div>
           )}
@@ -651,9 +693,11 @@ export default function CetakSKP() {
               <SignatureRow
                 leftLabel={`Dekan ${user?.unitNama ?? ""}`}
                 leftName={atasanNama}
+                leftSig={rencanaStatus?.signaturePihakKedua}
                 rightDate={tanggalTtd}
                 rightLabel={jabatan}
                 rightName={user?.nama ?? "..."}
+                rightSig={rencanaStatus?.signaturePegawai}
               />
             </div>
           )}
@@ -663,6 +707,67 @@ export default function CetakSKP() {
               Belum ada data target yang didisposisikan kepada Anda untuk tahun {tahun}.
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Modal Tanda Tangan Pegawai ── */}
+      {signModalOpen && (
+        <div
+          className="no-print"
+          style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "sans-serif" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setSignModalOpen(false); }}
+        >
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Tanda Tangan Rencana SKP</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>Tanda tangan sebagai Pihak Pertama untuk tahun {tahun}</p>
+              </div>
+              <button onClick={() => setSignModalOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+            </div>
+            <div style={{ padding: "16px 24px" }}>
+              <div style={{ marginBottom: 12, padding: "10px 14px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, fontSize: 12, color: "#92400e" }}>
+                Dengan menandatangani, Anda menyetujui Rencana SKP tahun {tahun}. Tanda tangan akan tampil di dokumen cetak setelah divalidasi atasan.
+              </div>
+              <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
+                <canvas
+                  ref={signCanvasRef}
+                  width={432}
+                  height={140}
+                  style={{ display: "block", width: "100%", touchAction: "none" }}
+                  onMouseDown={signHandlers.onMouseDown}
+                  onMouseMove={signHandlers.onMouseMove}
+                  onMouseUp={signHandlers.onMouseUp}
+                  onMouseLeave={signHandlers.onMouseUp}
+                  onTouchStart={signHandlers.onTouchStart}
+                  onTouchMove={signHandlers.onTouchMove}
+                  onTouchEnd={signHandlers.onTouchEnd}
+                />
+                {!signHasDrawn && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
+                    Tanda tangan di sini
+                  </div>
+                )}
+              </div>
+              {signHasDrawn && (
+                <button onClick={signHandlers.clear} style={{ marginTop: 8, padding: "4px 12px", border: "1px solid #e5e7eb", borderRadius: 6, background: "#f9fafb", color: "#6b7280", fontSize: 12, cursor: "pointer" }}>
+                  Ulangi
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "0 24px 20px" }}>
+              <button onClick={() => setSignModalOpen(false)} style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontWeight: 500, fontSize: 13, cursor: "pointer" }}>
+                Batal
+              </button>
+              <button
+                onClick={handleSignConfirm}
+                disabled={setujuSaving}
+                style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: "#f59e0b", color: "white", fontWeight: 600, fontSize: 13, cursor: setujuSaving ? "not-allowed" : "pointer", opacity: setujuSaving ? 0.7 : 1 }}
+              >
+                {setujuSaving ? "Menyimpan…" : "Setujui & Simpan TTD"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

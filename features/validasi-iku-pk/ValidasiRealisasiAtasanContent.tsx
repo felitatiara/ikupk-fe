@@ -288,78 +288,91 @@ export default function ValidasiRealisasiAtasanContent() {
     if (!user?.roleId || !token) return;
     setExportingLaporan(true);
     try {
-      type MergeRange = { s: { r: number; c: number }; e: { r: number; c: number } };
       const wb = XLSX.utils.book_new();
 
       for (const jenisExport of ["IKU", "PK"]) {
         const grouped = await getLaporanWithRealisasi(jenisExport, tahun, user.roleId);
         if (grouped.length === 0) continue;
 
-        // Kumpulkan semua indikator ID yang perlu folder link
-        const indikatorIds: number[] = [];
+        // Kumpulkan leaf ID untuk folder links (L2 untuk IKU, L3 untuk PK)
+        const leafIds: number[] = [];
         for (const group of grouped) {
           for (const sub of group.subIndikators) {
             if (jenisExport === "IKU") {
-              indikatorIds.push(sub.id);
+              if (sub.children.length > 0) {
+                sub.children.forEach(c => leafIds.push(c.id));
+              } else {
+                leafIds.push(sub.id);
+              }
             } else {
-              for (const child of sub.children ?? []) {
-                for (const l3 of (child as any).children ?? []) {
-                  indikatorIds.push(l3.id);
-                }
+              for (const child of sub.children) {
+                for (const l3 of child.children) leafIds.push(l3.id);
               }
             }
           }
         }
-        const uniqueIds = [...new Set(indikatorIds)];
+
+        const uniqueIds = [...new Set(leafIds)];
         const folderResults = await Promise.all(
-          uniqueIds.map(id =>
-            getAllRealisasiFiles(id, token).catch(() => ({ folderLink: null, files: [] }))
-          )
+          uniqueIds.map(id => getAllRealisasiFiles(id, token).catch(() => ({ folderLink: null }))),
         );
         const folderLinkMap = new Map<number, string>();
         uniqueIds.forEach((id, idx) => {
-          const link = (folderResults[idx] as any).folderLink;
+          const link = (folderResults[idx] as { folderLink?: string | null }).folderLink;
           if (link) folderLinkMap.set(id, link);
         });
 
-        const aoa: (string | number)[][] = [];
-        const merges: MergeRange[] = [];
-
-        // Hitung total baris dari struktur data
-        let totalRows = 0;
-        for (const group of grouped) {
-          for (const sub of group.subIndikators) {
-            totalRows++;
-            for (const child of sub.children ?? []) {
-              totalRows++;
-              totalRows += ((child as any).children ?? []).length;
-            }
-          }
-        }
-        const emptyRow = () => ["", "", "", "", "", "", "", ""];
+        type Row = (string | number | null)[];
+        const aoa: Row[] = [];
 
         if (jenisExport === "IKU") {
-          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Target Universitas", "Tenggat", "Realisasi", "", "Data Link"]);
-          aoa.push(["", "", "", "", "", "%", "Angka", ""]);
-          merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
-          merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
-          merges.push({ s: { r: 0, c: 2 }, e: { r: 1, c: 2 } });
-          merges.push({ s: { r: 0, c: 3 }, e: { r: 1, c: 3 } });
-          merges.push({ s: { r: 0, c: 4 }, e: { r: 1, c: 4 } });
-          merges.push({ s: { r: 0, c: 5 }, e: { r: 0, c: 6 } });
-          merges.push({ s: { r: 0, c: 7 }, e: { r: 1, c: 7 } });
-          for (let i = 0; i < totalRows; i++) aoa.push(emptyRow());
+          aoa.push(["No.", "Kode", "Indikator", "Target (%)", "Tenggat", "Realisasi (%)", "Realisasi (Angka)", "Capaian (%)", "Data Link"]);
+
+          let no = 0;
+          for (const group of grouped) {
+            // L0 header
+            aoa.push(["", group.kode, group.nama.toUpperCase(), group.persentaseTarget ?? "", group.tenggat ?? "", "", "", group.sdPersen != null ? `${group.sdPersen.toFixed(1)}%` : "", ""]);
+
+            for (const sub of group.subIndikators) {
+              if (sub.children.length === 0) {
+                // L1 = leaf (tidak ada L2)
+                no++;
+                aoa.push([no, sub.kode, `  ${sub.nama}`, sub.nilaiTarget ?? "", sub.tenggat ?? "", sub.realisasiKualitas != null ? `${sub.realisasiKualitas.toFixed(1)}%` : "", sub.realisasiKuantitas ?? 0, sub.persenCapaian != null ? `${sub.persenCapaian.toFixed(1)}%` : "", folderLinkMap.get(sub.id) ?? ""]);
+              } else {
+                // L1 = sub-header, L2 = leaf
+                aoa.push(["", sub.kode, `  ${sub.nama}`, "", "", "", "", "", ""]);
+                for (const child of sub.children) {
+                  no++;
+                  aoa.push([no, child.kode, `    ${child.nama}`, child.nilaiTarget ?? "", child.tenggat ?? "", child.realisasiKualitas != null ? `${child.realisasiKualitas.toFixed(1)}%` : "", child.realisasiKuantitas ?? 0, child.persenCapaian != null ? `${child.persenCapaian.toFixed(1)}%` : "", folderLinkMap.get(child.id) ?? ""]);
+                }
+              }
+            }
+          }
+
           const ws = XLSX.utils.aoa_to_sheet(aoa);
-          ws["!merges"] = merges;
-          ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
+          ws["!cols"] = [{ wch: 5 }, { wch: 10 }, { wch: 55 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 13 }, { wch: 55 }];
           XLSX.utils.book_append_sheet(wb, ws, "Laporan IKU");
 
         } else {
-          aoa.push(["No.", "Sasaran Program", "Indikator Kinerja Kegiatan", "Waktu Pelaporan", "Satuan", `Target ${tahun}`, "Realisasi", "Data Link"]);
-          for (let i = 0; i < totalRows; i++) aoa.push(emptyRow());
+          aoa.push(["No.", "Kode", "Indikator Kinerja", "Tenggat", "Satuan", `Target ${tahun}`, "Realisasi", "Capaian (%)", "Data Link"]);
+
+          let no = 0;
+          for (const group of grouped) {
+            aoa.push(["", group.kode, group.nama.toUpperCase(), "", "", "", "", "", ""]);
+            for (const sub of group.subIndikators) {
+              aoa.push(["", sub.kode, `  ${sub.nama}`, "", "", "", "", "", ""]);
+              for (const child of sub.children) {
+                aoa.push(["", child.kode, `    ${child.nama}`, "", "", "", "", "", ""]);
+                for (const l3 of child.children) {
+                  no++;
+                  aoa.push([no, l3.kode, `      ${l3.nama}`, l3.tenggat ?? "", l3.satuan ?? "", l3.nilaiTarget ?? "", l3.realisasiKuantitas ?? 0, l3.persenCapaian != null ? `${l3.persenCapaian.toFixed(1)}%` : "", folderLinkMap.get(l3.id) ?? ""]);
+                }
+              }
+            }
+          }
+
           const ws = XLSX.utils.aoa_to_sheet(aoa);
-          ws["!merges"] = merges;
-          ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 44 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
+          ws["!cols"] = [{ wch: 5 }, { wch: 10 }, { wch: 55 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 55 }];
           XLSX.utils.book_append_sheet(wb, ws, "Laporan PK");
         }
       }

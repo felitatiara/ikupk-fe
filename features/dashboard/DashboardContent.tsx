@@ -2,6 +2,7 @@
 
 import IKUPKContent from "@/features/iku-pk/IKUPKContent";
 import { useAuth } from "@/hooks/useAuth";
+import MonitoringBoxes from "./MonitoringBoxes";
 
 export default function DashboardContent() {
   const { user: authUser } = useAuth();
@@ -10,5 +11,11 @@ export default function DashboardContent() {
   const role: "admin" | "pimpinan" | "user" =
     roleLevel === 0 ? "admin" : roleLevel === 1 ? "pimpinan" : "user";
 
-  return <IKUPKContent role={role} pageTitle="Beranda" />;
+  return (
+    <IKUPKContent
+      role={role}
+      pageTitle="Beranda"
+      headerSlot={<MonitoringBoxes />}
+    />
+  );
 }
