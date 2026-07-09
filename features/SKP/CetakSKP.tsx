@@ -401,7 +401,7 @@ export default function CetakSKP() {
           >
             ✅ {setujuSaving ? "Menyimpan…" : "Setuju Rencana SKP"}
           </button>
-        ) : rencanaStatus.status === 'disetujui_pegawai' ? (
+        ) : rencanaStatus.status === 'signed_pegawai' ? (
           <span style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,

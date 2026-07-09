@@ -1268,8 +1268,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     realisasi: d.realisasi,
     realisasiBiroPKU: d.realisasiBiroPKU,
     persentaseRealisasi: d.persentaseRealisasi,
-    realProgress: d.actualProgress ?? d.progress,
-    actualProgress: d.actualProgress ?? d.progress,
+    realProgress: d.progress,
+    actualProgress: d.progress,
     progress: d.chartProgress,
   }));
 
