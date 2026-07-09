@@ -386,46 +386,51 @@ function L1Row({ entry, allRoles, router, tahun }: {
                     </div>
 
                     {/* Dosen drill-down */}
-                    {l2DosenExpanded && (
-                      <div style={{ padding: "8px 12px 10px 24px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb" }}>
-                        {l2DosenLoading ? (
-                          <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>Memuat data dosen…</p>
-                        ) : l2DosenItems.length === 0 ? (
-                          <p style={{ margin: 0, fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Belum ada distribusi ke dosen.</p>
-                        ) : (
-                          <>
-                            <p style={{ margin: "0 0 6px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                              {l2DosenItems.length} Dosen Penerima Target
-                            </p>
-                            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
-                              {l2DosenItems.map((item) => (
-                                <div
-                                  key={item.toUserId}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    padding: "5px 12px",
-                                    borderRadius: 8,
-                                    background: "#fff",
-                                    border: "1px solid #ddd6fe",
-                                    fontSize: 11.5,
-                                  }}
-                                >
-                                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
-                                  {item.toUser?.role && (
-                                    <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
-                                      {item.toUser.role}
-                                    </span>
-                                  )}
-                                  <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    {l2DosenExpanded && (() => {
+                      // Only show leaf recipients: users who received but did NOT further distribute.
+                      const senderIds = new Set(l2DosenItems.map(i => i.fromUserId).filter((id): id is number => id != null));
+                      const leafItems = l2DosenItems.filter(i => !senderIds.has(i.toUserId));
+                      return (
+                        <div style={{ padding: "8px 12px 10px 24px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb" }}>
+                          {l2DosenLoading ? (
+                            <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>Memuat data dosen…</p>
+                          ) : leafItems.length === 0 ? (
+                            <p style={{ margin: 0, fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Belum ada distribusi ke dosen.</p>
+                          ) : (
+                            <>
+                              <p style={{ margin: "0 0 6px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                                {leafItems.length} Penerima Target
+                              </p>
+                              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
+                                {leafItems.map((item) => (
+                                  <div
+                                    key={item.toUserId}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      padding: "5px 12px",
+                                      borderRadius: 8,
+                                      background: "#fff",
+                                      border: "1px solid #ddd6fe",
+                                      fontSize: 11.5,
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
+                                    {item.toUser?.role && (
+                                      <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
+                                        {item.toUser.role}
+                                      </span>
+                                    )}
+                                    <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* L3 sub-rows */}
                     {hasSubs && l2.children.map((l3, l3idx) => (

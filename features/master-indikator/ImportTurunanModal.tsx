@@ -34,6 +34,7 @@ interface ParsedEntry {
   targetProdiMin: number;
   amounts: ParsedAmount[];
   sheetName: string;
+  vMarks: VMarkEntry[]; // V marks collected per-row (per indicator), not per sheet
 }
 
 interface MatchedAmount extends ParsedAmount {
@@ -51,6 +52,7 @@ interface MatchedEntry {
   indicatorId: number | null;
   indicatorKode: string;
   amounts: MatchedAmount[];
+  vMarks: VMarkEntry[]; // per-row V marks for this specific indicator row
 }
 
 // Cascade level: one call to upsertDisposisi
@@ -74,6 +76,7 @@ interface DoneStats {
   cascadeCalls: number;
   skippedInd: number;
   skippedUser: number;
+  skippedVMark: number;
   maxDepth: number;
   chainsSaved: number;
 }
@@ -141,7 +144,7 @@ function parseSheet(
 
   const entries: ParsedEntry[] = [];
   let currentIKU = "";
-  // Collect V marks at sheet level (deduplicated by column name)
+  // Sheet-level chain (union of all row V marks) — kept for display only
   const sheetChainMap = new Map<string, VMarkEntry>();
 
   for (let r = dataStart; r < aoa.length; r++) {
@@ -158,17 +161,19 @@ function parseSheet(
     if (!c1) continue;
 
     const amounts: ParsedAmount[] = [];
+    const rowVMarks: VMarkEntry[] = []; // per-row V marks for this specific indicator
     for (let d = 0; d < colNames.length; d++) {
       const raw = row[amtOffset + d];
       const roleLabel = colRoles[d] ?? "";
       const isPimpinan = hasRoleRow && /wakil dekan|kepala jurusan|koordinator prodi/i.test(roleLabel);
 
       if (isPimpinan) {
-        // Collect V mark for cascade chain configuration
+        // Collect V mark for cascade chain configuration — per-row AND sheet-level
         const val = String(raw ?? "").trim().toUpperCase();
         if (val === "V") {
           const colNama = colNames[d];
-          if (!sheetChainMap.has(colNama)) sheetChainMap.set(colNama, { roleLabel, colNama });
+          rowVMarks.push({ roleLabel, colNama }); // per-row
+          if (!sheetChainMap.has(colNama)) sheetChainMap.set(colNama, { roleLabel, colNama }); // sheet-level for display
         }
       } else {
         // Dosen column: numeric target amount
@@ -177,10 +182,12 @@ function parseSheet(
         if (!isNaN(amt) && amt > 0) amounts.push({ excelName: colNames[d], amount: amt });
       }
     }
-    if (!amounts.length) continue;
+    // Include rows that have V marks even when dosen amounts are empty —
+    // those rows still need to create the upper cascade chain (Kajur→Kaprodi→WD)
+    if (!amounts.length && !rowVMarks.length) continue;
 
     const ikuCode = /^(IKU|PK)\s*\d+/i.test(c0) ? c0.replace(/\s+/g, " ") : currentIKU || c0;
-    entries.push({ ikuCode, subLabel: c1, satuan, targetTotal, targetProdiMin, amounts, sheetName });
+    entries.push({ ikuCode, subLabel: c1, satuan, targetTotal, targetProdiMin, amounts, sheetName, vMarks: rowVMarks });
   }
   return { entries, sheetChain: Array.from(sheetChainMap.values()) };
 }
@@ -220,6 +227,75 @@ function matchIndicator(
 // ─── Cascade rollup helpers ───────────────────────────────────────────────────
 
 const DEPTH_LABELS = ["Dosen", "Kaprodi", "Kajur", "Wadek / WD", "Dekan", "Pimpinan"];
+
+/**
+ * Build cascade levels from V-mark users directly (top→bottom by role hierarchy).
+ * This replaces the atasanId-based buildCascadeLevels for pimpinan chain creation,
+ * because atasanId is often null/unconfigured in the DB.
+ *
+ * Result: Admin→WD(amt), WD→KJ(amt) [if KJ resolved], KJ→KP(amt), KP→dosens.
+ */
+function buildLevelsFromVMarks(
+  vMarks: VMarkEntry[],
+  kaprodiUser: UnitUser,
+  kaprodiAmount: number,
+  leaf: { userId: number; amount: number }[],
+  allUsers: Map<number, UnitUser>,
+  findUser: (name: string) => UnitUser | null,
+): CascadeLevel[] {
+  const roleLevel = (label: string): number =>
+    /wakil dekan/i.test(label) ? 1 : /kepala jurusan/i.test(label) ? 2 : /koordinator prodi/i.test(label) ? 3 : 99;
+
+  // Collect resolved pimpinan users from V marks, ordered by role hierarchy (WD first)
+  const pimpinan: Array<{ user: UnitUser; roleLabel: string; lvl: number }> = [];
+  for (const vm of vMarks) {
+    const lvl = roleLevel(vm.roleLabel);
+    if (lvl === 99) continue;
+    const user = findUser(vm.colNama);
+    if (!user) continue;
+    if (!pimpinan.some((p) => p.user.id === user.id)) {
+      pimpinan.push({ user, roleLabel: vm.roleLabel, lvl });
+    }
+  }
+  pimpinan.sort((a, b) => a.lvl - b.lvl); // WD first, then KJ, then KP
+
+  // Ensure kaprodi is always in chain
+  if (!pimpinan.some((p) => p.user.id === kaprodiUser.id)) {
+    pimpinan.push({ user: kaprodiUser, roleLabel: 'Koordinator Prodi', lvl: 3 });
+  }
+
+  const levels: CascadeLevel[] = [];
+
+  // Build pimpinan chain: each level receives kaprodiAmount from the one above
+  for (let i = 0; i < pimpinan.length; i++) {
+    const curr = pimpinan[i];
+    const prev = i > 0 ? pimpinan[i - 1] : null;
+    levels.push({
+      depth: i,
+      roleLabel: curr.roleLabel,
+      fromUserId: prev?.user.id ?? null,
+      fromNama: prev?.user.nama ?? 'Admin',
+      items: [{ toUserId: curr.user.id, toNama: curr.user.nama, jumlahTarget: kaprodiAmount }],
+    });
+  }
+
+  // Dosen level: kaprodi distributes individual amounts to dosens
+  if (leaf.length > 0) {
+    levels.push({
+      depth: pimpinan.length,
+      roleLabel: 'Dosen',
+      fromUserId: kaprodiUser.id,
+      fromNama: kaprodiUser.nama,
+      items: leaf.map((a) => ({
+        toUserId: a.userId,
+        toNama: allUsers.get(a.userId)?.nama ?? String(a.userId),
+        jumlahTarget: a.amount,
+      })),
+    });
+  }
+
+  return levels;
+}
 
 /**
  * Build cascade levels for one indicator WITHOUT calling the API.
@@ -302,7 +378,7 @@ const UNIT_DOSEN_TEMPLATE: { sheetName: string; users: TplUser[] }[] = [
       { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
       { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
       { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
-      { nama: "Kajur SI",                 role: "Kepala Jurusan"     },
+      { nama: "Dr. Widya Cholil",         role: "Kepala Jurusan"     },
       { nama: "Anita Muliati",            role: "Koordinator Prodi"  },
       { nama: "Dosen SI 1",               role: "Dosen"              },
       { nama: "Dosen SI 2",               role: "Dosen"              },
@@ -330,10 +406,9 @@ const UNIT_DOSEN_TEMPLATE: { sheetName: string; users: TplUser[] }[] = [
       { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
       { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
       { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
-      { nama: "Kajur IF",                 role: "Kepala Jurusan"     },
+      { nama: "Dr. Widya Cholil",         role: "Kepala Jurusan"     },
       { nama: "Ridwan Raafiudin",         role: "Koordinator Prodi"  },
       { nama: "Dosen IF 1",               role: "Dosen"              },
-      { nama: "Widya Cholil",             role: "Dosen"              },
       { nama: "Radinal Setyadinsa",       role: "Dosen"              },
       { nama: "Didit Widiyanto",          role: "Dosen"              },
       { nama: "Jayanta",                  role: "Dosen"              },
@@ -362,6 +437,7 @@ const UNIT_DOSEN_TEMPLATE: { sheetName: string; users: TplUser[] }[] = [
       { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
       { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
       { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Dr. Widya Cholil",         role: "Kepala Jurusan"     },
       { nama: "Andhika Octa Indarso",     role: "Koordinator Prodi"  },
       { nama: "Rizky Tito Prasetyo",      role: "Dosen"              },
       { nama: "Bobby Suryo Prakoso",      role: "Dosen"              },
@@ -384,6 +460,7 @@ const UNIT_DOSEN_TEMPLATE: { sheetName: string; users: TplUser[] }[] = [
       { nama: "Erly Krisnanik",           role: "Wakil Dekan 1"      },
       { nama: "Bambang Saras Yuliastiawan",role: "Wakil Dekan 2"      },
       { nama: "Ati Zaidiah",              role: "Wakil Dekan 3"      },
+      { nama: "Dr. Widya Cholil",         role: "Kepala Jurusan"     },
       { nama: "Novi Trisman Hadi",        role: "Koordinator Prodi"  },
       { nama: "Hengki Tamando Sihotang",  role: "Dosen"              },
       { nama: "Musthofa Galih Pradana",   role: "Dosen"              },
@@ -766,10 +843,11 @@ export default function ImportTurunanModal({
         return bestScore <= 8 ? best : null;
       }
 
-      // De-duplicate entries, merge amounts across sheets
+      // Keep entries per-sheet: each sheet×indicator gets its own entry.
+      // This ensures each prodi's kaprodi gets the correct targetProdiMin and V-mark chain.
       const entryMap = new Map<string, MatchedEntry>();
       for (const e of allEntries) {
-        const key = `${e.ikuCode}|||${e.subLabel}`;
+        const key = `${e.sheetName}|||${e.ikuCode}|||${e.subLabel}`;
         if (!entryMap.has(key)) {
           let indMatch = matchIndicator(e.ikuCode, e.subLabel, ikuGrouped);
           if (!indMatch) indMatch = matchIndicator(e.ikuCode, e.subLabel, pkGrouped);
@@ -779,13 +857,10 @@ export default function ImportTurunanModal({
             sheetName: e.sheetName,
             indicatorId: indMatch?.id ?? null, indicatorKode: indMatch?.kode ?? "?",
             amounts: [],
+            vMarks: e.vMarks,
           });
         }
         const me = entryMap.get(key)!;
-        // Accumulate targetProdiMin across sheets (each sheet = one prodi)
-        if (e.targetProdiMin > 0 && e.sheetName !== me.sheetName) {
-          me.targetProdiMin += e.targetProdiMin;
-        }
         for (const a of e.amounts) {
           if (me.amounts.some((x) => x.excelName === a.excelName)) continue;
           const u = findUser(a.excelName);
@@ -802,23 +877,23 @@ export default function ImportTurunanModal({
         const leaf = me.amounts
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
-        if (!leaf.length) continue;
-        const vMarksPreview = sheetChains.get(me.sheetName) ?? [];
+        // Use per-row V marks (falls back to sheet-level chain for older entries without per-row marks)
+        const vMarksPreview = me.vMarks.length > 0 ? me.vMarks : (sheetChains.get(me.sheetName) ?? []);
         const kaprodiMarkPreview = vMarksPreview.find((v) => /koordinator prodi/i.test(v.roleLabel));
         const kaprodiUserPreview = kaprodiMarkPreview
           ? (nameIndex.get(normalizeName(kaprodiMarkPreview.colNama)) ?? null)
           : null;
+        const kaprodiAmountPreview = kaprodiUserPreview
+          ? (me.targetProdiMin > 0 ? me.targetProdiMin : leaf.reduce((s, a) => s + a.amount, 0))
+          : 0;
+        // Skip if no leaf AND no kaprodi amount
+        if (!leaf.length && kaprodiAmountPreview <= 0) continue;
         let levels: CascadeLevel[];
-        if (kaprodiUserPreview) {
-          const depth0: CascadeLevel = {
-            depth: 0, roleLabel: 'Dosen',
-            fromUserId: kaprodiUserPreview.id, fromNama: kaprodiUserPreview.nama,
-            items: leaf.map((a) => ({ toUserId: a.userId, toNama: userMap.get(a.userId)?.nama ?? String(a.userId), jumlahTarget: a.amount })),
-          };
-          const kaprodiAmount = me.targetProdiMin > 0 ? me.targetProdiMin : leaf.reduce((s, a) => s + a.amount, 0);
-          const upper = buildCascadeLevels([{ userId: kaprodiUserPreview.id, amount: kaprodiAmount }], userMap);
-          levels = [depth0, ...upper];
+        if (kaprodiUserPreview && kaprodiAmountPreview > 0) {
+          levels = buildLevelsFromVMarks(vMarksPreview, kaprodiUserPreview, kaprodiAmountPreview, leaf, userMap,
+            (name) => nameIndex.get(normalizeName(name)) ?? null);
         } else {
+          if (!leaf.length) continue;
           levels = buildCascadeLevels(leaf, userMap);
         }
         previews.push({ indicatorId: me.indicatorId, indicatorKode: me.indicatorKode, subLabel: me.subLabel, levels });
@@ -850,7 +925,7 @@ export default function ImportTurunanModal({
   async function handleImport() {
     setStep("importing");
     setLoading(true);
-    let indicatorsOk = 0, cascadeCalls = 0, skippedInd = 0, skippedUser = 0, maxDepth = 0, chainsSaved = 0;
+    let indicatorsOk = 0, cascadeCalls = 0, skippedInd = 0, skippedUser = 0, skippedVMark = 0, maxDepth = 0, chainsSaved = 0;
     try {
       // Helpers for cascade chain building (use refs populated in handleFile)
       const localRoles = allRolesRef.current;
@@ -922,13 +997,32 @@ export default function ImportTurunanModal({
       // Track which L1 indicators have already had their cascade chain saved
       const l1ChainSaved = new Set<number>();
 
+      // Accumulate cascade levels before executing upserts.
+      // Multiple prodi sheets can share the same indicator and upper-level user (Kajur, WD).
+      // Without accumulation, each sheet's upsert would DELETE the previous sheet's records
+      // for that fromUser and only keep the last sheet's data.
+      // Key: `${indicatorId}|${fromUserId ?? 'null'}`
+      type AccumLevel = {
+        indicatorId: number;
+        depth: number;
+        roleLabel: string;
+        fromUserId: number | null;
+        fromNama: string;
+        items: { toUserId: number; toNama: string; jumlahTarget: number }[];
+      };
+      const levelAccum = new Map<string, AccumLevel>();
+
       for (const me of matched) {
         if (!me.indicatorId) { skippedInd++; continue; }
 
-        // Save cascade chain to the parent L1 indicator (once per L1, first sheet wins)
+        // Use per-row V marks (falls back to sheet-level chain for safety)
+        const vMarks = (me.vMarks?.length ?? 0) > 0
+          ? me.vMarks
+          : (localSheetChains.get(me.sheetName) ?? []);
+
+        // Save cascade chain to the parent L1 indicator (once per L1, first entry with vMarks wins)
         const l1Id = localChildToL1.get(me.indicatorId) ?? null;
         if (l1Id && !l1ChainSaved.has(l1Id)) {
-          const vMarks = localSheetChains.get(me.sheetName) ?? [];
           if (vMarks.length > 0) {
             const chain = buildChainFromVMarks(vMarks);
             if (chain.length > 0) {
@@ -944,46 +1038,70 @@ export default function ImportTurunanModal({
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
         skippedUser += me.amounts.filter((a) => a.userId === null).length;
-        if (!leaf.length) continue;
 
-        // Use V-mark kaprodi as explicit fromUserId for dosen-level disposisi so that
-        // the redisposisi modal can pre-populate even without atasanId being set.
-        const vMarks = localSheetChains.get(me.sheetName) ?? [];
         const kaprodiMark = vMarks.find((v) => /koordinator prodi/i.test(v.roleLabel));
         const kaprodiUser = kaprodiMark ? findUserLocal(kaprodiMark.colNama) : null;
 
+        // kaprodiAmount: prefer explicit targetProdiMin, otherwise sum of dosen amounts
+        const kaprodiAmount = kaprodiUser
+          ? (me.targetProdiMin > 0 ? me.targetProdiMin : leaf.reduce((s, a) => s + a.amount, 0))
+          : 0;
+
+        // Skip only when there is truly nothing to process.
+        // If V marks exist but kaprodiAmount = 0 (targetProdiMin not filled and no dosen amounts),
+        // count as a warning so the user knows to fill column 5 (Target Prodi Min).
+        if (!leaf.length && kaprodiAmount <= 0) {
+          if (kaprodiUser) skippedVMark++;
+          continue;
+        }
+
         let levels: CascadeLevel[];
-        if (kaprodiUser) {
-          // Explicit depth-0: kaprodi → dosens
-          const depth0: CascadeLevel = {
-            depth: 0,
-            roleLabel: 'Dosen',
-            fromUserId: kaprodiUser.id,
-            fromNama: kaprodiUser.nama,
-            items: leaf.map((a) => ({
-              toUserId: a.userId,
-              toNama: allUsers.get(a.userId)?.nama ?? String(a.userId),
-              jumlahTarget: a.amount,
-            })),
-          };
-          // Upper levels (kaprodi → kajur → WD → …) using targetProdiMin if available
-          const kaprodiAmount = me.targetProdiMin > 0
-            ? me.targetProdiMin
-            : leaf.reduce((s, a) => s + a.amount, 0);
-          const upperLevels = buildCascadeLevels([{ userId: kaprodiUser.id, amount: kaprodiAmount }], allUsers);
-          levels = [depth0, ...upperLevels];
+        if (kaprodiUser && kaprodiAmount > 0) {
+          // Build chain from V-mark users (WD→KJ→KP→Dosen) instead of atasanId traversal,
+          // because atasanId is often unconfigured in the DB.
+          levels = buildLevelsFromVMarks(vMarks, kaprodiUser, kaprodiAmount, leaf, allUsers, findUserLocal);
         } else {
-          // Fallback: atasanId-based rollup
+          if (!leaf.length) continue;
           levels = buildCascadeLevels(leaf, allUsers);
         }
 
-        const calls = await executeCascade(me.indicatorId, tahun, levels);
-        cascadeCalls += calls;
         maxDepth = Math.max(maxDepth, levels.reduce((m, l) => Math.max(m, l.depth), 0));
         indicatorsOk++;
+
+        // Accumulate: merge items for same (indicatorId, fromUserId) across sheets
+        for (const level of levels) {
+          const key = `${me.indicatorId}|${level.fromUserId ?? 'null'}`;
+          const existing = levelAccum.get(key);
+          if (!existing) {
+            levelAccum.set(key, {
+              indicatorId: me.indicatorId,
+              depth: level.depth,
+              roleLabel: level.roleLabel,
+              fromUserId: level.fromUserId,
+              fromNama: level.fromNama,
+              items: level.items.map((i) => ({ ...i })),
+            });
+          } else {
+            for (const item of level.items) {
+              const found = existing.items.find((i) => i.toUserId === item.toUserId);
+              if (found) {
+                found.jumlahTarget += item.jumlahTarget;
+              } else {
+                existing.items.push({ ...item });
+              }
+            }
+          }
+        }
       }
 
-      setDoneStats({ indicators: indicatorsOk, cascadeCalls, skippedInd, skippedUser, maxDepth, chainsSaved });
+      // Execute one upsert per (indicatorId, fromUserId) with merged totals
+      for (const [, level] of levelAccum) {
+        const items = level.items.map((i) => ({ toUserId: i.toUserId, jumlahTarget: i.jumlahTarget }));
+        await upsertDisposisi(level.indicatorId, tahun, items, level.fromUserId);
+        cascadeCalls++;
+      }
+
+      setDoneStats({ indicators: indicatorsOk, cascadeCalls, skippedInd, skippedUser, skippedVMark, maxDepth, chainsSaved });
       setStep("done");
       const chainMsg = chainsSaved > 0 ? ` · ${chainsSaved} alur indikator disimpan` : "";
       toast.success(`${indicatorsOk} indikator berhasil dikaskade ke ${maxDepth + 1} level jabatan${chainMsg}.`);
@@ -1290,6 +1408,7 @@ export default function ImportTurunanModal({
                   ...(doneStats.chainsSaved > 0 ? [{ v: doneStats.chainsSaved, label: "Alur Disimpan", bg: "#ecfdf5", border: "#6ee7b7", col: "#065f46" }] : []),
                   ...(doneStats.skippedInd > 0 ? [{ v: doneStats.skippedInd, label: "Ind. Skip", bg: "#fef2f2", border: "#fecaca", col: "#dc2626" }] : []),
                   ...(doneStats.skippedUser > 0 ? [{ v: doneStats.skippedUser, label: "Dosen Skip", bg: "#fffbeb", border: "#fde68a", col: "#92400e" }] : []),
+                  ...(doneStats.skippedVMark > 0 ? [{ v: doneStats.skippedVMark, label: "V-Mark Skip", bg: "#fef2f2", border: "#fecaca", col: "#dc2626" }] : []),
                 ].map(({ v, label, bg, border, col }) => (
                   <div key={label} style={{ flex: 1, minWidth: 80, background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
                     <div style={{ fontSize: 20, fontWeight: 800, color: col, lineHeight: 1.1 }}>{v}</div>
@@ -1297,6 +1416,13 @@ export default function ImportTurunanModal({
                   </div>
                 ))}
               </div>
+
+              {doneStats.skippedVMark > 0 && (
+                <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 10, padding: "12px 16px", fontSize: 12, color: "#92400e" }}>
+                  <strong>{doneStats.skippedVMark} baris</strong> memiliki tanda V (alur cascade) tapi tidak ada jumlah target yang bisa digunakan.
+                  Pastikan kolom <strong>Target Prodi Min (kolom F)</strong> diisi dengan target masing-masing prodi di file Excel, lalu import ulang.
+                </div>
+              )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button onClick={reset} style={{ padding: "8px 18px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>↺ Import Lagi</button>
