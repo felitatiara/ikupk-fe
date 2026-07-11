@@ -499,7 +499,7 @@ function L1Row({ entry, allRoles, router, tahun }: {
 
 export default function MonitoringTargetPage() {
   const router = useRouter();
-  const [jenis, setJenis] = useState<"IKU" | "PK">("IKU");
+  const [jenis, setJenis] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [availableYears, setAvailableYears] = useState<string[]>([]);
   const [allRoles, setAllRoles] = useState<RoleOption[]>([]);
@@ -522,7 +522,15 @@ export default function MonitoringTargetPage() {
       setLoading(true);
       setL1Entries([]);
       try {
-        const grouped = await getIndikatorGrouped(jenis, tahun);
+        const effectiveJenis = jenis === "PK_IKU" ? "PK" : jenis;
+        const raw = await getIndikatorGrouped(effectiveJenis, tahun);
+        const grouped = jenis === "PK_IKU"
+          ? raw.filter(g => g.subIndikators.some(sub =>
+              sub.children.some(child =>
+                (child.children ?? []).some(l3 => l3.linkedIkuId != null)
+              )
+            ))
+          : raw;
         const l1List: { l0: IndikatorGrouped; l1: IndikatorGroupedSub }[] = [];
         for (const l0 of grouped) {
           for (const l1 of l0.subIndikators) l1List.push({ l0, l1 });
@@ -621,23 +629,27 @@ export default function MonitoringTargetPage() {
         </div>
         <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
         <div style={{ display: "flex", gap: 2, background: "#f3f4f6", borderRadius: 8, padding: 3 }}>
-          {(["IKU", "PK"] as const).map((j) => (
+          {([
+            { key: "IKU", label: "IKU", color: "#FF7900" },
+            { key: "PK", label: "PK", color: "#7c3aed" },
+            { key: "PK_IKU", label: "PK-IKU", color: "#0891b2" },
+          ] as const).map(({ key: j, label, color }) => (
             <button
               key={j}
               onClick={() => setJenis(j)}
               style={{
-                padding: "4px 16px",
+                padding: "4px 12px",
                 borderRadius: 5,
                 fontSize: 12.5,
                 fontWeight: 700,
                 cursor: "pointer",
                 border: "none",
                 background: jenis === j ? "#fff" : "transparent",
-                color: jenis === j ? "#111827" : "#9ca3af",
+                color: jenis === j ? color : "#9ca3af",
                 boxShadow: jenis === j ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
               }}
             >
-              {j}
+              {label}
             </button>
           ))}
         </div>

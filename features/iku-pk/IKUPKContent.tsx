@@ -19,6 +19,13 @@ const KATEGORI_ORDER = ['Wajib', 'Pilihan', 'Partisipatif'];
 const KATEGORI_LABEL: Record<string, string> = { 'Wajib': 'A. WAJIB', 'Pilihan': 'B. PILIHAN', 'Partisipatif': 'C. PARTISIPATIF' };
 const getIkuKategori = (kode: string) => IKU_KATEGORI[kode] ?? 'Partisipatif';
 
+const hasPkBerbasisIku = (group: IndikatorGrouped): boolean =>
+  group.subIndikators.some(sub =>
+    sub.children.some(child =>
+      (child.children ?? []).some(l3 => l3.linkedIkuId != null)
+    )
+  );
+
 type FlatRow = { id: number; kode: string; nama: string; level: number; sub: any; child: any; l3Obj: any; isSubFirst: boolean; subTotalRows: number };
 
 export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan'; pageTitle?: string; headerSlot?: React.ReactNode }) {
@@ -110,20 +117,24 @@ const [tahun, setTahun] = useState("2026");
     const isAdmin = displayRole === 'admin';
 
     // Hanya Admin dan Dekan (bukan WD) lihat semua indikator; WD hanya lihat yang didisposisi Dekan
+    const effectiveJenis = jenis === 'PK_IKU' ? 'PK' : jenis;
+    const applyPkIkuFilter = <T extends IndikatorGrouped>(data: T[]): T[] =>
+      jenis === 'PK_IKU' ? data.filter(hasPkBerbasisIku) : data;
+
     const fetchPromise = (isAdmin || isActualDekan)
-      ? getIndikatorGrouped(jenis, tahun, unitId)
+      ? getIndikatorGrouped(effectiveJenis, tahun, unitId)
       : (authUser?.id)
-        ? getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
+        ? getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId)
         : Promise.resolve([]);
 
     fetchPromise
-      .then((d) => { if (!cancelled) { setGroupedData(d); setLoading(false); } })
+      .then((d) => { if (!cancelled) { setGroupedData(applyPkIkuFilter(d)); setLoading(false); } })
       .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
 
     // Dekan/WD (isTopLevel non-admin) mungkin juga menerima disposisi dari Kaprodi
     if (isTopLevel && !isAdmin && authUser?.id) {
-      getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId)
-        .then((d) => { if (!cancelled) setReceivedGroupedData(d); })
+      getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId)
+        .then((d) => { if (!cancelled) setReceivedGroupedData(applyPkIkuFilter(d)); })
         .catch(() => { if (!cancelled) setReceivedGroupedData([]); });
     } else if (!isTopLevel) {
       setReceivedGroupedData([]);
@@ -294,12 +305,15 @@ const [tahun, setTahun] = useState("2026");
       if (disposisiSubId && unitId) {
         await upsertDisposisi(disposisiSubId, tahun, validItems, disposedBy);
         // Refresh data: admin/Dekan pakai getIndikatorGrouped, WD/bawahan pakai getIndikatorGroupedForUser
+        const effJenis = jenis === 'PK_IKU' ? 'PK' : jenis;
+        const pkIkuFilter = <T extends IndikatorGrouped>(arr: T[]): T[] =>
+          jenis === 'PK_IKU' ? arr.filter(hasPkBerbasisIku) : arr;
         if ((displayRole === 'admin' || isActualDekan) && unitId) {
-          const d = await getIndikatorGrouped(jenis, tahun, unitId);
-          setGroupedData(d);
+          const d = await getIndikatorGrouped(effJenis, tahun, unitId);
+          setGroupedData(pkIkuFilter(d));
         } else if (authUser?.id && unitId) {
-          const d = await getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
-          setGroupedData(d);
+          const d = await getIndikatorGroupedForUser(effJenis, tahun, authUser.id, unitId);
+          setGroupedData(pkIkuFilter(d));
         }
         toast.success("Disposisi berhasil disimpan.");
       }
@@ -1259,6 +1273,7 @@ const [tahun, setTahun] = useState("2026");
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kinerja</option>
+                    <option value="PK_IKU">PK Berbasis IKU</option>
                   </select>
                 </div>
                 <div className="filter-content">
@@ -1517,6 +1532,7 @@ const [tahun, setTahun] = useState("2026");
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kinerja</option>
+                    <option value="PK_IKU">PK Berbasis IKU</option>
                   </select>
                 </div>
                 <div className="filter-content">
@@ -1538,14 +1554,14 @@ const [tahun, setTahun] = useState("2026");
               {!loading && groupedData.length > 0 && (
                 <>
                   {/* ── Tabel 1: Target untuk Input File ── */}
-                  <h4 className="ikupk-section-title">Target IKU dan PK</h4>
+                  <h4 className="ikupk-section-title">Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis}</h4>
                   {renderInputFileTable(groupedData, 'input')}
 
                   {/* ── Tabel 2: Disposisi ke Bawahan (hanya untuk non-dosen) ── */}
                   {!isDosen && (
                     <>
                       <div className="ikupk-section-divider" />
-                      <h4 className="ikupk-section-title">Disposisi Target IKU dan PK</h4>
+                      <h4 className="ikupk-section-title">Disposisi Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis}</h4>
                       <div className="table-wrapper">
                         <table className="table-universal">
                           <thead>

@@ -223,7 +223,7 @@ export default function MasterIndikatorContent() {
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [filterJenis, setFilterJenis] = useState<"IKU" | "PK">("IKU");
+  const [filterJenis, setFilterJenis] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
   const [formMode, setFormMode] = useState<FormMode>("baru");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmDeleteSingleId, setConfirmDeleteSingleId] = useState<number | null>(null);
@@ -366,10 +366,11 @@ export default function MasterIndikatorContent() {
   }, [targetTahun]);
 
   const buildHierarchy = (): Level0WithChildren[] => {
-    const filtered = [...indikatorList.filter((i) => i.jenis === filterJenis)]
+    const effectiveJenis = filterJenis === "PK_IKU" ? "PK" : filterJenis;
+    const filtered = [...indikatorList.filter((i) => i.jenis === effectiveJenis)]
       .sort((a, b) => naturalSortKode(a.kode, b.kode));
     const level0 = filtered.filter((i) => i.level === 0);
-    return level0.map((l0) => {
+    const result = level0.map((l0) => {
       const level1 = filtered.filter((i) => i.level === 1 && i.parentId === l0.id);
       return {
         record: l0,
@@ -385,6 +386,48 @@ export default function MasterIndikatorContent() {
         }),
       };
     });
+    if (filterJenis === "PK_IKU") {
+      return result
+        .map((h) => ({
+          ...h,
+          children: h.children
+            .map((l1) => ({
+              ...l1,
+              children: l1.children
+                .map((l2) => ({
+                  ...l2,
+                  children: l2.children.filter((l3) => l3.linkedIkuId != null),
+                }))
+                .filter((l2) => l2.children.length > 0),
+            }))
+            .filter((l1) => l1.children.length > 0),
+        }))
+        .filter((h) => h.children.length > 0);
+    }
+    if (filterJenis === "PK") {
+      return result
+        .map((h) => ({
+          ...h,
+          children: h.children
+            .map((l1) => ({
+              ...l1,
+              children: l1.children
+                .map((l2) => ({
+                  ...l2,
+                  // Remove L3 that are linked to IKU (they belong to PK_IKU only)
+                  children: l2.children.filter((l3) => l3.linkedIkuId == null),
+                }))
+                .filter((l2) => {
+                  // Keep L2 if: still has non-IKU L3, OR was originally a leaf L2 (had no L3 at all)
+                  const origL3Count = filtered.filter(i => i.level === 3 && i.parentId === l2.record.id).length;
+                  return l2.children.length > 0 || origL3Count === 0;
+                }),
+            }))
+            .filter((l1) => l1.children.length > 0),
+        }))
+        .filter((h) => h.children.length > 0);
+    }
+    return result;
   };
 
   const hierarchy = buildHierarchy();
@@ -398,7 +441,7 @@ export default function MasterIndikatorContent() {
       entries.push({ key: `l1-${l1.record.id}`, text: `${l1.record.kode} ${l1.record.nama}`, level: 1 });
       l1.children.forEach((l2) => {
         entries.push({ key: `l2-${l2.record.id}`, text: `${l2.record.kode} ${l2.record.nama}`, level: 2 });
-        if (filterJenis === 'PK') {
+        if (filterJenis !== 'IKU') {
           l2.children.forEach((l3) => {
             entries.push({ key: `l3-${l3.id}`, text: `${l3.kode} ${l3.nama}`, level: 3 });
           });
@@ -617,7 +660,7 @@ export default function MasterIndikatorContent() {
     // Build L3 map and load linkedIkuId per L3 for PK
     const l3map: Record<number, Indikator[]> = {};
     const l3LinkedIku: Record<number, number | null> = {};
-    if (filterJenis === 'PK') {
+    if (filterJenis !== 'IKU') {
       for (const l1 of row.children) {
         for (const l2 of l1.children) {
           l3map[l2.record.id] = l2.children;
@@ -671,7 +714,7 @@ export default function MasterIndikatorContent() {
       await Promise.all(allChildIds.map(id => updateIndikator(id, { sumberData: editSumberData })));
 
       // Save linkedIkuId per L3 for PK
-      if (filterJenis === 'PK') {
+      if (filterJenis !== 'IKU') {
         await Promise.all(
           Object.entries(editL3LinkedIku).map(([id, linkedIkuId]) =>
             updateIndikator(Number(id), { linkedIkuId })
@@ -754,7 +797,7 @@ export default function MasterIndikatorContent() {
       <DistribusiTargetModal
         open={distribusiModalOpen}
         onClose={() => setDistribusiModalOpen(false)}
-        defaultJenis={filterJenis}
+        defaultJenis={filterJenis === "PK_IKU" ? "PK" : filterJenis}
         defaultTahun={targetTahun || String(new Date().getFullYear())}
       />
 
@@ -964,7 +1007,7 @@ export default function MasterIndikatorContent() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 3, height: 14, borderRadius: 2, background: "#059669", display: "inline-block" }} />
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Target per {filterJenis === 'PK' ? 'Rincian (Level 3)' : 'Sub-Indikator (Level 2)'}
+                    Target per {filterJenis !== 'IKU' ? 'Rincian (Level 3)' : 'Sub-Indikator (Level 2)'}
                   </span>
                   {editLeafLoading && <span style={{ fontSize: 11, color: "#9ca3af" }}>Memuat…</span>}
                 </div>
@@ -976,7 +1019,7 @@ export default function MasterIndikatorContent() {
                 {editRow.children.map((l1) => (
                   <div key={l1.record.id} style={{ marginBottom: 14 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f9fafb", borderRadius: 8, marginBottom: 6, border: "1px solid #e5e7eb" }}>
-                      <span style={{ width: 3, height: 12, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
+                      <span style={{ width: 3, height: 12, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : filterJenis === "PK_IKU" ? "#0891b2" : "#7c3aed" }} />
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#1f2937" }}>{l1.record.kode} {l1.record.nama}</span>
                     </div>
                     {l1.children.length === 0 && (
@@ -984,7 +1027,7 @@ export default function MasterIndikatorContent() {
                     )}
                     {l1.children.map((l2) => {
                       const l3s = editL3Map[l2.record.id] ?? [];
-                      const showL3 = filterJenis === 'PK' && l3s.length > 0;
+                      const showL3 = filterJenis !== 'IKU' && l3s.length > 0;
                       return (
                         <div key={l2.record.id} style={{ paddingLeft: 16, marginBottom: showL3 ? 10 : 0 }}>
                           {showL3 ? (
@@ -1126,7 +1169,7 @@ export default function MasterIndikatorContent() {
           </button>
           <button
             onClick={() => {
-              setImportJenis(filterJenis);
+              setImportJenis(filterJenis === "PK_IKU" ? "PK" : filterJenis);
               setImportTahun(targetTahun || String(new Date().getFullYear()));
               setImportRows([]);
               setImportFileError(null);
@@ -1148,14 +1191,18 @@ export default function MasterIndikatorContent() {
       {/* ── Jenis Toggle ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "inline-flex", background: "#f3f4f6", borderRadius: 10, padding: 3, gap: 2 }}>
-          {(["IKU", "PK"] as const).map(j => (
-            <button key={j} onClick={() => setFilterJenis(j)}
+          {([
+            { key: "IKU", label: "Indikator Kinerja Utama", color: "#FF7900" },
+            { key: "PK", label: "Perjanjian Kinerja", color: "#7c3aed" },
+            { key: "PK_IKU", label: "PK Berbasis IKU", color: "#0891b2" },
+          ] as const).map(({ key, label, color }) => (
+            <button key={key} onClick={() => setFilterJenis(key)}
               style={{
                 padding: "6px 18px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                background: filterJenis === j ? (j === "IKU" ? "#FF7900" : "#7c3aed") : "transparent",
-                color: filterJenis === j ? "#fff" : "#6b7280", transition: "all 0.15s"
+                background: filterJenis === key ? color : "transparent",
+                color: filterJenis === key ? "#fff" : "#6b7280", transition: "all 0.15s"
               }}>
-              {j === "IKU" ? "Indikator Kinerja Utama" : "Perjanjian Kinerja"}
+              {label}
             </button>
           ))}
         </div>
@@ -1191,7 +1238,7 @@ export default function MasterIndikatorContent() {
                   </th>
                   {[
                     { label: "Kode", w: "8%" }, { label: "Sasaran Program", w: "26%" },
-                    { label: filterJenis === "IKU" ? "Indikator Kinerja" : "Indikator PK", w: "auto" },
+                    { label: filterJenis === "IKU" ? "Indikator Kinerja" : filterJenis === "PK_IKU" ? "Indikator PK (Berbasis IKU)" : "Indikator PK", w: "auto" },
                     { label: "Aksi", w: "9%" },
                   ].map((h, i) => (
                     <th key={i} style={{
@@ -1221,7 +1268,7 @@ export default function MasterIndikatorContent() {
                             {entry.level === 1 ? (
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 14px 11px 20px" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : "#7c3aed" }} />
+                                  <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : filterJenis === "PK_IKU" ? "#0891b2" : "#7c3aed" }} />
                                   <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
                                 </div>
                                 <button
@@ -1240,6 +1287,13 @@ export default function MasterIndikatorContent() {
                               <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 64px" }}>
                                 <span style={{ color: "#e5e7eb", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
                                 <span style={{ color: "#9ca3af", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
+                                {filterJenis === "PK_IKU" && (() => {
+                                  const l3Id = Number(entry.key.replace("l3-", ""));
+                                  const l3 = indikatorList.find(i => i.id === l3Id);
+                                  return l3?.linkedIkuId ? (
+                                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", lineHeight: "1.6" }}>IKU</span>
+                                  ) : null;
+                                })()}
                               </div>
                             )}
                           </td>
