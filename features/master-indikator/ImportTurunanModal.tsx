@@ -105,6 +105,8 @@ function stripSubPrefix(label: string): string {
   return label.trim().replace(/^[a-z]\.\s*/i, "").replace(/\*+$/, "").trim();
 }
 
+interface ColDef { name: string; role: string; dataColIdx: number; }
+
 function parseSheet(
   aoa: (string | number | boolean | null)[][],
   sheetName: string,
@@ -122,25 +124,37 @@ function parseSheet(
   const sisaIdx = h0.findIndex((v) => v.toLowerCase() === "sisa");
   const isDetailed = jumlahIdx >= 6;
 
-  let colNames: string[];
-  let colRoles: string[]; // role label per user column (empty string if no role row)
-  let amtOffset: number;
+  // Build column definitions preserving original indices so role labels and data
+  // values are always looked up from the correct column, even when header has empty cells.
+  const colDefs: ColDef[] = [];
   let dataStart: number;
 
   if (isDetailed) {
-    colNames = h0.slice(6, jumlahIdx).filter(Boolean);
-    colRoles = hasRoleRow ? h1.slice(6, jumlahIdx) : colNames.map(() => "");
-    amtOffset = jumlahIdx + 3;
+    const rawNames = h0.slice(6, jumlahIdx);
+    const rawRoles = hasRoleRow ? h1.slice(6, jumlahIdx) : rawNames.map(() => "");
+    rawNames.forEach((n, i) => {
+      const name = String(n ?? "").trim();
+      if (!name) return;
+      colDefs.push({ name, role: String(rawRoles[i] ?? "").trim(), dataColIdx: jumlahIdx + 3 + i });
+    });
     dataStart = 2;
   } else {
     const endCol = sisaIdx > 6 ? sisaIdx : h0.length;
-    colNames = h0.slice(6, endCol).filter(Boolean);
-    colRoles = hasRoleRow ? h1.slice(6, endCol) : colNames.map(() => "");
-    amtOffset = 6;
+    const rawNames = h0.slice(6, endCol);
+    const rawRoles = hasRoleRow ? h1.slice(6, endCol) : rawNames.map(() => "");
+    rawNames.forEach((n, i) => {
+      const name = String(n ?? "").trim();
+      if (!name) return;
+      colDefs.push({ name, role: String(rawRoles[i] ?? "").trim(), dataColIdx: 6 + i });
+    });
     dataStart = hasRoleRow ? 2 : 1;
   }
 
-  if (!colNames.length) return { entries: [], sheetChain: [] };
+  // Backwards-compat aliases used by existing code below
+  const colNames = colDefs.map((c) => c.name);
+  const colRoles = colDefs.map((c) => c.role);
+
+  if (!colDefs.length) return { entries: [], sheetChain: [] };
 
   const entries: ParsedEntry[] = [];
   let currentIKU = "";
@@ -162,9 +176,9 @@ function parseSheet(
 
     const amounts: ParsedAmount[] = [];
     const rowVMarks: VMarkEntry[] = []; // per-row V marks for this specific indicator
-    for (let d = 0; d < colNames.length; d++) {
-      const raw = row[amtOffset + d];
-      const roleLabel = colRoles[d] ?? "";
+    for (let d = 0; d < colDefs.length; d++) {
+      const raw = row[colDefs[d].dataColIdx];
+      const roleLabel = colDefs[d].role;
       const isPimpinan = hasRoleRow && /wakil dekan|kepala jurusan|koordinator prodi/i.test(roleLabel);
 
       if (isPimpinan) {
@@ -861,6 +875,10 @@ export default function ImportTurunanModal({
           });
         }
         const me = entryMap.get(key)!;
+        // Merge vMarks: if first entry had none but a later row does, pick them up
+        if (me.vMarks.length === 0 && e.vMarks.length > 0) {
+          me.vMarks = e.vMarks;
+        }
         for (const a of e.amounts) {
           if (me.amounts.some((x) => x.excelName === a.excelName)) continue;
           const u = findUser(a.excelName);
@@ -879,7 +897,12 @@ export default function ImportTurunanModal({
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
         // Use per-row V marks (falls back to sheet-level chain for older entries without per-row marks)
         const vMarksPreview = me.vMarks.length > 0 ? me.vMarks : (sheetChains.get(me.sheetName) ?? []);
-        const kaprodiMarkPreview = vMarksPreview.find((v) => /koordinator prodi/i.test(v.roleLabel));
+        // Find deepest marked pimpinan in hierarchy: KaProdi > KaJur > WD
+        // This allows partial chains (e.g. WD only, or WD+KaJur) to still build correctly
+        const kaprodiMarkPreview =
+          vMarksPreview.find((v) => /koordinator prodi/i.test(v.roleLabel)) ??
+          vMarksPreview.find((v) => /kepala jurusan/i.test(v.roleLabel)) ??
+          vMarksPreview.find((v) => /wakil dekan/i.test(v.roleLabel));
         const kaprodiUserPreview = kaprodiMarkPreview
           ? (nameIndex.get(normalizeName(kaprodiMarkPreview.colNama)) ?? null)
           : null;
@@ -1039,7 +1062,11 @@ export default function ImportTurunanModal({
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
         skippedUser += me.amounts.filter((a) => a.userId === null).length;
 
-        const kaprodiMark = vMarks.find((v) => /koordinator prodi/i.test(v.roleLabel));
+        // Find deepest marked pimpinan in hierarchy: KaProdi > KaJur > WD
+        const kaprodiMark =
+          vMarks.find((v) => /koordinator prodi/i.test(v.roleLabel)) ??
+          vMarks.find((v) => /kepala jurusan/i.test(v.roleLabel)) ??
+          vMarks.find((v) => /wakil dekan/i.test(v.roleLabel));
         const kaprodiUser = kaprodiMark ? findUserLocal(kaprodiMark.colNama) : null;
 
         // kaprodiAmount: prefer explicit targetProdiMin, otherwise sum of dosen amounts
@@ -1097,7 +1124,12 @@ export default function ImportTurunanModal({
       // Execute one upsert per (indicatorId, fromUserId) with merged totals
       for (const [, level] of levelAccum) {
         const items = level.items.map((i) => ({ toUserId: i.toUserId, jumlahTarget: i.jumlahTarget }));
-        await upsertDisposisi(level.indicatorId, tahun, items, level.fromUserId);
+        console.log(`[ImportTurunan] upsert indId=${level.indicatorId} from=${level.fromNama} (${level.fromUserId ?? 'null'}) role=${level.roleLabel} items=${items.length} totalAmt=${items.reduce((s,i)=>s+i.jumlahTarget,0)}`);
+        try {
+          await upsertDisposisi(level.indicatorId, tahun, items, level.fromUserId);
+        } catch (e: any) {
+          throw new Error(`[indId=${level.indicatorId} from=${level.fromNama} role=${level.roleLabel}] ${e.message}`);
+        }
         cascadeCalls++;
       }
 

@@ -690,28 +690,34 @@ export default function TambahIndikatorForm() {
                                   </div>
                                   <div className="col-md-6">
                                     <label style={{ ...fieldLabel, fontSize: 11 }}>Tenggat</label>
-                                    <div style={{ display: "flex", gap: 4 }}>
-                                      <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
-                                        value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
-                                        onChange={e => {
-                                          const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
-                                          const triwulan = e.target.value;
-                                          updateSubL3(group.id, sub.id, l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
-                                        }}>
-                                        <option value="">— Triwulan —</option>
-                                        {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                                      </select>
-                                      <select style={{ ...fieldInput, fontSize: 12, flex: 2 }}
-                                        value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
-                                        onChange={e => {
-                                          const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
-                                          const year = e.target.value;
-                                          updateSubL3(group.id, sub.id, l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
-                                        }}>
-                                        <option value="">— Tahun —</option>
-                                        {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
-                                      </select>
-                                    </div>
+                                    {jenis === "PK" ? (
+                                      <input type="date" style={{ ...fieldInput, fontSize: 12 }}
+                                        value={l3.tenggat}
+                                        onChange={e => updateSubL3(group.id, sub.id, l3.id, "tenggat", e.target.value)} />
+                                    ) : (
+                                      <div style={{ display: "flex", gap: 4 }}>
+                                        <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
+                                          value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
+                                          onChange={e => {
+                                            const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
+                                            const triwulan = e.target.value;
+                                            updateSubL3(group.id, sub.id, l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
+                                          }}>
+                                          <option value="">— Triwulan —</option>
+                                          {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                                        </select>
+                                        <select style={{ ...fieldInput, fontSize: 12, flex: 2 }}
+                                          value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
+                                          onChange={e => {
+                                            const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
+                                            const year = e.target.value;
+                                            updateSubL3(group.id, sub.id, l3.id, "tenggat", triwulan && year ? `${triwulan} ${year}` : triwulan || year);
+                                          }}>
+                                          <option value="">— Tahun —</option>
+                                          {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
+                                        </select>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 {/* Berbasis IKU — cross-reading realisasi */}
@@ -820,10 +826,14 @@ export default function TambahIndikatorForm() {
                       <div className="row g-2">
                         <div className="col-md-6">
                           <label style={fieldLabel}>Tenggat Waktu</label>
-                          <select style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
-                            <option value="">— Pilih Triwulan —</option>
-                            {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                          </select>
+                          {jenis === "PK" ? (
+                            <input type="date" style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)} />
+                          ) : (
+                            <select style={fieldInput} value={appendTenggat} onChange={e => setAppendTenggat(e.target.value)}>
+                              <option value="">— Pilih Triwulan —</option>
+                              {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                          )}
                         </div>
                       </div>
                     </>
@@ -928,28 +938,34 @@ export default function TambahIndikatorForm() {
                             </div>
                             <div className="col-md-6">
                               <label style={{ ...fieldLabel, color: "#7c3aed", fontSize: 11 }}>Tenggat</label>
-                              <div style={{ display: "flex", gap: 4 }}>
-                                <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
-                                  value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
-                                  onChange={e => {
-                                    const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
-                                    const triwulan = e.target.value;
-                                    setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
-                                  }}>
-                                  <option value="">— Triwulan —</option>
-                                  {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                                </select>
-                                <select style={{ ...fieldInput, fontSize: 12, flex: 2 }}
-                                  value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
-                                  onChange={e => {
-                                    const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
-                                    const year = e.target.value;
-                                    setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
-                                  }}>
-                                  <option value="">— Tahun —</option>
-                                  {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
-                                </select>
-                              </div>
+                              {jenis === "PK" ? (
+                                <input type="date" style={{ ...fieldInput, fontSize: 12 }}
+                                  value={l3.tenggat}
+                                  onChange={e => setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: e.target.value } : x))} />
+                              ) : (
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <select style={{ ...fieldInput, fontSize: 12, flex: 3 }}
+                                    value={l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? ""}
+                                    onChange={e => {
+                                      const year = l3.tenggat.match(/(\d{4})$/)?.[1] ?? "";
+                                      const triwulan = e.target.value;
+                                      setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
+                                    }}>
+                                    <option value="">— Triwulan —</option>
+                                    {TRIWULAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                                  </select>
+                                  <select style={{ ...fieldInput, fontSize: 12, flex: 2 }}
+                                    value={l3.tenggat.match(/(\d{4})$/)?.[1] ?? ""}
+                                    onChange={e => {
+                                      const triwulan = l3.tenggat.match(/^(Triwulan [IV]+)/)?.[1] ?? "";
+                                      const year = e.target.value;
+                                      setAppendL3Items(p => p.map(x => x.id === l3.id ? { ...x, tenggat: triwulan && year ? `${triwulan} ${year}` : triwulan || year } : x));
+                                    }}>
+                                    <option value="">— Tahun —</option>
+                                    {TAHUN_OPTIONS.map(y => <option key={y}>{y}</option>)}
+                                  </select>
+                                </div>
+                              )}
                             </div>
                           </div>
                           {/* Berbasis IKU — cross-reading realisasi */}

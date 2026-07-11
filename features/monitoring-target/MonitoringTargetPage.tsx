@@ -22,20 +22,23 @@ const PRODI_DEFS = [
   { key: "SD", label: "S1 SD Fixed", keywords: ["data science", "sains data"] },
 ];
 
-function detectProdi(chain: (number | number[])[], allRoles: RoleOption[]): string {
+function detectProdis(chain: (number | number[])[], allRoles: RoleOption[]): string[] {
+  // Scan from last step backwards; collect ALL prodis in the first step that has prodi info.
   for (let i = chain.length - 1; i >= 0; i--) {
     const ids = (Array.isArray(chain[i]) ? chain[i] : [chain[i]]) as number[];
+    const found = new Set<string>();
     for (const id of ids) {
       const r = allRoles.find((r) => r.id === id);
       if (!r?.unitNama) continue;
       const u = r.unitNama.toLowerCase();
-      if (u.includes("d3") || u.includes("diploma 3")) return "D3";
-      if (u.includes("data science") || u.includes("sains data")) return "SD";
-      if (u.includes("informatika")) return "IF";
-      if (u.includes("sistem informasi")) return "SI";
+      if (u.includes("d3") || u.includes("diploma 3")) found.add("D3");
+      else if (u.includes("data science") || u.includes("sains data")) found.add("SD");
+      else if (u.includes("informatika")) found.add("IF");
+      else if (u.includes("sistem informasi")) found.add("SI");
     }
+    if (found.size > 0) return Array.from(found);
   }
-  return "";
+  return [];
 }
 
 interface L1Entry {
@@ -43,7 +46,7 @@ interface L1Entry {
   l0Nama: string;
   l1: IndikatorGroupedSub;
   chain: (number | number[])[];
-  prodi: string;
+  prodi: string[]; // empty = no prodi info, multi = multi-prodi chain
 }
 
 function fmt(n: number | null | undefined) {
@@ -119,11 +122,12 @@ function ChainBadge({ step, idx, total, allRoles }: {
   );
 }
 
-function L1Row({ entry, allRoles, router, tahun }: {
+function L1Row({ entry, allRoles, router, tahun, activeProdi }: {
   entry: L1Entry;
   allRoles: RoleOption[];
   router: ReturnType<typeof useRouter>;
   tahun: string;
+  activeProdi: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedL2s, setExpandedL2s] = useState<Set<number>>(new Set());
@@ -264,42 +268,43 @@ function L1Row({ entry, allRoles, router, tahun }: {
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, flexWrap: "wrap" as const }}>
               {chain.map((step, si) => {
                 const ids = (Array.isArray(step) ? step : [step]) as number[];
-                const names = ids.map((id) => allRoles.find((r) => r.id === id)?.name ?? `Role ${id}`);
-                const unit = allRoles.find((r) => ids.includes(r.id))?.unitNama ?? "";
+                const roles = ids.map((id) => allRoles.find((r) => r.id === id)).filter(Boolean) as import("../../lib/api").RoleOption[];
                 const isFirst = si === 0;
                 const isLast = si === chain.length - 1;
+                // When multiple roles in one step, render each as its own chip separated by "+"
                 return (
-                  <span key={si} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 0,
-                        padding: "3px 11px",
-                        borderRadius: 20,
-                        background: isFirst ? "#dbeafe" : isLast ? "#dcfce7" : "#f3f4f6",
-                        border: `1px solid ${isFirst ? "#bfdbfe" : isLast ? "#bbf7d0" : "#e5e7eb"}`,
-                        whiteSpace: "nowrap" as const,
-                      }}
-                    >
-                      <span style={{
-                        fontSize: 11.5,
-                        fontWeight: 700,
-                        color: isFirst ? "#1e40af" : isLast ? "#166534" : "#1e293b",
-                      }}>
-                        {names.join(" / ")}
-                      </span>
-                      {unit && (
-                        <>
-                          <span style={{ color: isFirst ? "#bfdbfe" : isLast ? "#bbf7d0" : "#d1d5db", margin: "0 6px", fontSize: 12 }}>|</span>
-                          <span style={{ fontSize: 10.5, color: isFirst ? "#60a5fa" : isLast ? "#4ade80" : "#9ca3af" }}>
-                            {unit}
+                  <span key={si} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {roles.map((role, ri) => (
+                      <span key={role.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        {ri > 0 && <span style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700 }}>+</span>}
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 0,
+                            padding: "3px 10px",
+                            borderRadius: 20,
+                            background: isFirst ? "#dbeafe" : isLast ? "#dcfce7" : "#f3f4f6",
+                            border: `1px solid ${isFirst ? "#bfdbfe" : isLast ? "#bbf7d0" : "#e5e7eb"}`,
+                            whiteSpace: "nowrap" as const,
+                          }}
+                        >
+                          <span style={{ fontSize: 11, fontWeight: 700, color: isFirst ? "#1e40af" : isLast ? "#166534" : "#1e293b" }}>
+                            {role.name}
                           </span>
-                        </>
-                      )}
-                    </span>
+                          {role.unitNama && (
+                            <>
+                              <span style={{ color: isFirst ? "#bfdbfe" : isLast ? "#bbf7d0" : "#d1d5db", margin: "0 5px", fontSize: 11 }}>|</span>
+                              <span style={{ fontSize: 10, color: isFirst ? "#60a5fa" : isLast ? "#4ade80" : "#9ca3af" }}>
+                                {role.unitNama}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      </span>
+                    ))}
                     {si < chain.length - 1 && (
-                      <span style={{ color: "#c7d2fe", fontSize: 13 }}>→</span>
+                      <span style={{ color: "#c7d2fe", fontSize: 13, marginLeft: 2 }}>→</span>
                     )}
                   </span>
                 );
@@ -387,9 +392,19 @@ function L1Row({ entry, allRoles, router, tahun }: {
 
                     {/* Dosen drill-down */}
                     {l2DosenExpanded && (() => {
-                      // Only show leaf recipients: users who received but did NOT further distribute.
+                      // Leaf recipients: users who received but did NOT further distribute.
                       const senderIds = new Set(l2DosenItems.map(i => i.fromUserId).filter((id): id is number => id != null));
                       const leafItems = l2DosenItems.filter(i => !senderIds.has(i.toUserId));
+                      // Group leaf dosens by fromUserId (kaprodi who distributed to them)
+                      const groupMap = new Map<number, typeof leafItems>();
+                      for (const item of leafItems) {
+                        const key = item.fromUserId ?? -1;
+                        if (!groupMap.has(key)) groupMap.set(key, []);
+                        groupMap.get(key)!.push(item);
+                      }
+                      // Show all groups — prodi tabs already filter which indicator rows appear,
+                      // so within a single indicator row all leaf recipients should be visible.
+                      const groups = Array.from(groupMap.entries());
                       return (
                         <div style={{ padding: "8px 12px 10px 24px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb" }}>
                           {l2DosenLoading ? (
@@ -397,36 +412,53 @@ function L1Row({ entry, allRoles, router, tahun }: {
                           ) : leafItems.length === 0 ? (
                             <p style={{ margin: 0, fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Belum ada distribusi ke dosen.</p>
                           ) : (
-                            <>
-                              <p style={{ margin: "0 0 6px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                                {leafItems.length} Penerima Target
-                              </p>
-                              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
-                                {leafItems.map((item) => (
-                                  <div
-                                    key={item.toUserId}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 8,
-                                      padding: "5px 12px",
-                                      borderRadius: 8,
-                                      background: "#fff",
-                                      border: "1px solid #ddd6fe",
-                                      fontSize: 11.5,
-                                    }}
-                                  >
-                                    <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
-                                    {item.toUser?.role && (
-                                      <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
-                                        {item.toUser.role}
-                                      </span>
+                            <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
+                              {groups.map(([kaprodId, items]) => {
+                                // Find kaprodi name: they appear as toUserId in l2DosenItems sent by kajur
+                                const kaprodEntry = l2DosenItems.find(i => i.toUserId === kaprodId);
+                                const kaprodNama = kaprodEntry?.toUser?.nama ?? `Kaprodi #${kaprodId}`;
+                                const kaprodUnit = kaprodEntry?.toUser?.role ?? "";
+                                return (
+                                  <div key={kaprodId}>
+                                    {groups.length > 1 && (
+                                      <p style={{ margin: "0 0 5px", fontSize: 10.5, fontWeight: 800, color: "#7c3aed", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                                        {kaprodNama}{kaprodUnit ? ` · ${kaprodUnit}` : ""} — {items.length} Dosen
+                                      </p>
                                     )}
-                                    <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
+                                    {groups.length === 1 && (
+                                      <p style={{ margin: "0 0 5px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                                        {items.length} Penerima Target
+                                      </p>
+                                    )}
+                                    <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
+                                      {items.map((item) => (
+                                        <div
+                                          key={item.toUserId}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            padding: "5px 12px",
+                                            borderRadius: 8,
+                                            background: "#fff",
+                                            border: "1px solid #ddd6fe",
+                                            fontSize: 11.5,
+                                          }}
+                                        >
+                                          <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
+                                          {item.toUser?.role && (
+                                            <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
+                                              {item.toUser.role}
+                                            </span>
+                                          )}
+                                          <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
-                            </>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
                       );
@@ -536,7 +568,7 @@ export default function MonitoringTargetPage() {
             l0Nama: l0.nama,
             l1,
             chain: chains[i],
-            prodi: "",
+            prodi: [] as string[],
           }))
         );
       } catch {
@@ -550,12 +582,12 @@ export default function MonitoringTargetPage() {
 
   const entriesWithProdi = useMemo(() => {
     if (allRoles.length === 0) return l1Entries;
-    return l1Entries.map((e) => ({ ...e, prodi: detectProdi(e.chain, allRoles) }));
+    return l1Entries.map((e) => ({ ...e, prodi: detectProdis(e.chain, allRoles) }));
   }, [l1Entries, allRoles]);
 
   const filteredEntries = useMemo(() => {
     if (activeProdi === "all") return entriesWithProdi;
-    return entriesWithProdi.filter((e) => e.prodi === activeProdi || e.prodi === "");
+    return entriesWithProdi.filter((e) => e.prodi.includes(activeProdi) || e.prodi.length === 0);
   }, [entriesWithProdi, activeProdi]);
 
   const byL0 = useMemo(() => {
@@ -570,7 +602,7 @@ export default function MonitoringTargetPage() {
   const prodiCounts = useMemo(() => {
     const counts: Record<string, number> = { all: entriesWithProdi.length };
     for (const { key } of PRODI_DEFS)
-      counts[key] = entriesWithProdi.filter((e) => e.prodi === key).length;
+      counts[key] = entriesWithProdi.filter((e) => e.prodi.includes(key)).length;
     return counts;
   }, [entriesWithProdi]);
 
@@ -737,7 +769,7 @@ export default function MonitoringTargetPage() {
                 </div>
 
                 {l1s.map((entry) => (
-                  <L1Row key={entry.l1.id} entry={entry} allRoles={allRoles} router={router} tahun={tahun} />
+                  <L1Row key={entry.l1.id} entry={entry} allRoles={allRoles} router={router} tahun={tahun} activeProdi={activeProdi} />
                 ))}
               </div>
             );

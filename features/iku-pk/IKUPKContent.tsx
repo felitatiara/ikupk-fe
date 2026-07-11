@@ -55,6 +55,7 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [fileRepoTarget, setFileRepoTarget] = useState<number>(0);
   const [fileRepoError, setFileRepoError] = useState<string | null>(null);
   const [fileRepoIsAtasan, setFileRepoIsAtasan] = useState(false);
+  const [fileRepoDisposisiTargets, setFileRepoDisposisiTargets] = useState<Map<string, number>>(new Map());
 
   // Ikupk file upload state (sumberData = 'ikupk')
   const [ikupkFiles, setIkupkFiles] = useState<IkupkFile[]>([]);
@@ -454,6 +455,8 @@ const [tahun, setTahun] = useState("2026");
     // Filter email bawahan: gunakan disposisi (siapa yang menerima dari user ini untuk indikator ini)
     // sebagai sumber utama, bukan user_relations (struktur org).
     let allowedEmails: Set<string> | undefined;
+    const disposisiTargetMap = new Map<string, number>();
+    setFileRepoDisposisiTargets(new Map());
     if (showAtasanView && authUser?.id && displayRole !== 'admin') {
       if (roleLevel >= 2) {
         // Kajur (2), Kaprodi (3): filter ke penerima disposisi untuk indikator ini
@@ -464,6 +467,11 @@ const [tahun, setTahun] = useState("2026");
               .map(d => d.toUser?.email ?? '')
               .filter(Boolean)
               .map(e => e.toLowerCase());
+            // Build per-user target map
+            for (const d of disposisiRecords) {
+              const email = d.toUser?.email?.toLowerCase();
+              if (email) disposisiTargetMap.set(email, d.jumlahTarget);
+            }
             if (emails.length > 0) {
               allowedEmails = new Set(emails);
             } else {
@@ -479,6 +487,7 @@ const [tahun, setTahun] = useState("2026");
               ? new Set(bawahanUsers.map(u => u.email.toLowerCase()).filter(Boolean))
               : new Set<string>();
           }
+          setFileRepoDisposisiTargets(new Map(disposisiTargetMap));
           // Dekan/WD (roleLevel <= 1): allowedEmails undefined → tampilkan semua
         } catch {
           // Gagal fetch → tidak batasi
@@ -903,7 +912,15 @@ const [tahun, setTahun] = useState("2026");
 
                       {fileRepoFiles.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {Array.from(new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName || 'Tidak diketahui'))).map((ownerKey) => {
+                          {Array.from(new Set(fileRepoFiles.map(f => f.ownerEmail || f.ownerName || 'Tidak diketahui')))
+                            .sort((a, b) => {
+                              const aIsSelf = authUser?.email && a.toLowerCase() === authUser.email.toLowerCase();
+                              const bIsSelf = authUser?.email && b.toLowerCase() === authUser.email.toLowerCase();
+                              if (aIsSelf) return -1;
+                              if (bIsSelf) return 1;
+                              return 0;
+                            })
+                            .map((ownerKey) => {
                             const ownerFiles = fileRepoFiles.filter(f => (f.ownerEmail || f.ownerName || 'Tidak diketahui') === ownerKey);
                             const ownerName = ownerFiles[0]?.ownerName || ownerKey;
                             const initials = ownerName.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
@@ -912,7 +929,8 @@ const [tahun, setTahun] = useState("2026");
                               <div key={ownerKey} style={{ border: `1px solid ${isSelf ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: 10, overflow: 'hidden' }}>
                                 {/* Owner header */}
                                 {(() => {
-                                  const ownerPct = fileRepoTarget > 0 ? Math.round((ownerFiles.length / fileRepoTarget) * 100) : 0;
+                                  const ownerTarget = fileRepoDisposisiTargets.get(ownerKey.toLowerCase()) ?? fileRepoTarget;
+                                  const ownerPct = ownerTarget > 0 ? Math.round((ownerFiles.length / ownerTarget) * 100) : 0;
                                   const ownerCapColor = ownerPct >= 100 ? '#16a34a' : ownerPct >= 50 ? '#d97706' : ownerPct > 0 ? '#ea580c' : '#9ca3af';
                                   return (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: isSelf ? '#eff6ff' : '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
@@ -927,7 +945,7 @@ const [tahun, setTahun] = useState("2026");
                                         <div style={{ fontSize: 11, color: '#6b7280' }}>{ownerFiles.length} file diunggah</div>
                                       </div>
                                       {/* Capaian per bawahan */}
-                                      {fileRepoTarget > 0 ? (
+                                      {ownerTarget > 0 ? (
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                             <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
@@ -940,7 +958,7 @@ const [tahun, setTahun] = useState("2026");
                                           <div style={{ width: 90, height: 4, background: '#e5e7eb', borderRadius: 99, overflow: 'hidden' }}>
                                             <div style={{ width: `${Math.min(100, ownerPct)}%`, height: '100%', background: ownerCapColor, borderRadius: 99 }} />
                                           </div>
-                                          <span style={{ fontSize: 9.5, color: '#9ca3af' }}>{ownerFiles.length}/{fileRepoTarget} target</span>
+                                          <span style={{ fontSize: 9.5, color: '#9ca3af' }}>{ownerFiles.length}/{ownerTarget} target</span>
                                         </div>
                                       ) : (
                                         <span style={{ fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#16a34a', borderRadius: 20, padding: '2px 10px' }}>
@@ -1537,15 +1555,23 @@ const [tahun, setTahun] = useState("2026");
 
               {!loading && groupedData.length > 0 && (
                 <>
-                  {/* ── Tabel 1: Target untuk Input File ── */}
-                  <h4 className="ikupk-section-title">Target IKU dan PK</h4>
-                  {renderInputFileTable(groupedData, 'input')}
+                  {/* ── Tabel 1: Target untuk Input File ──
+                      Hanya ditampilkan ketika user adalah leaf (Dosen) atau punya secondary Dosen role.
+                      Untuk non-Dosen (Kajur/Kaprodi) tanpa secondary Dosen role: hanya section Disposisi. */}
+                  {isDosen && (
+                    <>
+                      <h4 className="ikupk-section-title">Target IKU dan PK</h4>
+                      {renderInputFileTable(groupedData, 'input')}
+                    </>
+                  )}
 
                   {/* ── Tabel 2: Disposisi ke Bawahan (hanya untuk non-dosen) ── */}
                   {!isDosen && (
                     <>
                       <div className="ikupk-section-divider" />
-                      <h4 className="ikupk-section-title">Disposisi Target IKU dan PK</h4>
+                      <h4 className="ikupk-section-title">
+                        Disposisi Target IKU dan PK
+                      </h4>
                       <div className="table-wrapper">
                         <table className="table-universal">
                           <thead>

@@ -34,6 +34,7 @@ const jenisOptions = [
 const DEFAULT_TAHUN = "2026";
 
 interface PersonalRow {
+  id?: number;
   kode: string;
   nama: string;
   sasaran: string;
@@ -100,19 +101,135 @@ const STATUS_STYLE = {
   belum_input: { bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", label: "Belum Input" },
 };
 
+interface MergedLevelNode {
+  userId: number;
+  nama: string;
+  email: string;
+  totalTarget: number;
+  totalReal: number;
+  sources: { fromNama: string; jumlahTarget: number }[];
+  disposisiIds: number[];
+  isLeaf: boolean;
+  childCount: number;
+  indRef: DisposisiChainNode;
+}
+
+const CHAIN_LEVEL_LABELS = ["Penerima Awal", "Distribusi 1", "Distribusi 2", "Penerima Akhir"];
+
+function buildChainLevels(
+  allChain: DisposisiChainNode[],
+  indId: number,
+): { depth: number; nodes: MergedLevelNode[] }[] {
+  const indNodes = allChain.filter(n => n.indikatorId === indId);
+  if (!indNodes.length) return [];
+
+  // Depth via fromUserId: more reliable than parentDisposisiId because
+  // the import can insert leaf nodes before parent nodes exist (parentId=null).
+  // fromUserId always identifies the actual distributor regardless of insert order.
+  const toUserIds = new Set(indNodes.map(n => n.toUserId));
+  const depthMap = new Map<number, number>();
+
+  function calcDepth(nodeId: number): number {
+    if (depthMap.has(nodeId)) return depthMap.get(nodeId)!;
+    const node = indNodes.find(n => n.disposisiId === nodeId);
+    if (!node) { depthMap.set(nodeId, 0); return 0; }
+    const { fromUserId } = node;
+    // If fromUserId is null or not a recipient in this indicator chain → depth 0
+    if (fromUserId == null || !toUserIds.has(fromUserId)) {
+      depthMap.set(nodeId, 0);
+      return 0;
+    }
+    // Parents = nodes where toUserId === this node's fromUserId
+    const parentNodes = indNodes.filter(p => p.toUserId === fromUserId);
+    const d = 1 + Math.max(...parentNodes.map(p => calcDepth(p.disposisiId)));
+    depthMap.set(nodeId, d);
+    return d;
+  }
+  for (const n of indNodes) calcDepth(n.disposisiId);
+
+  // Step 2: group by depth, merging same toUserId at the same level
+  const levelMap = new Map<number, Map<number, MergedLevelNode>>();
+  for (const n of indNodes) {
+    const depth = depthMap.get(n.disposisiId) ?? 0;
+    if (!levelMap.has(depth)) levelMap.set(depth, new Map());
+    const byUser = levelMap.get(depth)!;
+    // "from" name = toUserNama of whoever has toUserId === n.fromUserId
+    const parentNode = n.fromUserId != null ? indNodes.find(p => p.toUserId === n.fromUserId) : null;
+    const fromNama = parentNode?.toUserNama ?? "—";
+
+    if (!byUser.has(n.toUserId)) {
+      byUser.set(n.toUserId, {
+        userId: n.toUserId, nama: n.toUserNama, email: n.toUserEmail,
+        totalTarget: n.jumlahTarget, totalReal: 0,
+        sources: [{ fromNama, jumlahTarget: n.jumlahTarget }],
+        disposisiIds: [n.disposisiId],
+        isLeaf: true, childCount: 0, indRef: n,
+      });
+    } else {
+      const entry = byUser.get(n.toUserId)!;
+      entry.totalTarget += n.jumlahTarget;
+      // Only add source if not already listed for same fromNama
+      if (!entry.sources.some(s => s.fromNama === fromNama)) {
+        entry.sources.push({ fromNama, jumlahTarget: n.jumlahTarget });
+      } else {
+        const existing = entry.sources.find(s => s.fromNama === fromNama)!;
+        existing.jumlahTarget += n.jumlahTarget;
+      }
+      entry.disposisiIds.push(n.disposisiId);
+    }
+  }
+
+  // Step 3: compute isLeaf, childCount, totalReal using fromUserId relationships
+  for (const [, byUser] of levelMap) {
+    for (const [userId, entry] of byUser) {
+      // Children = nodes whose fromUserId === this user's userId
+      const children = indNodes.filter(n => n.fromUserId === userId);
+      entry.isLeaf = children.length === 0;
+      entry.childCount = new Set(children.map(c => c.toUserId)).size;
+      if (entry.isLeaf) {
+        entry.totalReal = entry.disposisiIds.reduce((s, id) => {
+          const n = indNodes.find(x => x.disposisiId === id);
+          return s + (n?.realisasiJumlah ?? 0);
+        }, 0);
+      } else {
+        // effectiveRealisasi still uses parentDisposisiId chain for leaf lookups,
+        // but as a fallback use realisasiJumlah sum from direct leaf children
+        const leafChildren = children.filter(c =>
+          !indNodes.some(x => x.fromUserId === c.toUserId),
+        );
+        entry.totalReal = leafChildren.reduce((s, c) => s + c.realisasiJumlah, 0);
+      }
+    }
+  }
+
+  return Array.from(levelMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([depth, byUser]) => ({ depth, nodes: Array.from(byUser.values()) }));
+}
+
 // ── Disposisi tree node ───────────────────────────────────────────────────────
+
+const DEPTH_STYLES = [
+  { bg: "#eff6ff", border: "#bfdbfe", accent: "#2563eb", accentLight: "#dbeafe" }, // WD
+  { bg: "#f5f3ff", border: "#ddd6fe", accent: "#7c3aed", accentLight: "#ede9fe" }, // KaJur
+  { bg: "#f0fdf4", border: "#bbf7d0", accent: "#16a34a", accentLight: "#dcfce7" }, // KaProdi / dosen langsung
+  { bg: "#fff7ed", border: "#fed7aa", accent: "#c2410c", accentLight: "#ffedd5" }, // dosen level 3+
+];
+
 function ChainNode({
   node,
   allNodes,
   depth,
   filesByOwner,
   onSelect,
+  parentNama,
 }: {
   node: DisposisiChainNode;
   allNodes: DisposisiChainNode[];
   depth: number;
   filesByOwner: FilesByOwner[];
   onSelect: (nama: string, email: string, files: RealisasiFileItem[], statusColor: string, indikatorLevel: number, indikatorKode: string, indikatorNama: string, indikatorHierarchy: { kode: string; nama: string; level: number }[]) => void;
+  parentNama?: string;
 }) {
   const children = allNodes.filter(n => n.parentDisposisiId === node.disposisiId);
   const isLeaf = children.length === 0;
@@ -120,6 +237,7 @@ function ChainNode({
   const real = isLeaf ? node.realisasiJumlah : effectiveRealisasi(node.disposisiId, allNodes);
   const status = nodeStatus(real, node.jumlahTarget);
   const sc = STATUS_STYLE[status];
+  const dc = DEPTH_STYLES[Math.min(depth, DEPTH_STYLES.length - 1)];
 
   const userFiles = filesByOwner
     .filter(g => g.ownerEmail === node.toUserEmail)
@@ -128,7 +246,18 @@ function ChainNode({
   const hasFiles = userFiles.length > 0;
 
   return (
-    <div style={{ marginLeft: depth * 20 }}>
+    <div style={{ marginLeft: depth * 22 }}>
+      {/* "dari X → " connector row */}
+      {parentNama && (
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3, paddingLeft: 2 }}>
+          <div style={{ width: 14, height: 14, border: `2px solid ${dc.border}`, borderTop: "none", borderRight: "none", borderRadius: "0 0 0 6px", flexShrink: 0, marginTop: -4 }} />
+          <span style={{ fontSize: 10, color: "#9ca3af" }}>
+            dari <span style={{ fontWeight: 700, color: "#6b7280" }}>{parentNama}</span>
+          </span>
+          <span style={{ fontSize: 11, color: dc.accent }}>→</span>
+        </div>
+      )}
+
       <div
         onClick={() => hasFiles && onSelect(node.toUserNama, node.toUserEmail, userFiles, sc.fg, node.indikatorLevel, node.indikatorKode, node.indikatorNama, node.indikatorHierarchy)}
         style={{
@@ -137,34 +266,53 @@ function ChainNode({
           gap: 10,
           padding: "9px 12px",
           borderRadius: 8,
-          border: "1px solid #e5e7eb",
-          backgroundColor: "#fff",
-          marginBottom: 4,
-          position: "relative",
+          border: `1px solid ${dc.border}`,
+          backgroundColor: dc.bg,
+          marginBottom: 6,
           cursor: hasFiles ? "pointer" : "default",
-          transition: "background 0.12s",
+          transition: "opacity 0.12s",
         }}
-        onMouseEnter={e => { if (hasFiles) (e.currentTarget as HTMLDivElement).style.backgroundColor = "#f9fafb"; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.backgroundColor = "#fff"; }}
+        onMouseEnter={e => { if (hasFiles) (e.currentTarget as HTMLDivElement).style.opacity = "0.82"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
       >
-        {depth > 0 && (
-          <span style={{ fontSize: 10, color: "#d1d5db", flexShrink: 0 }}>└</span>
-        )}
+        {/* Depth accent bar */}
+        <div style={{ width: 3, alignSelf: "stretch", background: dc.accent, borderRadius: 99, flexShrink: 0 }} />
+
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {node.toUserNama}
           </div>
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{node.toUserEmail}</div>
+          <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 1 }}>{node.toUserEmail}</div>
+          {!isLeaf && (
+            <div style={{ fontSize: 10, fontWeight: 700, color: dc.accent, marginTop: 4 }}>
+              ↓ mendistribusikan ke {children.length} orang
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: 11, color: "#6b7280", flexShrink: 0, textAlign: "right", lineHeight: 1.6 }}>
-          <div>Target <strong style={{ color: "#374151" }}>{node.jumlahTarget}</strong> · Real <strong style={{ color: "#374151" }}>{real}</strong></div>
-          <div style={{ color: sc.fg, fontWeight: 600 }}>{sc.label}</div>
+
+        <div style={{ flexShrink: 0, textAlign: "right" }}>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>
+            Target <strong style={{ color: "#374151" }}>{node.jumlahTarget}</strong>
+            {" · "}
+            Real <strong style={{ color: sc.fg }}>{real}</strong>
+          </div>
+          <div style={{
+            display: "inline-block", marginTop: 4,
+            fontSize: 10.5, fontWeight: 700,
+            color: sc.fg, background: sc.bg,
+            border: `1px solid ${sc.border}`,
+            borderRadius: 20, padding: "1px 9px",
+          }}>
+            {sc.label}
+          </div>
         </div>
+
         <div style={{
           flexShrink: 0, fontSize: 11, fontWeight: 600,
           color: hasFiles ? "#374151" : "#d1d5db",
           padding: "4px 10px", borderRadius: 6,
-          border: "1px solid #e5e7eb",
+          border: `1px solid ${hasFiles ? "#e5e7eb" : "#f3f4f6"}`,
+          background: hasFiles ? "#fff" : "transparent",
           whiteSpace: "nowrap",
         }}>
           {hasFiles ? `${userFiles.length} file` : "—"}
@@ -172,7 +320,15 @@ function ChainNode({
       </div>
 
       {children.map(child => (
-        <ChainNode key={child.disposisiId} node={child} allNodes={allNodes} depth={depth + 1} filesByOwner={filesByOwner} onSelect={onSelect} />
+        <ChainNode
+          key={child.disposisiId}
+          node={child}
+          allNodes={allNodes}
+          depth={depth + 1}
+          filesByOwner={filesByOwner}
+          onSelect={onSelect}
+          parentNama={node.toUserNama}
+        />
       ))}
     </div>
   );
@@ -332,33 +488,125 @@ function DetailModal({
                     <span style={{ fontSize: 11, color: "#9ca3af" }}>Klik baris untuk lihat file</span>
                   </div>
 
-                  {/* Chain grouped by indicator */}
+                  {/* Chain grouped by indicator — level flow view */}
                   {indikatorIds.map(indId => {
-                    const roots = rootNodes.filter(n => n.indikatorId === indId);
-                    const first = roots[0];
+                    const indFirst = chain.find(n => n.indikatorId === indId && n.parentDisposisiId === null);
+                    const levels = buildChainLevels(chain, indId);
                     return (
-                      <div key={indId} style={{ marginBottom: 20 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div key={indId} style={{ marginBottom: 28 }}>
+                        {/* Indicator label */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                           <span style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", background: "#f3f4f6", padding: "2px 7px", borderRadius: 4 }}>
-                            Level {(first?.indikatorLevel ?? 0) + 1}
+                            Level {(indFirst?.indikatorLevel ?? 0) + 1}
                           </span>
-                          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#6b7280" }}>{first?.indikatorKode}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{first?.indikatorNama}</span>
+                          <span style={{ fontFamily: "monospace", fontSize: 11, color: "#6b7280" }}>{indFirst?.indikatorKode}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{indFirst?.indikatorNama}</span>
                         </div>
-                        <div style={{ borderLeft: "2px solid #e5e7eb", paddingLeft: 12 }}>
-                          {roots.map(root => (
-                            <ChainNode
-                              key={root.disposisiId}
-                              node={root}
-                              allNodes={chain}
-                              depth={0}
-                              filesByOwner={filesByOwner}
-                              onSelect={(nama, email, files, color, indikatorLevel, indikatorKode, indikatorNama, indikatorHierarchy) =>
-                                setSelectedPerson({ nama, email, files, color, indikatorLevel, indikatorKode, indikatorNama, indikatorHierarchy })
-                              }
-                            />
-                          ))}
-                        </div>
+
+                        {/* Flow levels */}
+                        {levels.map(({ depth, nodes }, li) => {
+                          const dc = DEPTH_STYLES[Math.min(depth, DEPTH_STYLES.length - 1)];
+                          const levelLabel = (CHAIN_LEVEL_LABELS[Math.min(depth, CHAIN_LEVEL_LABELS.length - 1)] ?? `Level ${depth + 1}`);
+                          return (
+                            <div key={depth}>
+                              {/* Connector arrow between levels */}
+                              {li > 0 && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "8px 0 10px", paddingLeft: 14 }}>
+                                  <div style={{ width: 1, height: 20, background: "#d1d5db" }} />
+                                  <span style={{ fontSize: 10.5, color: "#9ca3af" }}>↓ mendistribusikan ke</span>
+                                </div>
+                              )}
+
+                              {/* Level badge */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <span style={{ fontSize: 9, fontWeight: 800, color: dc.accent, textTransform: "uppercase" as const, letterSpacing: "0.06em", background: dc.accentLight, padding: "2px 9px", borderRadius: 20 }}>
+                                  {levelLabel}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#9ca3af" }}>{nodes.length} orang</span>
+                              </div>
+
+                              {/* Card row */}
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+                                {nodes.map(node => {
+                                  const status = nodeStatus(node.totalReal, node.totalTarget);
+                                  const sc = STATUS_STYLE[status];
+                                  const userFiles = filesByOwner.filter(g => g.ownerEmail === node.email).flatMap(g => g.files);
+                                  const hasFiles = userFiles.length > 0;
+                                  const multiSource = node.sources.filter(s => s.fromNama !== "—").length > 1;
+
+                                  return (
+                                    <div
+                                      key={node.userId}
+                                      onClick={() => hasFiles && setSelectedPerson({ nama: node.nama, email: node.email, files: userFiles, color: sc.fg, indikatorLevel: node.indRef.indikatorLevel, indikatorKode: node.indRef.indikatorKode, indikatorNama: node.indRef.indikatorNama, indikatorHierarchy: node.indRef.indikatorHierarchy })}
+                                      style={{
+                                        flex: "1 1 200px", minWidth: 180,
+                                        maxWidth: nodes.length === 1 ? "100%" : 300,
+                                        padding: "10px 12px", borderRadius: 10,
+                                        border: `1px solid ${dc.border}`,
+                                        background: dc.bg,
+                                        cursor: hasFiles ? "pointer" : "default",
+                                        transition: "opacity 0.12s",
+                                      }}
+                                      onMouseEnter={e => { if (hasFiles) (e.currentTarget as HTMLDivElement).style.opacity = "0.78"; }}
+                                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+                                    >
+                                      {/* Source(s) */}
+                                      {node.sources.some(s => s.fromNama !== "—") && (
+                                        <div style={{ fontSize: 9.5, color: "#9ca3af", marginBottom: 6, lineHeight: 1.7 }}>
+                                          {multiSource && <span style={{ marginRight: 3 }}>Dari:</span>}
+                                          {node.sources.filter(s => s.fromNama !== "—").map((s, si) => (
+                                            <span key={si}>
+                                              {si > 0 && <span style={{ color: "#d1d5db" }}> + </span>}
+                                              <span style={{ fontWeight: 700, color: "#374151" }}>
+                                                {s.fromNama.split(",")[0].split(" ").slice(-2).join(" ")}
+                                              </span>
+                                              {multiSource && (
+                                                <span style={{ color: "#9ca3af" }}> ({s.jumlahTarget})</span>
+                                              )}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Name */}
+                                      <div style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+                                        <div style={{ width: 3, minHeight: 28, background: dc.accent, borderRadius: 99, flexShrink: 0, marginTop: 2 }} />
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#111827" }}>{node.nama}</div>
+                                          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>{node.email}</div>
+                                        </div>
+                                      </div>
+
+                                      {/* Target / Real / Status */}
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: 4 }}>
+                                        <span style={{ fontSize: 10.5, color: "#6b7280" }}>
+                                          Target <strong>{node.totalTarget}</strong>
+                                          {multiSource && <span style={{ color: "#9ca3af", fontSize: 9 }}> (gabungan)</span>}
+                                          {" · "}Real <strong style={{ color: sc.fg }}>{node.totalReal}</strong>
+                                        </span>
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: sc.fg, background: sc.bg, border: `1px solid ${sc.border}`, borderRadius: 20, padding: "1px 7px", whiteSpace: "nowrap" as const }}>
+                                          {sc.label}
+                                        </span>
+                                      </div>
+
+                                      {/* Footer: distribusi count + file */}
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                                        {!node.isLeaf ? (
+                                          <span style={{ fontSize: 9.5, fontWeight: 700, color: dc.accent }}>
+                                            ↓ {node.childCount} penerima selanjutnya
+                                          </span>
+                                        ) : <span />}
+                                        {hasFiles && (
+                                          <span style={{ fontSize: 10, color: "#374151", fontWeight: 600 }}>📎 {userFiles.length} file</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
@@ -427,6 +675,96 @@ function DetailModal({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── File View Modal ───────────────────────────────────────────────────────────
+
+function FileViewModal({ id, kode, nama, token, onClose }: { id: number; kode: string; nama: string; token: string; onClose: () => void }) {
+  const [files, setFiles] = useState<RealisasiFileItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getAllRealisasiFiles(id, token)
+      .then(r => setFiles(r.files))
+      .catch(() => setFiles([]))
+      .finally(() => setLoading(false));
+  }, [id, token]);
+
+  const ownerKeys = Array.from(new Set(files.map(f => f.ownerEmail || f.ownerName || "—")));
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: "24px 16px" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 560, boxShadow: "0 8px 32px rgba(0,0,0,0.18)", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg, #4f46e5, #3730a3)", padding: "16px 22px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>File Bukti Indikator</div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>
+              <span style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.8, marginRight: 6 }}>{kode}</span>{nama}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", borderRadius: 8, padding: "4px 10px", color: "#fff", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 22px 20px", maxHeight: "60vh", overflowY: "auto" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0" }}>Memuat file...</div>
+          ) : files.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#d1d5db", padding: "32px 0" }}>Belum ada file yang diupload untuk indikator ini.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {ownerKeys.map(ownerKey => {
+                const ownerFiles = files.filter(f => (f.ownerEmail || f.ownerName || "—") === ownerKey);
+                const ownerName = ownerFiles[0]?.ownerName || ownerKey;
+                const initials = ownerName.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
+                return (
+                  <div key={ownerKey} style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                      <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #4f46e5, #3730a3)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {initials}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{ownerName}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{ownerFiles.length} file diunggah</div>
+                      </div>
+                    </div>
+                    <div>
+                      {ownerFiles.map((f, idx) => (
+                        <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: idx < ownerFiles.length - 1 ? "1px solid #f3f4f6" : "none", background: "#fff" }}>
+                          <span style={{ width: 20, fontSize: 11, color: "#9ca3af", textAlign: "center", flexShrink: 0 }}>{idx + 1}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>{new Date(f.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            {f.preview_url && (
+                              <a href={f.preview_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "#374151", textDecoration: "none", padding: "3px 9px", background: "#f3f4f6", borderRadius: 6, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>Preview</a>
+                            )}
+                            {f.download_url && (
+                              <a href={f.download_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "#c2410c", textDecoration: "none", padding: "3px 9px", background: "#fff7ed", borderRadius: 6, border: "1px solid #fed7aa", whiteSpace: "nowrap" }}>Unduh</a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ borderTop: "1px solid #e5e7eb", padding: "12px 22px", textAlign: "right" }}>
+          <button onClick={onClose} style={{ background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 8, padding: "7px 20px", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Tutup</button>
+        </div>
       </div>
     </div>
   );
@@ -678,6 +1016,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
     realisasi: number;
   } | null>(null);
 
+  const [fileViewModal, setFileViewModal] = useState<{ id: number; kode: string; nama: string } | null>(null);
+
   const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima" | "bawahan">(
     role === "pimpinan" || role === "admin" ? "keseluruhan" : "diterima"
   );
@@ -852,7 +1192,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         return 0;
       };
 
-      const sorted = [...displayedChartData].sort((a, b) => sortKode(a.kode, b.kode));
+      const [freshChartData, freshValidasiBiroPKU] = await Promise.all([
+        getAggregatedProgress(selectedTahun, selectedJenis),
+        getValidasiBiroPKU(selectedTahun),
+      ]);
+      const freshDisplayed = canSeeAll ? freshChartData : freshChartData.filter((i) => scopeIds.includes(i.id));
+      const sorted = [...freshDisplayed].sort((a, b) => sortKode(a.kode, b.kode));
 
       // Fetch folder links in parallel
       const folderLinkMap = new Map<number, string | null>();
@@ -946,7 +1291,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       let totalValid = 0;
 
       for (const item of sorted) {
-        const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
+        const val = freshValidasiBiroPKU.find(v => v.indikatorId === item.id);
         const folderLink = folderLinkMap.get(item.id) ?? null;
         groupNo++;
 
@@ -1187,6 +1532,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     ? (gcReal / gcTarget) * 100
                     : null;
                 rows.push({
+                  id: gc.id,
                   kode: gc.kode,
                   nama: gc.nama,
                   sasaran: group.nama,
@@ -1206,6 +1552,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   ? (cRealisasi / cTarget) * 100
                   : null;
               rows.push({
+                id: child.id,
                 kode: child.kode,
                 nama: child.nama,
                 sasaran: group.nama,
@@ -1755,11 +2102,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
-                  {["No", "Kode", "Nama Indikator", "Target", "Realisasi", "Tenggat", "Capaian (%)"].map((h) => (
+                  {["No", "Kode", "Nama Indikator", "Target", "Realisasi", "Tenggat", "Capaian (%)", "File"].map((h) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Tenggat" || h === "Capaian (%)" ? "center" : "left",
+                        textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Tenggat" || h === "Capaian (%)" || h === "File" ? "center" : "left",
                         padding: "10px 14px",
                         fontSize: 11,
                         fontWeight: 700,
@@ -1777,13 +2124,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               <tbody>
                 {personalLoading ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
+                    <td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
                       Memuat data indikator...
                     </td>
                   </tr>
                 ) : personalRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+                    <td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
                       Belum ada target yang diterima untuk tahun {selectedTahun}.
                     </td>
                   </tr>
@@ -1797,7 +2144,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       if (isL0) {
                         return (
                           <tr key={i} style={{ backgroundColor: "#f1f5f9" }}>
-                            <td colSpan={7} style={{ padding: "8px 14px", borderTop: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
+                            <td colSpan={8} style={{ padding: "8px 14px", borderTop: "2px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
                               <span style={{ fontFamily: "monospace", fontSize: 11, color: "#0369a1", background: "#dbeafe", padding: "1px 6px", borderRadius: 4, marginRight: 8, fontWeight: 700 }}>{row.kode}</span>
                               <span style={{ fontWeight: 700, color: "#1e293b", fontSize: 13 }}>{row.nama}</span>
                             </td>
@@ -1837,6 +2184,16 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                           <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: capColor }}>
                             {row.capaian !== null ? `${row.capaian.toFixed(1)}%` : "—"}
                           </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                            {isL2 && row.id ? (
+                              <button
+                                onClick={() => setFileViewModal({ id: row.id!, kode: row.kode, nama: row.nama })}
+                                style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4f46e5", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                              >
+                                Lihat File
+                              </button>
+                            ) : <span style={{ color: "#e5e7eb" }}>—</span>}
+                          </td>
                         </tr>
                       );
                     });
@@ -1863,8 +2220,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 <button
                   onClick={async () => {
                     const ExcelJS = (await import("exceljs")).default;
-                    const rows = monitoringBawahan.rows;
-                    const users = filteredBawahan;
+                    const rl: number = (user as MonitoringUser & { roleLevel?: number })?.roleLevel ?? 99;
+                    const freshBawahan = await getMonitoringBawahan(bawahanJenis, bawahanTahun, user.id, rl);
+                    const rows = freshBawahan.rows;
+                    const users = (freshBawahan.bawahanList ?? []).filter(b => {
+                      if (bawahanFilterUser !== "all" && String(b.id) !== bawahanFilterUser) return false;
+                      return true;
+                    });
                     const fixedCols = 4;
                     const totalCols = fixedCols + users.length;
 
@@ -2179,6 +2541,17 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           realisasi={bawahanCellModal.realisasi}
           token={token}
           onClose={() => setBawahanCellModal(null)}
+        />
+      )}
+
+      {/* File View Modal (Target Saya — level 2/3) */}
+      {fileViewModal && (
+        <FileViewModal
+          id={fileViewModal.id}
+          kode={fileViewModal.kode}
+          nama={fileViewModal.nama}
+          token={token}
+          onClose={() => setFileViewModal(null)}
         />
       )}
 

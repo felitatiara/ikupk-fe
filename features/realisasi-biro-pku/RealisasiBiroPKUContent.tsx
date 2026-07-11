@@ -173,41 +173,72 @@ export default function RealisasiBiroPKUContent() {
   // ── Export ───────────────────────────────────────────────────────────────────
 
   async function handleExport() {
-    if (grouped.length === 0) { toast.error("Tidak ada data untuk diekspor."); return; }
     setExporting(true);
     try {
+      const [freshValidasiData, freshGrouped, freshRealisasiCounts] = await Promise.all([
+        getValidasiBiroPKU(selectedTahun),
+        getIndikatorGrouped(selectedJenis, selectedTahun),
+        getRealisasiCounts(selectedJenis, selectedTahun),
+      ]);
+
+      if (freshGrouped.length === 0) { toast.error("Tidak ada data untuk diekspor."); return; }
+
+      const freshLeafs: number[] = [];
+      for (const g of freshGrouped)
+        for (const sub of g.subIndikators)
+          for (const child of sub.children)
+            if (selectedJenis === "IKU") freshLeafs.push(child.id);
+            else for (const l3 of child.children) freshLeafs.push(l3.id);
+
+      const freshFolderLinks = new Map<number, string | null>();
+      if (freshLeafs.length > 0 && token) {
+        const results = await Promise.allSettled(
+          freshLeafs.map((id) => getAllRealisasiFiles(id, token).then((r) => ({ id, folderLink: r.folderLink }))),
+        );
+        results.forEach((r) => { if (r.status === "fulfilled") freshFolderLinks.set(r.value.id, r.value.folderLink); });
+      }
+
+      function freshSumHasil(ids: number[]): number | null {
+        const items = freshValidasiData.filter((v) => ids.includes(v.indikatorId) && v.jumlahValid != null);
+        if (items.length === 0) return null;
+        return items.reduce((s, v) => s + (v.jumlahValid ?? 0), 0);
+      }
+      function freshSumRealisasi(ids: number[]): number {
+        return ids.reduce((s, id) => s + (freshRealisasiCounts[id] ?? 0), 0);
+      }
+
       type Row = (string | number | null)[];
       const COLS: Row = ["No.", "Kode", "Nama Indikator", "Realisasi Diajukan", "Hasil Biro PKU", "Keterangan", "Link Folder"];
       const rows: Row[] = [COLS];
       let no = 0;
 
-      for (const l0 of grouped) {
+      for (const l0 of freshGrouped) {
         const l0Ids = leafIdsOf(l0, selectedJenis);
-        const l0Hasil = sumHasil(l0Ids);
-        const l0Realisasi = sumRealisasiIds(l0Ids);
+        const l0Hasil = freshSumHasil(l0Ids);
+        const l0Realisasi = freshSumRealisasi(l0Ids);
 
         rows.push(["", l0.kode, l0.nama, l0Realisasi || "", l0Hasil ?? "", "", ""]);
 
         for (const sub of l0.subIndikators) {
           const subIds = leafIdsOfSub(sub, selectedJenis);
-          const subHasil = sumHasil(subIds);
-          const subRealisasi = sumRealisasiIds(subIds);
+          const subHasil = freshSumHasil(subIds);
+          const subRealisasi = freshSumRealisasi(subIds);
           rows.push(["", sub.kode, `  ${sub.nama}`, subRealisasi || "", subHasil ?? "", "", ""]);
 
           for (const child of sub.children) {
             if (selectedJenis === "IKU") {
               no++;
-              const val = validasiData.find((v) => v.indikatorId === child.id);
-              rows.push([no, child.kode, `    ${child.nama}`, realisasiCounts[child.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", folderLinks.get(child.id) ?? ""]);
+              const val = freshValidasiData.find((v) => v.indikatorId === child.id);
+              rows.push([no, child.kode, `    ${child.nama}`, freshRealisasiCounts[child.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", freshFolderLinks.get(child.id) ?? ""]);
             } else {
               const childIds = child.children.map((l3) => l3.id);
-              const childHasil = sumHasil(childIds);
-              const childRealisasi = sumRealisasiIds(childIds);
+              const childHasil = freshSumHasil(childIds);
+              const childRealisasi = freshSumRealisasi(childIds);
               rows.push(["", child.kode, `    ${child.nama}`, childRealisasi || "", childHasil ?? "", "", ""]);
               for (const l3 of child.children) {
                 no++;
-                const val = validasiData.find((v) => v.indikatorId === l3.id);
-                rows.push([no, l3.kode, `      ${l3.nama}`, realisasiCounts[l3.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", folderLinks.get(l3.id) ?? ""]);
+                const val = freshValidasiData.find((v) => v.indikatorId === l3.id);
+                rows.push([no, l3.kode, `      ${l3.nama}`, freshRealisasiCounts[l3.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", freshFolderLinks.get(l3.id) ?? ""]);
               }
             }
           }

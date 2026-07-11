@@ -8,9 +8,11 @@ import {
   ClipboardCheck,
   Database,
   FileSpreadsheet,
+  KeyRound,
   LayoutDashboard,
   LucideIcon,
   PieChart,
+  ShieldCheck,
   Sparkles,
   Target,
   UsersRound,
@@ -67,8 +69,10 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
         { key: "master_indikator", label: "Master Indikator", href: "/admin/master-indikator", icon: Target },
         { key: "monitoring_target", label: "Monitoring Target", href: "/admin/monitoring-target", icon: PieChart },
         { key: "master_user", label: "Master User", href: "/admin/master-user", icon: UsersRound },
+        { key: "master_role", label: "Master Role", href: "/admin/master-role", icon: KeyRound },
         { key: "master_data", label: "Master Data", href: "/admin/master-data", icon: Database },
         { key: "master_skp", label: "Master SKP", href: "/admin/master-skp", icon: FileSpreadsheet },
+        { key: "rbac", label: "Konfigurasi Akses", href: "/admin/rbac", icon: ShieldCheck },
       ] : []),
     ];
   };

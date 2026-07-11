@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,7 @@ import {
   signRencanaSKPPihakKedua,
   validasiRencanaSKPAtasan,
   getSkpRencanaStatus,
+  getUserRoles,
   type SkpBawahanRow,
   type MySkpStatus,
   type SkpCheckerUser,
@@ -29,11 +30,13 @@ interface IndikatorNode {
   id: number;
   kode: string;
   nama: string;
+  satuan?: string;
   disposisiJumlah?: number | null;
   realisasiJumlah?: number | null;
   children?: IndikatorNode[];
 }
 interface IndikatorGroup {
+  id: number;
   nama: string;
   subIndikators: IndikatorNode[];
 }
@@ -58,6 +61,23 @@ interface FileEntry {
 // ─────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────
+function mergeGroupedData(primary: IndikatorGroup[], secondary: IndikatorGroup[]): IndikatorGroup[] {
+  const primaryIds = new Set(primary.map(g => g.id));
+  return [
+    ...primary,
+    ...secondary.filter(g => {
+      if (primaryIds.has(g.id)) return false;
+      return g.subIndikators.some(sub =>
+        (sub.disposisiJumlah ?? 0) > 0 ||
+        (sub.children ?? []).some(c =>
+          (c.disposisiJumlah ?? 0) > 0 ||
+          (c.children ?? []).some(gc => (gc.disposisiJumlah ?? 0) > 0)
+        )
+      );
+    }),
+  ];
+}
+
 function nilaiCapaian(persen: number | null): { nilai: string; predikat: string; color: string } {
   if (persen === null) return { nilai: "—", predikat: "Belum ada data", color: "#6b7280" };
   if (persen >= 100) return { nilai: persen.toFixed(1), predikat: "Sangat Baik", color: "#16a34a" };
@@ -183,15 +203,34 @@ export default function SKPContent() {
   async function fetchOwnSKP() {
     setLoading(true);
     try {
+      const allUserRoles = (user?.roles as Array<{ id: number; level: number; isPrimary: boolean }> | undefined) ?? [];
+      const primaryRoleLevel = (user as any)?.roleLevel ?? allUserRoles.find(r => r.isPrimary)?.level ?? 4;
       const roleId: number = user?.roleId
-      ?? user?.roles?.find((r: { id: number; isPrimary: boolean }) => r.isPrimary)?.id
-      ?? user?.roles?.[0]?.id
-      ?? 0;
+        ?? allUserRoles.find((r: { id: number; isPrimary: boolean }) => r.isPrimary)?.id
+        ?? allUserRoles[0]?.id
+        ?? 0;
+      const secondaryDosenRole = primaryRoleLevel < 4
+        ? allUserRoles.find(r => r.level >= 4 && !r.isPrimary)
+        : undefined;
+
       const [ikuData, pkData] = await Promise.all([
         getIndikatorGroupedForUser("IKU", tahun, user!.id, roleId),
         getIndikatorGroupedForUser("PK", tahun, user!.id, roleId),
       ]);
-      const allData = [...ikuData, ...pkData];
+
+      let allIku = ikuData as unknown as IndikatorGroup[];
+      let allPk = pkData as unknown as IndikatorGroup[];
+
+      if (secondaryDosenRole) {
+        const [secIku, secPk] = await Promise.all([
+          getIndikatorGroupedForUser("IKU", tahun, user!.id, secondaryDosenRole.id),
+          getIndikatorGroupedForUser("PK", tahun, user!.id, secondaryDosenRole.id),
+        ]);
+        allIku = mergeGroupedData(allIku, secIku as unknown as IndikatorGroup[]);
+        allPk = mergeGroupedData(allPk, secPk as unknown as IndikatorGroup[]);
+      }
+
+      const allData = [...allIku, ...allPk];
       const newRows: SKPRow[] = [];
       let no = 1;
 
@@ -652,7 +691,7 @@ export default function SKPContent() {
   function generateRencanaSKP() {
     const nama = user?.nama ?? "—";
     const nip = user?.nip ?? "—";
-    const jabatan = user?.role ?? "—";
+    const jabatan = [...(user?.roles ?? [])].sort((a, b) => a.level - b.level)[0]?.name ?? user?.role ?? "—";
     const unitKerja = user?.unitNama ?? "—";
     const tanggal = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 
@@ -732,10 +771,11 @@ export default function SKPContent() {
   function generateEvaluasiKinerjaPegawai() {
     const nama = user?.nama ?? "—";
     const nip = user?.nip ?? "—";
-    const jabatan = user?.role ?? "—";
+    const jabatan = [...(user?.roles ?? [])].sort((a, b) => a.level - b.level)[0]?.name ?? user?.role ?? "—";
     const unitKerja = user?.unitNama ?? "Fakultas Ilmu Komputer";
     const atasanNama = mySkpStatus?.atasan?.nama ?? "—";
     const atasanNip = mySkpStatus?.atasan?.nip ?? "—";
+    const atasanJabatan = mySkpStatus?.atasan?.jabatan ?? "—";
     const periodePenilaian = `02 JANUARI S.D. 31 DESEMBER TAHUN ${tahun}`;
 
     function hasilKerja(capaian: number | null) {
@@ -851,7 +891,7 @@ export default function SKPContent() {
           ${infoRow("NAMA", nama)}${infoRow("NIP", nip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", jabatan)}${infoRow("UNIT KERJA", unitKerja)}
           <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">2</td>
               <td colspan="3" style="font-weight:bold;padding:4px 6px">PEJABAT PENILAI KINERJA</td></tr>
-          ${infoRow("NAMA", atasanNama)}${infoRow("NIP", atasanNip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", "—")}${infoRow("UNIT KERJA", unitKerja)}
+          ${infoRow("NAMA", atasanNama)}${infoRow("NIP", atasanNip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", atasanJabatan)}${infoRow("UNIT KERJA", unitKerja)}
           <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">3</td>
               <td colspan="3" style="font-weight:bold;padding:4px 6px">ATASAN PEJABAT PENILAI KINERJA</td></tr>
           ${infoRow("NAMA", "—")}${infoRow("NIP", "—")}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", "—")}${infoRow("UNIT KERJA", unitKerja)}
@@ -1143,11 +1183,29 @@ ${kualitatifPage}
   async function generateCheckerDoc(b: SkpCheckerUser, docType: 'rencana' | 'ekp') {
     toast.info(`Memuat data SKP ${b.nama}…`);
     try {
-      const [ikuData, pkData, bawahanSkpStatus] = await Promise.all([
+      const [ikuData, pkData, bawahanSkpStatus, bawahanRoles] = await Promise.all([
         getIndikatorGroupedForUser("IKU", tahun, b.userId, b.roleId),
         getIndikatorGroupedForUser("PK", tahun, b.userId, b.roleId),
         getMySkpStatus(b.userId, tahun),
+        getUserRoles(b.userId),
       ]);
+
+      const bawahanPrimaryLevel = bawahanRoles.find(r => r.isPrimary)?.level ?? 4;
+      const bawahanSecondaryDosen = bawahanPrimaryLevel < 4
+        ? bawahanRoles.find(r => r.level >= 4 && !r.isPrimary)
+        : undefined;
+
+      let allIku = ikuData as unknown as IndikatorGroup[];
+      let allPk = pkData as unknown as IndikatorGroup[];
+
+      if (bawahanSecondaryDosen) {
+        const [secIku, secPk] = await Promise.all([
+          getIndikatorGroupedForUser("IKU", tahun, b.userId, bawahanSecondaryDosen.id),
+          getIndikatorGroupedForUser("PK", tahun, b.userId, bawahanSecondaryDosen.id),
+        ]);
+        allIku = mergeGroupedData(allIku, secIku as unknown as IndikatorGroup[]);
+        allPk = mergeGroupedData(allPk, secPk as unknown as IndikatorGroup[]);
+      }
 
       const bawahanRows: SKPRow[] = [];
       let no = 1;
@@ -1158,7 +1216,7 @@ ${kualitatifPage}
           ? Math.min((realisasi / target) * 100, 100) : null;
         bawahanRows.push({ id: item.id, no: no++, kodeIndikator: item.kode, namaIndikator: item.nama, sasaranStrategis: sasaran, targetKuantitas: target, realisasiKuantitas: realisasi, capaianPersen: capaian });
       }
-      for (const group of [...ikuData, ...pkData] as IndikatorGroup[]) {
+      for (const group of [...allIku, ...allPk] as IndikatorGroup[]) {
         for (const sub of group.subIndikators) {
           const children = sub.children ?? [];
           if (children.length === 0) { pushCheckerRow(sub, group.nama); }
@@ -1196,52 +1254,44 @@ ${kualitatifPage}
           return v !== null && v !== undefined ? String(v) : "-";
         };
 
-        // ── IKU rows ──
-        interface IRow { no: number; sasaran: string; kode: string; ikuNama: string; satuan: string; target: string; }
-        const ikuRows: IRow[] = [];
-        let ikuNo = 1;
-        for (const group of ikuData as IndikatorGroup[]) {
-          for (const sub of group.subIndikators) {
-            const children = sub.children ?? [];
-            if (children.length === 0) {
-              ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (sub as any).kode, ikuNama: sub.nama, satuan: (sub as any).satuan ?? "", target: resolveTarget(sub) });
-            } else {
-              for (const child of children) {
-                const l3s = child.children ?? [];
-                if (l3s.length === 0) {
-                  ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (child as any).kode, ikuNama: child.nama, satuan: (child as any).satuan ?? "", target: resolveTarget(child) });
-                } else {
+        // ── Shared helpers ──
+        const fmtIkuL = (kode: string) => {
+          const t = (kode ?? '').trim();
+          if (!t) return '';
+          if (/^\d+$/.test(t)) return `IKU ${t}`;
+          const u = t.toUpperCase();
+          return u.startsWith('IKU') ? u.replace(/^IKU\s*/, 'IKU ') : t;
+        };
+
+        type DocRowL =
+          | { kind: 'sub-header'; groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string }
+          | { kind: 'entry';      groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string; target: string; satuan: string }
+          | { kind: 'leaf';       groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string; target: string; satuan: string };
+        const lbl = (kode: string, nama: string, fmt = false) => { const k = fmt ? fmtIkuL(kode) : (kode?.trim() ?? ''); return k ? `${k}  ${nama}` : nama; };
+        const buildDocRowsL = (data: IndikatorGroup[]): DocRowL[] => {
+          const rows: DocRowL[] = [];
+          for (const [groupIdx, group] of data.entries()) {
+            const sasaran = group.nama;
+            const groupKode = (group as any).kode?.trim() || String(groupIdx + 1);
+            for (const sub of group.subIndikators) {
+              const children = sub.children ?? [];
+              const subLabel = lbl(sub.kode ?? '', sub.nama, true);
+              if (children.length === 0) {
+                rows.push({ kind: 'entry', groupIdx, groupKode, sasaran, ikuLabel: subLabel, target: resolveTarget(sub), satuan: sub.satuan ?? '' });
+              } else {
+                rows.push({ kind: 'sub-header', groupIdx, groupKode, sasaran, ikuLabel: subLabel });
+                for (const child of children) {
+                  const l3s = child.children ?? [];
+                  rows.push({ kind: 'entry', groupIdx, groupKode, sasaran, ikuLabel: lbl(child.kode ?? '', child.nama), target: l3s.length > 0 ? '' : resolveTarget(child), satuan: l3s.length > 0 ? '' : (child.satuan ?? '') });
                   for (const l3 of l3s) {
-                    ikuRows.push({ no: ikuNo++, sasaran: group.nama, kode: (l3 as any).kode, ikuNama: (l3 as any).nama, satuan: (l3 as any).satuan ?? "", target: resolveTarget(l3) });
+                    rows.push({ kind: 'leaf', groupIdx, groupKode, sasaran, ikuLabel: lbl(l3.kode ?? '', l3.nama), target: resolveTarget(l3), satuan: l3.satuan ?? '' });
                   }
                 }
               }
             }
           }
-        }
-
-        // ── PK groups ──
-        type PKind = 'sub-header' | 'child-header' | 'leaf';
-        interface PKRow { kind: PKind; nama?: string; kode?: string; satuan?: string; target?: string; }
-        const pkGroups: { no: number; sasaran: string; rows: PKRow[] }[] = [];
-        for (const [gi, group] of (pkData as IndikatorGroup[]).entries()) {
-          const rows: PKRow[] = [];
-          for (const sub of group.subIndikators) {
-            rows.push({ kind: 'sub-header', nama: sub.nama });
-            for (const child of sub.children ?? []) {
-              const l3s = child.children ?? [];
-              if (l3s.length === 0) {
-                rows.push({ kind: 'leaf', kode: (child as any).kode, nama: child.nama, satuan: (child as any).satuan ?? "", target: resolveTarget(child) });
-              } else {
-                rows.push({ kind: 'child-header', kode: (child as any).kode, nama: child.nama });
-                for (const l3 of l3s) {
-                  rows.push({ kind: 'leaf', kode: (l3 as any).kode, nama: (l3 as any).nama, satuan: (l3 as any).satuan ?? "", target: resolveTarget(l3) });
-                }
-              }
-            }
-          }
-          pkGroups.push({ no: gi + 1, sasaran: group.nama, rows });
-        }
+          return rows;
+        };
 
         // ── Shared cell style strings ──
         const tdS = `border:1px solid #000;padding:4px 5px;font-size:9.5pt;vertical-align:top;line-height:1.35`;
@@ -1273,43 +1323,53 @@ ${rightNip ? `<div style="font-size:10pt">NIP. ${rightNip}</div>` : ''}</div></d
 <div>TAHUN ANGGARAN ${tahun}</div>
 <div>BERDASARKAN ${spDipa}</div></div>`;
 
+        // ── DocRow → HTML ──
+        const renderDocHtml = (rows: DocRowL[]): string => {
+          const gCount = new Map<number, number>();
+          const gFirst = new Map<number, number>();
+          rows.forEach((r, i) => {
+            gCount.set(r.groupIdx, (gCount.get(r.groupIdx) ?? 0) + 1);
+            if (!gFirst.has(r.groupIdx)) gFirst.set(r.groupIdx, i);
+          });
+          return rows.map((row, ri) => {
+            const isFirst = gFirst.get(row.groupIdx) === ri;
+            const gSpan = gCount.get(row.groupIdx) ?? 1;
+            const noCell = isFirst ? `<td${gSpan > 1 ? ` rowspan="${gSpan}"` : ''} style="${tdC}">${row.groupKode}</td>` : '';
+            const sasaranCell = isFirst ? `<td${gSpan > 1 ? ` rowspan="${gSpan}"` : ''} style="${tdS}">${row.sasaran}</td>` : '';
+            if (row.kind === 'sub-header') {
+              return `<tr>${noCell}${sasaranCell}<td style="${tdS};font-weight:bold;font-style:italic">${row.ikuLabel}</td><td style="${tdC}"></td><td style="${tdC}"></td></tr>`;
+            }
+            if (row.kind === 'entry') {
+              return `<tr>${noCell}${sasaranCell}<td style="${tdS}">${row.ikuLabel}</td><td style="${tdC}">${row.target}</td><td style="${tdC}">${row.satuan}</td></tr>`;
+            }
+            return `<tr>${noCell}${sasaranCell}<td style="${tdS};padding-left:14px">${row.ikuLabel}</td><td style="${tdC}">${row.target}</td><td style="${tdC}">${row.satuan}</td></tr>`;
+          }).join('');
+        };
+
         // ── Lampiran 1 — IKU ──
-        const ikuTableHtml = ikuRows.length === 0 ? '' :
+        const ikuDocRows = buildDocRowsL(allIku as unknown as IndikatorGroup[]);
+        const ikuTableHtml = ikuDocRows.length === 0 ? '' :
           `<div style="page-break-before:always">${pageHeader('Lampiran 1')}
 <table style="width:100%;border-collapse:collapse"><thead><tr>
 <th style="${thS};width:28px">No.</th>
-<th style="${thS};width:26%">Sasaran Program</th>
-<th style="${thS};width:52px">Kode</th>
+<th style="${thS};width:28%">Sasaran Program</th>
 <th style="${thS}">Indikator Kinerja Utama</th>
+<th style="${thS};width:56px">Target</th>
 <th style="${thS};width:65px">Satuan</th>
-<th style="${thS};width:52px">Target</th>
-</tr></thead><tbody>
-${ikuRows.map(r => `<tr><td style="${tdC}">${r.no}</td><td style="${tdS}">${r.sasaran}</td><td style="${tdC}">${r.kode}</td><td style="${tdS}">${r.ikuNama}</td><td style="${tdC}">${r.satuan}</td><td style="${tdC}">${r.target}</td></tr>`).join('')}
-</tbody></table>
+</tr></thead><tbody>${renderDocHtml(ikuDocRows)}</tbody></table>
 ${makeSig(pihakKeduaJabatan, pihakKeduaNama, pihakKeduaNip, sigPK, jabatan, nama, nip, sigPeg)}</div>`;
 
         // ── Lampiran 2 — PK ──
-        const pkTableRows = pkGroups.map(group => {
-          const rowCount = group.rows.length;
-          return group.rows.map((row, ri) => {
-            const lead = ri === 0
-              ? `<td rowspan="${rowCount}" style="${tdC};font-weight:bold">${group.no}</td><td rowspan="${rowCount}" style="${tdS}">${group.sasaran}</td>`
-              : '';
-            if (row.kind === 'sub-header') return `<tr>${lead}<td colspan="2" style="${tdS};font-weight:bold;font-style:italic">${row.nama}</td><td style="${tdS}"></td><td style="${tdS}"></td></tr>`;
-            if (row.kind === 'child-header') return `<tr>${lead}<td style="${tdC};width:44px;font-weight:bold">${row.kode ?? ''}</td><td colspan="3" style="${tdS};font-weight:bold">${row.nama ?? ''}</td></tr>`;
-            return `<tr>${lead}<td style="${tdC};width:44px">${row.kode ?? ''}</td><td style="${tdS}">${row.nama ?? ''}</td><td style="${tdC}">${row.satuan ?? ''}</td><td style="${tdC}">${row.target ?? ''}</td></tr>`;
-          }).join('');
-        }).join('');
-        const pkTableHtml = pkGroups.length === 0 ? '' :
+        const pkDocRows = buildDocRowsL(allPk as unknown as IndikatorGroup[]);
+        const pkTableHtml = pkDocRows.length === 0 ? '' :
           `<div style="page-break-before:always">${pageHeader('Lampiran 2')}
 <table style="width:100%;border-collapse:collapse"><thead><tr>
 <th style="${thS};width:28px">No.</th>
-<th style="${thS};width:22%">Sasaran Program</th>
-<th style="${thS};width:44px">Kode</th>
+<th style="${thS};width:28%">Sasaran Program</th>
 <th style="${thS}">Indikator Kinerja Kegiatan</th>
+<th style="${thS};width:56px">Target</th>
 <th style="${thS};width:65px">Satuan</th>
-<th style="${thS};width:52px">Target</th>
-</tr></thead><tbody>${pkTableRows}</tbody></table>
+</tr></thead><tbody>${renderDocHtml(pkDocRows)}</tbody></table>
 ${makeSig(pihakKeduaJabatan, pihakKeduaNama, pihakKeduaNip, sigPK, jabatan, nama, nip, sigPeg)}</div>`;
 
         // ── Cover page ──

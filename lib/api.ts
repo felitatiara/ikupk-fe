@@ -270,6 +270,7 @@ export interface IndikatorImportRow {
   target: number | null;
   satuan: string | null;
   sumberData: string;
+  linkedIkuKode?: string | null;
 }
 
 export async function importIndikatorBulk(
@@ -277,11 +278,12 @@ export async function importIndikatorBulk(
   tahun: string,
   rows: IndikatorImportRow[],
   token: string,
+  clearFirst = false,
 ): Promise<{ imported: number; errors: string[] }> {
   const res = await fetch(`${API_BASE_URL}/indikator/import-bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ jenis, tahun, rows }),
+    body: JSON.stringify({ jenis, tahun, rows, clearFirst }),
   });
   if (!res.ok) throw new Error('Import gagal');
   return res.json();
@@ -431,7 +433,10 @@ export async function switchRole(roleId: number, token: string): Promise<{ token
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ roleId }),
   });
-  if (!res.ok) throw new Error('Gagal mengganti role');
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || 'Gagal mengganti role');
+  }
   return res.json();
 }
 
@@ -648,7 +653,13 @@ export interface DisposisiItem {
   toUserId: number;
   jumlahTarget: number;
   fromUserId?: number | null;
-  toUser?: { id: number; nama: string; role: string; email?: string };
+  toUser?: {
+    id: number;
+    nama: string;
+    role?: string;
+    email?: string;
+    userRoles?: Array<{ role: { name: string; unitNama: string } }>;
+  };
 }
 
 export async function getDisposisi(indikatorId: number, tahun: string, fromUserId?: number | null): Promise<DisposisiItem[]> {
@@ -675,7 +686,11 @@ export async function upsertDisposisi(indikatorId: number, tahun: string, items:
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ indikatorId, tahun, items, fromUserId: fromUserId ?? null }),
   });
-  if (!response.ok) throw new Error('Failed to upsert disposisi');
+  if (!response.ok) {
+    let detail = '';
+    try { const err = await response.json(); detail = err.message ?? JSON.stringify(err); } catch {}
+    throw new Error(`Failed to upsert disposisi (${response.status}): ${detail}`);
+  }
   return response.json();
 }
 
@@ -690,6 +705,32 @@ export async function getAllRoles(): Promise<RoleOption[]> {
   const response = await fetch(`${API_BASE_URL}/users/roles`);
   if (!response.ok) throw new Error('Failed to fetch roles');
   return response.json();
+}
+
+export async function createRole(data: { name: string; unitNama: string; level: number }): Promise<RoleOption> {
+  const res = await fetch(`${API_BASE_URL}/users/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create role');
+  return res.json();
+}
+
+export async function updateRole(id: number, data: { name?: string; unitNama?: string; level?: number }): Promise<RoleOption> {
+  const res = await fetch(`${API_BASE_URL}/users/roles/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to update role');
+  return res.json();
+}
+
+export async function deleteRole(id: number): Promise<{ deleted: boolean; reason?: string }> {
+  const res = await fetch(`${API_BASE_URL}/users/roles/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete role');
+  return res.json();
 }
 
 export async function getUsers(): Promise<UnitUser[]> {
@@ -815,6 +856,23 @@ export async function deleteUserAccount(id: number): Promise<void> {
     method: 'DELETE',
   });
   if (!response.ok) throw new Error('Failed to delete user');
+}
+
+export async function getUserRoles(userId: number): Promise<Array<{ id: number; name: string; unitNama: string; level: number; isPrimary: boolean }>> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.userRoles ?? []).map((ur: any) => ({
+      id: ur.roleId ?? ur.role?.id,
+      name: ur.role?.name ?? '',
+      unitNama: ur.role?.unitNama ?? '',
+      level: ur.role?.level ?? 99,
+      isPrimary: ur.isPrimary ?? false,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export interface FileRealisasiResult {
@@ -1243,8 +1301,8 @@ export async function getSkpBawahan(atasanId: number, tahun: string, forDekan = 
 export interface MySkpStatus {
   status: 'approved' | 'rejected' | 'pending';
   realisasi: SkpBawahanRealisasiRow[];
-  atasan: { nama: string; nip: string | null } | null;
-  atasanPenilai: { nama: string; nip: string | null } | null;
+  atasan: { nama: string; nip: string | null; jabatan?: string | null } | null;
+  atasanPenilai: { nama: string; nip: string | null; jabatan?: string | null } | null;
 }
 
 /** Status SKP milik sendiri: status aggregate + daftar realisasi + info atasan */
@@ -1649,5 +1707,43 @@ export async function checkRencanaSKPChecker(targetUserId: number, tahun: string
     body: JSON.stringify({ targetUserId, tahun, signature }),
   });
   if (!res.ok) throw new Error('Gagal memvalidasi Rencana SKP');
+  return res.json();
+}
+
+// ── RBAC View Permissions ──────────────────────────────────────────────────────
+
+export interface RoleViewPermission {
+  id: number;
+  viewerRoleId: number;
+  viewableRoleId: number;
+  viewerRole?: RoleOption;
+  viewableRole?: RoleOption;
+}
+
+export async function getAllRoleViewPermissions(): Promise<RoleViewPermission[]> {
+  const res = await fetch(`${API_BASE_URL}/role-view-permissions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getRoleViewPermissionsForViewer(viewerRoleId: number): Promise<RoleViewPermission[]> {
+  const res = await fetch(`${API_BASE_URL}/role-view-permissions/${viewerRoleId}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function setRoleViewPermissions(viewerRoleId: number, viewableRoleIds: number[]): Promise<RoleViewPermission[]> {
+  const res = await fetch(`${API_BASE_URL}/role-view-permissions/${viewerRoleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ viewableRoleIds }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan konfigurasi akses');
+  return res.json();
+}
+
+export async function getViewableRoleIds(viewerRoleId: number): Promise<number[]> {
+  const res = await fetch(`${API_BASE_URL}/role-view-permissions/${viewerRoleId}/viewable-ids`);
+  if (!res.ok) return [];
   return res.json();
 }

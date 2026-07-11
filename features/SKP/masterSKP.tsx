@@ -4,56 +4,11 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import PageTransition from "@/components/layout/PageTransition";
 import {
-  getMasterSKP, updateUserSKPStatus, type MasterSKPRow,
+  getMasterSKP, type MasterSKPRow,
   getSkpPenilaiConfigs, getSkpPenilaiRoles, getSkpPenilaiUsers,
   upsertSkpPenilai, deleteSkpPenilai,
   type SkpPenilaiConfigRow, type SkpPenilaiRole, type SkpPenilaiUser,
 } from "@/lib/api";
-
-// ─────────────────────────────────────────────
-//  Mock data  — fallback jika API belum siap
-// ─────────────────────────────────────────────
-const MOCK_MASTER: MasterSKPRow[] = [
-  {
-    id: 1,
-    userId: 1,
-    nip: "198501012010011001",
-    namaPegawai: "Dr. Ahmad Fauzi, M.Kom",
-    jabatan: "Dosen",
-    unitKerja: "Fakultas Ilmu Komputer",
-    periode: "2025",
-    jumlahIndikator: 4,
-    tervalidasi: 4,
-    statusSKP: "submitted",
-    rataCapaian: 87.5,
-  },
-  {
-    id: 2,
-    userId: 2,
-    nip: "199001052015041002",
-    namaPegawai: "Siti Rahmawati, S.T., M.T.",
-    jabatan: "Dosen",
-    unitKerja: "Fakultas Ilmu Komputer",
-    periode: "2025",
-    jumlahIndikator: 3,
-    tervalidasi: 2,
-    statusSKP: "draft",
-    rataCapaian: null,
-  },
-  {
-    id: 3,
-    userId: 3,
-    nip: "197803122005011003",
-    namaPegawai: "Prof. Budi Santoso, Ph.D",
-    jabatan: "Dosen",
-    unitKerja: "Lembaga Penelitian",
-    periode: "2025",
-    jumlahIndikator: 5,
-    tervalidasi: 5,
-    statusSKP: "approved",
-    rataCapaian: 95.2,
-  },
-];
 
 // ─────────────────────────────────────────────
 //  Helpers
@@ -119,12 +74,6 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
   const [filterUnit, setFilterUnit] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean;
-    id: number;
-    action: "approved" | "rejected";
-    nama: string;
-  }>({ open: false, id: 0, action: "approved", nama: "" });
 
   // ── Tab: Konfigurasi Penilai ──
   const [penilaiConfigs, setPenilaiConfigs] = useState<SkpPenilaiConfigRow[]>([]);
@@ -151,7 +100,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
         setData(rows);
       } catch (err) {
         console.error("Failed to fetch master SKP:", err);
-        setData(MOCK_MASTER);
+        setData([]);
       } finally {
         setLoading(false);
       }
@@ -218,29 +167,6 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
       (filterStatus === "semua" || r.statusSKP === filterStatus)
     );
   });
-
-  // ── Actions ──
-  const openConfirm = (id: number, action: "approved" | "rejected", nama: string) => {
-    setConfirmModal({ open: true, id, action, nama });
-  };
-
-  const handleConfirm = async () => {
-    const { id, action } = confirmModal;
-    const row = data.find(r => r.id === id);
-    try {
-      await updateUserSKPStatus(row?.userId ?? id, action, row?.periode);
-      setData((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, statusSKP: action } : r))
-      );
-    } catch (err) {
-      console.error("Failed to update SKP status:", err);
-      // Tetap update UI secara optimistic
-      setData((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, statusSKP: action } : r))
-      );
-    }
-    setConfirmModal({ open: false, id: 0, action: "approved", nama: "" });
-  };
 
   // ── Stats ──
   const total = data.length;
@@ -486,7 +412,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
                 <thead>
                   <tr>
-                    {["No", "NIP", "Nama Pegawai", "Unit Kerja", "Periode", "Progres Validasi", "Rata Capaian", "Status SKP", "Aksi"].map(
+                    {["No", "NIP", "Nama Pegawai", "Unit Kerja", "Periode", "Progres Validasi", "Rata Capaian", "Status SKP"].map(
                       (h) => <th key={h} style={th}>{h}</th>
                     )}
                   </tr>
@@ -513,46 +439,6 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                         {row.rataCapaian !== null ? `${row.rataCapaian.toFixed(1)}%` : "—"}
                       </td>
                       <td style={td}>{skpStatusBadge(row.statusSKP)}</td>
-                      <td style={{ ...td, whiteSpace: "nowrap" }}>
-                        {row.statusSKP !== "approved" && row.statusSKP !== "rejected" ? (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button
-                              onClick={() => openConfirm(row.id, "approved", row.namaPegawai)}
-                              style={{
-                                padding: "5px 12px",
-                                borderRadius: 6,
-                                border: "none",
-                                backgroundColor: "#dcfce7",
-                                color: "#166534",
-                                fontWeight: 600,
-                                fontSize: 11,
-                                cursor: "pointer",
-                              }}
-                            >
-                              ✓ Setujui
-                            </button>
-                            <button
-                              onClick={() => openConfirm(row.id, "rejected", row.namaPegawai)}
-                              style={{
-                                padding: "5px 12px",
-                                borderRadius: 6,
-                                border: "none",
-                                backgroundColor: "#fee2e2",
-                                color: "#991b1b",
-                                fontWeight: 600,
-                                fontSize: 11,
-                                cursor: "pointer",
-                              }}
-                            >
-                              ✕ Tolak
-                            </button>
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                            {row.statusSKP === "approved" ? "Sudah disetujui" : "Sudah ditolak"}
-                          </span>
-                        )}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -686,68 +572,6 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
           document.body
         )}
 
-        {/* ── Modal konfirmasi (status SKP) ── */}
-        {confirmModal.open && createPortal(
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              backgroundColor: "rgba(0,0,0,0.4)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 9999,
-            }}
-            onClick={() => setConfirmModal((p) => ({ ...p, open: false }))}
-          >
-            <div
-              style={{
-                backgroundColor: "white",
-                borderRadius: 12,
-                padding: 28,
-                maxWidth: 420,
-                width: "90%",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h4 style={{ margin: "0 0 12px", fontSize: 16, color: "#1f2937" }}>
-                {confirmModal.action === "approved" ? "✓ Setujui SKP" : "✕ Tolak SKP"}
-              </h4>
-              <p style={{ margin: "0 0 24px", fontSize: 13, color: "#6b7280" }}>
-                Anda akan{" "}
-                <strong style={{ color: confirmModal.action === "approved" ? "#16a34a" : "#dc2626" }}>
-                  {confirmModal.action === "approved" ? "menyetujui" : "menolak"}
-                </strong>{" "}
-                SKP dari <strong>{confirmModal.nama}</strong>. Tindakan ini tidak dapat dibatalkan.
-              </p>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => setConfirmModal((p) => ({ ...p, open: false }))}
-                  style={{ padding: "8px 18px", borderRadius: 7, border: "1px solid #e5e7eb", backgroundColor: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-                >
-                  Batal
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  style={{
-                    padding: "8px 18px",
-                    borderRadius: 7,
-                    border: "none",
-                    backgroundColor: confirmModal.action === "approved" ? "#16a34a" : "#dc2626",
-                    color: "white",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  {confirmModal.action === "approved" ? "Setujui" : "Tolak"}
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
       </PageTransition>
     </div>
   );

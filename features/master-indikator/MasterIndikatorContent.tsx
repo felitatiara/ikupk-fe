@@ -98,7 +98,125 @@ const labelStyle = { fontSize: 12, fontWeight: 600, color: "#374151", marginBott
 const inputStyle = { border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151", width: "100%" };
 
 
-function parseIndikatorExcel(file: File): Promise<IndikatorImportRow[]> {
+function parsePKExcelRows(rawRows: (string | number | null)[][], headerRow: number, dataStart: number): IndikatorImportRow[] {
+  const header = rawRows[headerRow] ?? [];
+  const kodeLevelPositions: number[] = [];
+  let noCol = 0, sasaranCol = 1, l1NamaCol = -1, l2NamaCol = -1, l3NamaCol = -1;
+  let satuanCol = -1, targetCol = -1, tenggatCol = -1, sumberCol = -1;
+  let ikuNamaCol = -1;
+
+  // Normalize: collapse any whitespace (including \n from Excel line breaks) to single space
+  const norm = (c: unknown) => String(c ?? "").replace(/\s+/g, " ").toLowerCase().trim();
+
+  for (let i = 0; i < header.length; i++) {
+    const t = norm(header[i]);
+    if (!t) continue;
+    if (t === "no" || t === "no.") noCol = i;
+    else if (t.includes("sasaran")) sasaranCol = i;
+    else if (t.includes("kategori")) l1NamaCol = i;
+    else if (t.includes("item kegiatan")) l2NamaCol = i;
+    else if (t.includes("rincian") || t.includes("sub-item") || t.includes("sub item")) l3NamaCol = i;
+    else if (t.includes("kode level") || t === "kode le") kodeLevelPositions.push(i);
+    else if (t === "satuan") satuanCol = i;
+    else if (t.includes("target")) targetCol = i;
+    else if (t.includes("tenggat")) tenggatCol = i;
+    else if (t.includes("sumber")) sumberCol = i;
+    else if (t.includes("nama") && t.includes("iku")) ikuNamaCol = i;
+  }
+
+  let [l1KodeCol, l2KodeCol, l3KodeCol] = [
+    kodeLevelPositions[0] ?? -1,
+    kodeLevelPositions[1] ?? -1,
+    kodeLevelPositions[2] ?? -1,
+  ];
+
+  // Fallback: infer kode cols as "column immediately before name col"
+  if (l1KodeCol < 0 && l1NamaCol > 0) l1KodeCol = l1NamaCol - 1;
+  if (l2KodeCol < 0 && l2NamaCol > l1NamaCol) l2KodeCol = l2NamaCol - 1;
+  if (l3KodeCol < 0 && l3NamaCol > l2NamaCol) l3KodeCol = l3NamaCol - 1;
+
+  if (l1NamaCol < 0 && l1KodeCol >= 0) l1NamaCol = l1KodeCol + 1;
+  if (l2NamaCol < 0 && l2KodeCol >= 0) l2NamaCol = l2KodeCol + 1;
+  if (l3NamaCol < 0 && l3KodeCol >= 0) l3NamaCol = l3KodeCol + 1;
+
+  const result: IndikatorImportRow[] = [];
+  let lastL0No = "", lastL0Nama = "";
+  let lastL1Kode = "", lastL1Nama = "";
+  let lastL2Kode = "", lastL2Nama = "";
+  const emittedL0 = new Set<string>();
+  const emittedL1 = new Set<string>();
+  const emittedL2 = new Set<string>();
+
+  for (let i = dataStart; i < rawRows.length; i++) {
+    const row = rawRows[i] ?? [];
+    if (row.every(c => c === null)) continue;
+
+    const noVal   = String(row[noCol] ?? "").trim();
+    const sasVal  = sasaranCol >= 0 ? String(row[sasaranCol] ?? "").trim() : "";
+    const l1Kode  = l1KodeCol >= 0 ? String(row[l1KodeCol] ?? "").trim() : "";
+    const l1Nama  = l1NamaCol >= 0 ? String(row[l1NamaCol] ?? "").trim() : "";
+    const l2Kode  = l2KodeCol >= 0 ? String(row[l2KodeCol] ?? "").trim() : "";
+    const l2Nama  = l2NamaCol >= 0 ? String(row[l2NamaCol] ?? "").trim() : "";
+    const l3Kode  = l3KodeCol >= 0 ? String(row[l3KodeCol] ?? "").trim() : "";
+    const l3Nama  = l3NamaCol >= 0 ? String(row[l3NamaCol] ?? "").trim() : "";
+
+    if (noVal)   lastL0No = noVal;
+    if (sasVal)  lastL0Nama = sasVal;
+    if (l1Kode)  lastL1Kode = l1Kode;
+    if (l1Nama)  lastL1Nama = l1Nama;
+    if (l2Kode)  lastL2Kode = l2Kode;
+    if (l2Nama)  lastL2Nama = l2Nama;
+
+    if (!l3Kode) continue;
+
+    if (lastL0No && !emittedL0.has(lastL0No)) {
+      result.push({ kode: lastL0No, nama: lastL0Nama || lastL0No, level: 0, parentKode: null, kategori: null, tenggat: null, target: null, satuan: null, sumberData: "repository" });
+      emittedL0.add(lastL0No);
+    }
+    if (lastL1Kode && !emittedL1.has(lastL1Kode)) {
+      const l1Parent = lastL1Kode.split(".")[0];
+      result.push({ kode: lastL1Kode, nama: lastL1Nama || lastL1Kode, level: 1, parentKode: l1Parent || lastL0No || null, kategori: null, tenggat: null, target: null, satuan: null, sumberData: "repository" });
+      emittedL1.add(lastL1Kode);
+    }
+    if (lastL2Kode && !emittedL2.has(lastL2Kode)) {
+      const l2Parts = lastL2Kode.split(".");
+      const l2Parent = l2Parts.slice(0, -1).join(".");
+      result.push({ kode: lastL2Kode, nama: lastL2Nama || lastL2Kode, level: 2, parentKode: l2Parent || lastL1Kode || null, kategori: null, tenggat: null, target: null, satuan: null, sumberData: "repository" });
+      emittedL2.add(lastL2Kode);
+    }
+
+    const l3Parts  = l3Kode.split(".");
+    const l3Parent = l3Parts.slice(0, -1).join(".");
+    const satuan   = satuanCol >= 0 ? String(row[satuanCol] ?? "").trim() || null : null;
+    const rawTarget = targetCol >= 0 ? row[targetCol] : null;
+    const targetNum = rawTarget != null && String(rawTarget).trim() !== "" ? Number(rawTarget) : null;
+    const tenggat  = tenggatCol >= 0 ? String(row[tenggatCol] ?? "").trim() || null : null;
+    const sumberRaw = sumberCol >= 0 ? String(row[sumberCol] ?? "").toLowerCase().trim() : "";
+    const sumberData = sumberRaw.includes("ikupk") ? "ikupk" : "repository";
+
+    // Extract IKU kode from "Nama/Keterangan IKU Terkait" — leading digit-dot pattern, e.g. "2.1.1Persentase..." or "7.13 Penelitian"
+    const ikuNamaStr = ikuNamaCol >= 0 ? String(row[ikuNamaCol] ?? "").trim() : "";
+    const ikuMatch = ikuNamaStr.match(/^([\d.]+)/);
+    const linkedIkuKode = ikuMatch?.[1] ?? null;
+
+    result.push({
+      kode: l3Kode,
+      nama: l3Nama,
+      level: 3,
+      parentKode: l3Parent || lastL2Kode || null,
+      kategori: null,
+      tenggat,
+      target: targetNum !== null && isNaN(targetNum) ? null : targetNum,
+      satuan,
+      sumberData,
+      linkedIkuKode: linkedIkuKode || null,
+    });
+  }
+
+  return result;
+}
+
+function parseIndikatorExcel(file: File, jenis?: string): Promise<IndikatorImportRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -108,14 +226,17 @@ function parseIndikatorExcel(file: File): Promise<IndikatorImportRow[]> {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
 
+        // Normalize: collapse whitespace including Excel line breaks (\n) to single space
+        const normCell = (c: unknown) => String(c ?? "").replace(/\s+/g, " ").toLowerCase().trim();
+
         // Detect header rows (scan first 10 rows)
         let h1 = -1, h2 = -1;
         for (let i = 0; i < Math.min(10, rawRows.length); i++) {
-          const texts = (rawRows[i] ?? []).map(c => String(c ?? "").toLowerCase().trim());
-          if (texts.some(t => t === "no" || t === "no." || t.includes("kategori"))) {
+          const texts = (rawRows[i] ?? []).map(normCell);
+          if (texts.some(t => t === "no" || t === "no." || t.includes("kategori") || t.includes("sasaran"))) {
             h1 = i;
             if (i + 1 < rawRows.length) {
-              const nextTexts = (rawRows[i + 1] ?? []).map(c => String(c ?? "").toLowerCase().trim());
+              const nextTexts = (rawRows[i + 1] ?? []).map(normCell);
               if (nextTexts.some(t => t === "kode" || t.includes("nama"))) h2 = i + 1;
             }
             break;
@@ -123,7 +244,17 @@ function parseIndikatorExcel(file: File): Promise<IndikatorImportRow[]> {
         }
         const dataStart = h2 >= 0 ? h2 + 1 : h1 >= 0 ? h1 + 1 : 0;
 
-        // Detect column positions from header rows
+        // Auto-detect PK format: header has "Kode Level" column(s), OR jenis hint is PK
+        const headerTexts = [h1, h2].filter(h => h >= 0).flatMap(h =>
+          (rawRows[h] ?? []).map(normCell),
+        );
+        const isPK = jenis === "PK" || headerTexts.some(t => t.includes("kode level") || t === "kode le");
+        if (isPK) {
+          resolve(parsePKExcelRows(rawRows, h1 >= 0 ? h1 : 0, dataStart));
+          return;
+        }
+
+        // Detect column positions from header rows (IKU format)
         const headerCols: Record<string, number> = {};
         [h1, h2].filter(h => h >= 0).forEach(h => {
           (rawRows[h] ?? []).forEach((cell, idx) => {
@@ -275,6 +406,7 @@ export default function MasterIndikatorContent() {
   const [importTahun, setImportTahun] = useState("");
   const [importLoading, setImportLoading] = useState(false);
   const [importFileError, setImportFileError] = useState<string | null>(null);
+  const [importClearFirst, setImportClearFirst] = useState(true);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   // Debounce timers per sub item id
@@ -781,7 +913,7 @@ export default function MasterIndikatorContent() {
             {/* Body */}
             <div style={{ padding: "18px 24px", overflowY: "auto", flex: 1 }}>
               {/* Jenis + Tahun selector */}
-              <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 140 }}>
                   <div style={{ ...labelStyle, marginBottom: 6 }}>Jenis</div>
                   <select value={importJenis} onChange={e => setImportJenis(e.target.value as "IKU" | "PK")} style={{ ...inputStyle, width: "100%" }}>
@@ -802,7 +934,7 @@ export default function MasterIndikatorContent() {
                       setImportFileError(null);
                       setImportRows([]);
                       try {
-                        const rows = await parseIndikatorExcel(file);
+                        const rows = await parseIndikatorExcel(file, importJenis);
                         if (rows.length === 0) { setImportFileError("Tidak ada data yang terbaca dari file ini."); return; }
                         setImportRows(rows);
                       } catch (err: any) {
@@ -819,6 +951,15 @@ export default function MasterIndikatorContent() {
                 </div>
               </div>
 
+              {/* Clear first option */}
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 14, cursor: "pointer" }}>
+                <input type="checkbox" checked={importClearFirst} onChange={e => setImportClearFirst(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: "#dc2626", flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>
+                  <strong>Hapus data lama sebelum import</strong> — semua indikator {importJenis} tahun {importTahun || "..."} yang sudah ada akan dihapus dulu, lalu diganti isi dari file ini.
+                </span>
+              </label>
+
               {/* Preview table */}
               {importRows.length > 0 && (
                 <div>
@@ -829,7 +970,10 @@ export default function MasterIndikatorContent() {
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
-                          {["Kode", "Nama", "Level", "Parent", "Kategori", "Tenggat", "Target", "Satuan", "Sumber"].map(h => (
+                          {[
+                            "Kode", "Nama", "Level", "Parent", "Kategori", "Tenggat", "Target", "Satuan", "Sumber",
+                            ...(importJenis === "PK" ? ["IKU Terkait"] : []),
+                          ].map(h => (
                             <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, color: "#374151", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
@@ -846,6 +990,7 @@ export default function MasterIndikatorContent() {
                             <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.target ?? "-"}</td>
                             <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.satuan ?? "-"}</td>
                             <td style={{ padding: "6px 10px", color: "#6b7280" }}>{r.sumberData}</td>
+                            {importJenis === "PK" && <td style={{ padding: "6px 10px", color: r.linkedIkuKode ? "#7c3aed" : "#9ca3af" }}>{r.linkedIkuKode ?? "-"}</td>}
                           </tr>
                         ))}
                       </tbody>
@@ -867,7 +1012,7 @@ export default function MasterIndikatorContent() {
                   if (!token) { toast.error("Token tidak ditemukan, silakan login ulang."); return; }
                   setImportLoading(true);
                   try {
-                    const result = await importIndikatorBulk(importJenis, importTahun, importRows, token);
+                    const result = await importIndikatorBulk(importJenis, importTahun, importRows, token, importClearFirst);
                     if (result.errors.length > 0) {
                       toast.error(`Import selesai dengan ${result.errors.length} error. ${result.errors[0]}`);
                     } else {
@@ -1113,11 +1258,6 @@ export default function MasterIndikatorContent() {
               background: "#fff7f7", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#dc2626"
             }}>
             Hapus Semua
-          </button>
-          <button
-            onClick={() => setDistribusiModalOpen(true)}
-            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #16a34a", background: "#f0fdf4", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#15803d" }}>
-            Distribusi Target
           </button>
           <button
             onClick={() => setImportTurunanOpen(true)}

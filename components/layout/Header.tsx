@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { toast } from 'sonner';
 import {
   Bell,
   CheckCheck,
@@ -89,8 +90,15 @@ export default function Header() {
       } else {
         router.replace('/user/dashboard');
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        toast.error('Sesi telah berakhir, silakan login kembali');
+        logout();
+        router.replace('/auth/login');
+      } else {
+        toast.error(msg || 'Gagal mengganti peran');
+      }
     } finally {
       setSwitchingRoleId(null);
     }

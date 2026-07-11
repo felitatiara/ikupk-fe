@@ -9,6 +9,7 @@ import {
   getAvailableYears,
   getSkpRencanaStatus,
   signRencanaSKPPegawai,
+  getUserRoles,
   type IndikatorGrouped,
   type SkpRencanaStatusData,
 } from "@/lib/api";
@@ -18,83 +19,67 @@ const INSTITUSI = 'Universitas Pembangunan Nasional "Veteran" Jakarta';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type PkRow =
-  | { kind: "sub-header"; nama: string }
-  | { kind: "child-header"; kode: string; nama: string }
-  | { kind: "leaf"; kode: string; nama: string; satuan: string; target: string };
-
-interface PkGroup {
-  no: number;
-  sasaran: string;
-  rows: PkRow[];
-}
-
-interface IkuRow {
-  no: number;
-  sasaran: string;
-  kode: string;
-  nama: string;
-  satuan: string;
-  target: string;
-}
+type DocRow =
+  | { kind: "sub-header"; groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string }
+  | { kind: "entry";      groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string; target: string; satuan: string }
+  | { kind: "leaf";       groupIdx: number; groupKode: string; sasaran: string; ikuLabel: string; target: string; satuan: string };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatIkuLabel(kode: string): string {
+  const trimmed = (kode ?? '').trim();
+  if (!trimmed) return '';
+  if (/^\d+$/.test(trimmed)) return `IKU ${trimmed}`;
+  const upper = trimmed.toUpperCase();
+  if (upper.startsWith('IKU')) return upper.replace(/^IKU\s*/, 'IKU ');
+  return trimmed;
+}
+
+
+function mergeGroupedData(primary: IndikatorGrouped[], secondary: IndikatorGrouped[]): IndikatorGrouped[] {
+  const primaryIds = new Set(primary.map(g => g.id));
+  return [
+    ...primary,
+    ...secondary.filter(g => {
+      if (primaryIds.has(g.id)) return false;
+      return g.subIndikators.some(sub =>
+        (sub.disposisiJumlah ?? 0) > 0 ||
+        sub.children.some(c =>
+          (c.disposisiJumlah ?? 0) > 0 ||
+          c.children.some(gc => (gc.disposisiJumlah ?? 0) > 0)
+        )
+      );
+    }),
+  ];
+}
 
 function resolveTarget(item: any): string {
   const v = item.disposisiJumlah ?? item.nilaiTarget;
   return v !== null && v !== undefined ? String(v) : "-";
 }
 
-function buildPkGroups(data: IndikatorGrouped[]): PkGroup[] {
-  return data.map((group, gi) => {
-    const rows: PkRow[] = [];
-    for (const sub of group.subIndikators) {
-      rows.push({ kind: "sub-header", nama: sub.nama });
-      for (const child of sub.children) {
-        const l3s = child.children ?? [];
-        if (l3s.length === 0) {
-          rows.push({
-            kind: "leaf",
-            kode: child.kode,
-            nama: child.nama,
-            satuan: child.satuan ?? "",
-            target: resolveTarget(child),
-          });
-        } else {
-          rows.push({ kind: "child-header", kode: child.kode, nama: child.nama });
-          for (const l3 of l3s) {
-            rows.push({
-              kind: "leaf",
-              kode: l3.kode,
-              nama: l3.nama,
-              satuan: l3.satuan ?? "",
-              target: resolveTarget(l3),
-            });
-          }
-        }
-      }
-    }
-    return { no: gi + 1, sasaran: group.nama, rows };
-  });
+function ikuLabel(kode: string, nama: string, fmt = false): string {
+  const k = fmt ? formatIkuLabel(kode) : (kode?.trim() ?? "");
+  return k ? `${k}  ${nama}` : nama;
 }
 
-function buildIkuRows(data: IndikatorGrouped[]): IkuRow[] {
-  const rows: IkuRow[] = [];
-  let no = 1;
-  for (const group of data) {
+function buildDocRows(data: IndikatorGrouped[]): DocRow[] {
+  const rows: DocRow[] = [];
+  for (const [groupIdx, group] of data.entries()) {
+    const sasaran = group.nama;
+    const groupKode = group.kode?.trim() || String(groupIdx + 1);
     for (const sub of group.subIndikators) {
       const children = sub.children ?? [];
+      const subLabel = ikuLabel(sub.kode, sub.nama, true);
       if (children.length === 0) {
-        rows.push({ no: no++, sasaran: group.nama, kode: sub.kode, nama: sub.nama, satuan: (sub as any).satuan ?? "", target: resolveTarget(sub) });
+        rows.push({ kind: "entry", groupIdx, groupKode, sasaran, ikuLabel: subLabel, target: resolveTarget(sub), satuan: (sub as any).satuan ?? "" });
       } else {
+        rows.push({ kind: "sub-header", groupIdx, groupKode, sasaran, ikuLabel: subLabel });
         for (const child of children) {
           const l3s = child.children ?? [];
-          if (l3s.length === 0) {
-            rows.push({ no: no++, sasaran: group.nama, kode: child.kode, nama: child.nama, satuan: child.satuan ?? "", target: resolveTarget(child) });
-          } else {
-            for (const l3 of l3s) {
-              rows.push({ no: no++, sasaran: group.nama, kode: l3.kode, nama: l3.nama, satuan: l3.satuan ?? "", target: resolveTarget(l3) });
-            }
+          rows.push({ kind: "entry", groupIdx, groupKode, sasaran, ikuLabel: ikuLabel(child.kode, child.nama), target: l3s.length > 0 ? "" : resolveTarget(child), satuan: l3s.length > 0 ? "" : (child.satuan ?? "") });
+          for (const l3 of l3s) {
+            rows.push({ kind: "leaf", groupIdx, groupKode, sasaran, ikuLabel: ikuLabel(l3.kode, l3.nama), target: resolveTarget(l3), satuan: l3.satuan ?? "" });
           }
         }
       }
@@ -238,9 +223,9 @@ export default function CetakSKP() {
   const router = useRouter();
   const [tahun, setTahun] = useState("2026");
   const [years, setYears] = useState<string[]>(["2025", "2026", "2027"]);
-  const [ikuRows, setIkuRows] = useState<IkuRow[]>([]);
-  const [pkGroups, setPkGroups] = useState<PkGroup[]>([]);
-  const [dekan, setDekan] = useState<{ nama: string; nip: string | null } | null>(null);
+  const [ikuRows, setIkuRows] = useState<DocRow[]>([]);
+  const [pkRows, setPkRows] = useState<DocRow[]>([]);
+  const [dekan, setDekan] = useState<{ nama: string; nip: string | null; jabatan?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [rencanaStatus, setRencanaStatus] = useState<SkpRencanaStatusData | null>(null);
   const [setujuSaving, setSetujuSaving] = useState(false);
@@ -270,20 +255,43 @@ export default function CetakSKP() {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    Promise.all([
-      getIndikatorGroupedForUser("IKU", tahun, user.id, roleId),
-      getIndikatorGroupedForUser("PK", tahun, user.id, roleId),
-      getMySkpStatus(user.id, tahun),
-      getSkpRencanaStatus(user.id, tahun),
-    ])
-      .then(([iku, pk, skpStatus, rStatus]) => {
-        setIkuRows(buildIkuRows(iku));
-        setPkGroups(buildPkGroups(pk));
+    (async () => {
+      try {
+        const allUserRoles = (user?.roles as any[]) ?? [];
+        const primaryRoleLevel = (user as any)?.roleLevel ?? allUserRoles.find((r: any) => r.isPrimary)?.level ?? 4;
+        const secondaryDosenRole = primaryRoleLevel < 4
+          ? allUserRoles.find((r: any) => r.level >= 4 && !r.isPrimary)
+          : undefined;
+
+        const [iku, pk, skpStatus, rStatus] = await Promise.all([
+          getIndikatorGroupedForUser("IKU", tahun, user.id, roleId),
+          getIndikatorGroupedForUser("PK", tahun, user.id, roleId),
+          getMySkpStatus(user.id, tahun),
+          getSkpRencanaStatus(user.id, tahun),
+        ]);
+
+        let mergedIku = iku;
+        let mergedPk = pk;
+
+        if (secondaryDosenRole) {
+          const [secIku, secPk] = await Promise.all([
+            getIndikatorGroupedForUser("IKU", tahun, user.id, secondaryDosenRole.id),
+            getIndikatorGroupedForUser("PK", tahun, user.id, secondaryDosenRole.id),
+          ]);
+          mergedIku = mergeGroupedData(mergedIku, secIku);
+          mergedPk = mergeGroupedData(mergedPk, secPk);
+        }
+
+        setIkuRows(buildDocRows(mergedIku));
+        setPkRows(buildDocRows(mergedPk));
         setDekan(skpStatus.atasanPenilai ?? skpStatus.atasan ?? null);
         setRencanaStatus(rStatus);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [user, tahun, roleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize canvas when signature modal opens
@@ -322,7 +330,8 @@ export default function CetakSKP() {
     }
   }
 
-  const jabatan = [user?.role, user?.unitNama].filter(Boolean).join(" ");
+  const primaryRoleName = [...(user?.roles ?? [])].sort((a, b) => a.level - b.level)[0]?.name ?? user?.role ?? '';
+  const jabatan = [primaryRoleName, user?.unitNama].filter(Boolean).join(" ");
   const spDipa = `SP DIPA-139.03.2.693372/${tahun}`;
   const tanggalTtd = `Jakarta, ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`;
   const atasanNama = dekan?.nama ?? "...";
@@ -534,7 +543,7 @@ export default function CetakSKP() {
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>Jabatan</td>
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>:</td>
                   <td style={{ fontSize: 12, verticalAlign: "top", lineHeight: 1.5 }}>
-                    Dekan {user?.unitNama ?? "Fakultas Ilmu Komputer"}<br />{INSTITUSI}
+                    {dekan?.jabatan ?? 'Dekan'} {user?.unitNama ?? "Fakultas Ilmu Komputer"}<br />{INSTITUSI}
                   </td>
                 </tr>
               </tbody>
@@ -587,23 +596,53 @@ export default function CetakSKP() {
                   <tr>
                     <th style={{ ...th, width: 32 }}>No.</th>
                     <th style={{ ...th, width: "28%" }}>Sasaran Program</th>
-                    <th style={{ ...th, width: 50 }}>Kode</th>
                     <th style={th}>Indikator Kinerja Utama</th>
+                    <th style={{ ...th, width: 56 }}>Target</th>
                     <th style={{ ...th, width: 70 }}>Satuan</th>
-                    <th style={{ ...th, width: 52 }}>Target</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {ikuRows.map((row) => (
-                    <tr key={row.no}>
-                      <td style={cellC}>{row.no}</td>
-                      <td style={cell}>{row.sasaran}</td>
-                      <td style={cellC}>{row.kode}</td>
-                      <td style={cell}>{row.nama}</td>
-                      <td style={cellC}>{row.satuan}</td>
-                      <td style={cellC}>{row.target}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const gCount = new Map<number, number>();
+                    const gFirst = new Map<number, number>();
+                    ikuRows.forEach((r, i) => {
+                      gCount.set(r.groupIdx, (gCount.get(r.groupIdx) ?? 0) + 1);
+                      if (!gFirst.has(r.groupIdx)) gFirst.set(r.groupIdx, i);
+                    });
+                    return ikuRows.map((row, ri) => {
+                      const isFirst = gFirst.get(row.groupIdx) === ri;
+                      const gSpan = gCount.get(row.groupIdx) ?? 1;
+                      const noCell = isFirst ? <td rowSpan={gSpan > 1 ? gSpan : undefined} style={cellC}>{row.groupKode}</td> : null;
+                      const sasaranCell = isFirst ? <td rowSpan={gSpan > 1 ? gSpan : undefined} style={cell}>{row.sasaran}</td> : null;
+                      if (row.kind === "sub-header") {
+                        return (
+                          <tr key={ri}>
+                            {noCell}{sasaranCell}
+                            <td style={{ ...cell, fontWeight: "bold", fontStyle: "italic" }}>{row.ikuLabel}</td>
+                            <td style={cellC} /><td style={cellC} />
+                          </tr>
+                        );
+                      }
+                      if (row.kind === "entry") {
+                        return (
+                          <tr key={ri}>
+                            {noCell}{sasaranCell}
+                            <td style={cell}>{row.ikuLabel}</td>
+                            <td style={cellC}>{row.target}</td>
+                            <td style={cellC}>{row.satuan}</td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={ri}>
+                          {noCell}{sasaranCell}
+                          <td style={{ ...cell, paddingLeft: 14 }}>{row.ikuLabel}</td>
+                          <td style={cellC}>{row.target}</td>
+                          <td style={cellC}>{row.satuan}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
 
@@ -622,7 +661,7 @@ export default function CetakSKP() {
           {/* ════════════════════════════════════════════════
               LAMPIRAN 2 — PK (Perjanjian Kinerja Kegiatan)
           ════════════════════════════════════════════════ */}
-          {pkGroups.length > 0 && (
+          {pkRows.length > 0 && (
             <div className="cetak-page">
               <PageHeader
                 lampiran="Lampiran 2"
@@ -637,56 +676,54 @@ export default function CetakSKP() {
                 <thead>
                   <tr>
                     <th style={{ ...th, width: 28 }}>No.</th>
-                    <th style={{ ...th, width: "22%" }}>Sasaran Program</th>
-                    <th style={{ ...th, width: 44 }} colSpan={2}>Indikator Kinerja Kegiatan</th>
+                    <th style={{ ...th, width: "28%" }}>Sasaran Program</th>
+                    <th style={th}>Indikator Kinerja Kegiatan</th>
+                    <th style={{ ...th, width: 56 }}>Target</th>
                     <th style={{ ...th, width: 70 }}>Satuan</th>
-                    <th style={{ ...th, width: 50 }}>Target</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pkGroups.flatMap((group) => {
-                    const rowCount = group.rows.length;
-                    let isFirst = true;
-                    return group.rows.map((row, ri) => {
-                      const leadCells = isFirst ? (
-                        <>
-                          <td rowSpan={rowCount} style={{ ...cellC, fontWeight: "bold" }}>{group.no}</td>
-                          <td rowSpan={rowCount} style={{ ...cell, verticalAlign: "top" }}>{group.sasaran}</td>
-                        </>
-                      ) : null;
-                      isFirst = false;
-
+                  {(() => {
+                    const gCount = new Map<number, number>();
+                    const gFirst = new Map<number, number>();
+                    pkRows.forEach((r, i) => {
+                      gCount.set(r.groupIdx, (gCount.get(r.groupIdx) ?? 0) + 1);
+                      if (!gFirst.has(r.groupIdx)) gFirst.set(r.groupIdx, i);
+                    });
+                    return pkRows.map((row, ri) => {
+                      const isFirst = gFirst.get(row.groupIdx) === ri;
+                      const gSpan = gCount.get(row.groupIdx) ?? 1;
+                      const noCell = isFirst ? <td rowSpan={gSpan > 1 ? gSpan : undefined} style={cellC}>{row.groupKode}</td> : null;
+                      const sasaranCell = isFirst ? <td rowSpan={gSpan > 1 ? gSpan : undefined} style={cell}>{row.sasaran}</td> : null;
                       if (row.kind === "sub-header") {
                         return (
-                          <tr key={`${group.no}-${ri}`}>
-                            {leadCells}
-                            <td colSpan={2} style={{ ...cell, fontWeight: "bold", fontStyle: "italic" }}>{row.nama}</td>
-                            <td style={cell} />
-                            <td style={cell} />
+                          <tr key={ri}>
+                            {noCell}{sasaranCell}
+                            <td style={{ ...cell, fontWeight: "bold", fontStyle: "italic" }}>{row.ikuLabel}</td>
+                            <td style={cellC} /><td style={cellC} />
                           </tr>
                         );
                       }
-                      if (row.kind === "child-header") {
+                      if (row.kind === "entry") {
                         return (
-                          <tr key={`${group.no}-${ri}`}>
-                            {leadCells}
-                            <td style={{ ...cellC, fontWeight: "bold", width: 44 }}>{row.kode}</td>
-                            <td style={{ ...cell, fontWeight: "bold" }} colSpan={3}>{row.nama}</td>
+                          <tr key={ri}>
+                            {noCell}{sasaranCell}
+                            <td style={cell}>{row.ikuLabel}</td>
+                            <td style={cellC}>{row.target}</td>
+                            <td style={cellC}>{row.satuan}</td>
                           </tr>
                         );
                       }
-                      // leaf
                       return (
-                        <tr key={`${group.no}-${ri}`}>
-                          {leadCells}
-                          <td style={{ ...cellC, width: 44 }}>{row.kode}</td>
-                          <td style={cell}>{row.nama}</td>
-                          <td style={cellC}>{row.satuan}</td>
+                        <tr key={ri}>
+                          {noCell}{sasaranCell}
+                          <td style={{ ...cell, paddingLeft: 14 }}>{row.ikuLabel}</td>
                           <td style={cellC}>{row.target}</td>
+                          <td style={cellC}>{row.satuan}</td>
                         </tr>
                       );
                     });
-                  })}
+                  })()}
                 </tbody>
               </table>
 
@@ -702,7 +739,7 @@ export default function CetakSKP() {
             </div>
           )}
 
-          {ikuRows.length === 0 && pkGroups.length === 0 && (
+          {ikuRows.length === 0 && pkRows.length === 0 && (
             <div className="no-print cetak-page" style={{ textAlign: "center", padding: 60, color: "#9ca3af", fontSize: 14 }}>
               Belum ada data target yang didisposisikan kepada Anda untuk tahun {tahun}.
             </div>

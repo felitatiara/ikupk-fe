@@ -211,20 +211,39 @@ export default function ValidasiRealisasiAtasanContent() {
     if (!token) return;
     setExporting(true);
     try {
+      // Fetch fresh submissions
+      const freshRaw = await getSubmissionsForAtasan(user!.id, tahun);
+      const filteredFresh = freshRaw.filter(g => g.indikator.jenis.toUpperCase() === jenisFilter);
+      const freshDosenMap = new Map<number, DosenGroup>();
+      filteredFresh.forEach(g => {
+        g.submissions.forEach(s => {
+          if (!freshDosenMap.has(s.dosenId)) {
+            freshDosenMap.set(s.dosenId, { dosenId: s.dosenId, dosenNama: s.dosenNama, dosenEmail: s.dosenEmail, submissions: [] });
+          }
+          freshDosenMap.get(s.dosenId)!.submissions.push({
+            ...s,
+            indikatorId: g.indikator.id,
+            indikatorKode: g.indikator.kode,
+            indikatorNama: g.indikator.nama,
+          });
+        });
+      });
+      const freshDosenGroups = Array.from(freshDosenMap.values()).sort((a, b) => a.dosenNama.localeCompare(b.dosenNama));
+
       // Fetch folder link per unique indikatorId
       const indikatorIds = [...new Set(
-        dosenGroups.flatMap(dg => dg.submissions.map(s => s.indikatorId))
+        freshDosenGroups.flatMap(dg => dg.submissions.map(s => s.indikatorId))
       )];
-      const fileResults = await Promise.all(
-        indikatorIds.map(id =>
-          getAllRealisasiFiles(id, token).catch(() => ({ folderLink: null, files: [] as any[] }))
-        )
+      const fileResults = await Promise.allSettled(
+        indikatorIds.map(id => getAllRealisasiFiles(id, token))
       );
       // Map: indikatorId → folder link
       const folderLinkMap = new Map<number, string>();
       indikatorIds.forEach((id, idx) => {
-        const link = (fileResults[idx] as any).folderLink;
-        if (link) folderLinkMap.set(id, link);
+        const result = fileResults[idx];
+        if (result.status === "fulfilled" && result.value.folderLink) {
+          folderLinkMap.set(id, result.value.folderLink);
+        }
       });
 
       // Build flat rows: header row + data
@@ -233,7 +252,7 @@ export default function ValidasiRealisasiAtasanContent() {
       const aoa: (string | number)[][] = [COLS];
       const merges: MergeRange[] = [];
 
-      dosenGroups.forEach((dg) => {
+      freshDosenGroups.forEach((dg) => {
         dg.submissions.forEach((s) => {
           const rowIdx = aoa.length;
           const folderLink = folderLinkMap.get(s.indikatorId) || "-";

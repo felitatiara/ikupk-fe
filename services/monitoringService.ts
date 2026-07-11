@@ -66,6 +66,7 @@ export interface DetailEntry {
 export interface DisposisiChainNode {
   disposisiId: number;
   parentDisposisiId: number | null;
+  fromUserId: number | null;
   indikatorId: number;
   indikatorKode: string;
   indikatorNama: string;
