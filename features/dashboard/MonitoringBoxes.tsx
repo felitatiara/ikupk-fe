@@ -27,7 +27,15 @@ type LeafNode =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function computeStats(data: IndikatorGrouped[], jenis: "IKU" | "PK"): Stats {
+function hasPkBerbasisIku(group: IndikatorGrouped): boolean {
+  return group.subIndikators.some(sub =>
+    sub.children.some(child =>
+      (child.children ?? []).some(l3 => l3.linkedIkuId != null)
+    )
+  );
+}
+
+function computeStats(data: IndikatorGrouped[], jenis: "IKU" | "PK" | "PK_IKU"): Stats {
   let total = 0;
   let tercapai = 0;
   let sumCapaian = 0;
@@ -53,7 +61,7 @@ function computeStats(data: IndikatorGrouped[], jenis: "IKU" | "PK"): Stats {
         } else {
           for (const child of sub.children) processLeaf(child);
         }
-      } else {
+      } else { // PK or PK_IKU
         for (const child of sub.children) {
           const l3s = child.children ?? [];
           if (l3s.length === 0) {
@@ -132,7 +140,7 @@ function SkeletonRow() {
 
 export default function MonitoringBoxes() {
   const { user: authUser } = useAuth();
-  const [jenis, setJenis] = useState<"IKU" | "PK">("IKU");
+  const [jenis, setJenis] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [years, setYears] = useState<string[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -161,20 +169,25 @@ export default function MonitoringBoxes() {
     setLoading(true);
     setStats(null);
 
+    const effectiveJenis = jenis === "PK_IKU" ? "PK" : jenis;
     const fetch =
       isTopLevel
-        ? getIndikatorGrouped(jenis, tahun, unitId)
-        : getIndikatorGroupedForUser(jenis, tahun, authUser.id, unitId);
+        ? getIndikatorGrouped(effectiveJenis, tahun, unitId)
+        : getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId);
 
     fetch
-      .then((data) => setStats(computeStats(data, jenis)))
+      .then((data) => {
+        const filtered = jenis === "PK_IKU" ? data.filter(hasPkBerbasisIku) : data;
+        setStats(computeStats(filtered, jenis));
+      })
       .catch(() => setStats({ total: 0, tercapai: 0, rataCapaian: 0 }))
       .finally(() => setLoading(false));
   }, [authUser, jenis, tahun, unitId, isTopLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const jenisLabel = jenis === "PK_IKU" ? "PK Berbasis IKU" : jenis;
   const scopeLabel = isTopLevel
-    ? `Capaian seluruh target ${jenis} fakultas tahun ${tahun}`
-    : `Target ${jenis} tahun ${tahun} yang diterima melalui disposisi.`;
+    ? `Capaian seluruh target ${jenisLabel} fakultas tahun ${tahun}`
+    : `Target ${jenisLabel} tahun ${tahun} yang diterima melalui disposisi.`;
 
   return (
     <>
@@ -192,22 +205,26 @@ export default function MonitoringBoxes() {
           display: "flex", alignItems: "center", justifyContent: "space-between",
           flexWrap: "wrap", gap: 10, marginBottom: 14,
         }}>
-          {/* Tab IKU / PK */}
+          {/* Tab IKU / PK / PK Berbasis IKU */}
           <div style={{ display: "flex", gap: 4, background: "#f3f4f6", borderRadius: 8, padding: 3 }}>
-            {(["IKU", "PK"] as const).map((j) => (
+            {([
+              { key: "IKU", label: "IKU", color: "#FF7900" },
+              { key: "PK", label: "PK", color: "#7c3aed" },
+              { key: "PK_IKU", label: "PK-IKU", color: "#0891b2" },
+            ] as const).map(({ key: j, label, color }) => (
               <button
                 key={j}
                 onClick={() => setJenis(j)}
                 style={{
-                  padding: "5px 18px", borderRadius: 6, border: "none", cursor: "pointer",
+                  padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer",
                   fontWeight: 600, fontSize: 12,
                   background: jenis === j ? "#fff" : "transparent",
-                  color: jenis === j ? "#FF7900" : "#6b7280",
+                  color: jenis === j ? color : "#6b7280",
                   boxShadow: jenis === j ? "0 1px 4px rgba(0,0,0,0.10)" : "none",
                   transition: "all 0.15s",
                 }}
               >
-                {j}
+                {label}
               </button>
             ))}
           </div>

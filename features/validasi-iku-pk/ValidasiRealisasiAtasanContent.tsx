@@ -12,6 +12,7 @@ import {
   getAllRealisasiFiles,
   getIkupkFilesByUser,
   getLaporanWithRealisasi,
+  getIndikator,
   SubmissionPerIndikator,
   RealisasiSubmission,
   API_BASE_URL,
@@ -43,7 +44,8 @@ export default function ValidasiRealisasiAtasanContent() {
   const [rawGroups, setRawGroups] = useState<SubmissionPerIndikator[]>([]);
   const [loading, setLoading] = useState(true);
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));
-  const [jenisFilter, setJenisFilter] = useState<"IKU" | "PK">("IKU");
+  const [jenisFilter, setJenisFilter] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
+  const [pkBerbasisIkuIds, setPkBerbasisIkuIds] = useState<Set<number>>(new Set());
   const [viewMode, setViewMode] = useState<"dosen" | "indikator">("dosen");
 
   // WD2 state
@@ -124,6 +126,12 @@ export default function ValidasiRealisasiAtasanContent() {
   async function fetchData() {
     setLoading(true);
     try {
+      // Build set of PK-berbasis-IKU indikator IDs (level 3 with linkedIkuId)
+      getIndikator(tahun).then(all => {
+        const ids = new Set(all.filter(i => i.jenis === "PK" && i.linkedIkuId != null).map(i => i.id));
+        setPkBerbasisIkuIds(ids);
+      }).catch(() => {});
+
       if (isWD2) {
         const data = await getSubmissionsForWD2(tahun);
         setWd2Groups(data);
@@ -153,9 +161,15 @@ export default function ValidasiRealisasiAtasanContent() {
     }
   };
 
+  const matchesJenisFilter = (g: SubmissionPerIndikator): boolean => {
+    const jenis = g.indikator.jenis.toUpperCase();
+    if (jenisFilter === "PK_IKU") return jenis === "PK" && pkBerbasisIkuIds.has(g.indikator.id);
+    return jenis === jenisFilter;
+  };
+
   // Transform indikator-grouped → dosen-grouped
   const dosenGroups: DosenGroup[] = (() => {
-    const filtered = rawGroups.filter(g => g.indikator.jenis.toUpperCase() === jenisFilter);
+    const filtered = rawGroups.filter(matchesJenisFilter);
     const map = new Map<number, DosenGroup>();
     filtered.forEach(g => {
       g.submissions.forEach(s => {
@@ -174,7 +188,7 @@ export default function ValidasiRealisasiAtasanContent() {
   })();
 
   const indikatorGroups = rawGroups
-    .filter((g) => g.indikator.jenis.toUpperCase() === jenisFilter)
+    .filter(matchesJenisFilter)
     .slice()
     .sort((a, b) => a.indikator.kode.localeCompare(b.indikator.kode));
 
@@ -436,9 +450,10 @@ export default function ValidasiRealisasiAtasanContent() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <div>
                 <label className="filter-label">Jenis</label>
-                <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK")} className="filter-isi">
+                <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK" | "PK_IKU")} className="filter-isi">
                   <option value="IKU">Indikator Kinerja Utama (IKU)</option>
                   <option value="PK">Perjanjian Kinerja (PK)</option>
+                  <option value="PK_IKU">PK Berbasis IKU</option>
                 </select>
               </div>
               <div>
@@ -657,7 +672,7 @@ export default function ValidasiRealisasiAtasanContent() {
         {!isWD2 && (loading ? (
           <p className="text-loading text-center" style={{ padding: 40 }}>Memuat data…</p>
         ) : (viewMode === "dosen" ? dosenGroups.length === 0 : indikatorGroups.length === 0) ? (
-          <p className="text-empty">Tidak ada submission {jenisFilter} dari bawahan Anda untuk tahun {tahun}.</p>
+          <p className="text-empty">Tidak ada submission {jenisFilter === "PK_IKU" ? "PK Berbasis IKU" : jenisFilter} dari bawahan Anda untuk tahun {tahun}.</p>
         ) : (
           <div className="table-section-card" style={{ overflow: "hidden", padding: 0 }}>
             <div className="table-wrapper" style={{ margin: 0 }}>
