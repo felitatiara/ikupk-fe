@@ -375,7 +375,7 @@ async function executeCascade(
   let calls = 0;
   for (const level of levels) {
     const items = level.items.map((i) => ({ toUserId: i.toUserId, jumlahTarget: i.jumlahTarget }));
-    await upsertDisposisi(indicatorId, tahun, items, level.fromUserId);
+    await upsertDisposisi(indicatorId, tahun, items, level.fromUserId, true);
     calls++;
   }
   return calls;
@@ -553,6 +553,33 @@ export default function ImportTurunanModal({
         getIndikatorGrouped("PK", tahun).catch(() => [] as IndikatorGrouped[]),
       ]);
 
+      // Fetch roles/users to detect pimpinan who also hold dosen roles
+      const allRoles = await getAllRoles().catch(() => []);
+      const perRoleUsers = await Promise.all(
+        allRoles.map((r: any) => getUsersByRole(r.id).catch(() => [])),
+      );
+      // Build: normalized name → { userId, roleIds } so we can match by role ID (unit-specific)
+      const normToInfo = new Map<string, { id: number; roleIds: Set<number> }>();
+      for (let ri = 0; ri < allRoles.length; ri++) {
+        for (const u of perRoleUsers[ri]) {
+          const key = normalizeName(u.nama);
+          if (!key) continue;
+          if (!normToInfo.has(key)) normToInfo.set(key, { id: u.id, roleIds: new Set() });
+          normToInfo.get(key)!.roleIds.add(allRoles[ri].id);
+        }
+      }
+
+      function findDbInfo(nama: string) {
+        const key = normalizeName(nama);
+        if (!key) return null;
+        const exact = normToInfo.get(key);
+        if (exact) return exact;
+        for (const [k, info] of normToInfo.entries()) {
+          if ((k.includes(key) || key.includes(k)) && Math.abs(k.length - key.length) <= 6) return info;
+        }
+        return null;
+      }
+
       const LETTERS = "abcdefghijklmnopqrstuvwxyz";
       const FIXED_COLS = 6; // Kode | Nama | Dokumen | Satuan | Target | Target Min
 
@@ -617,8 +644,36 @@ export default function ImportTurunanModal({
       const wb = XLSX.utils.book_new();
 
       for (const { sheetName, users } of UNIT_DOSEN_TEMPLATE) {
-        const totalCols = FIXED_COLS + users.length;
-        const E = () => users.map(() => "");
+        // Find dosen role IDs for this sheet by matching its existing dosen users to the DB.
+        // This ensures pimpinan are only duplicated in the sheet where they actually teach.
+        const sheetDosenRoleIds = new Set<number>();
+        for (const u of users) {
+          if (u.role !== "Dosen") continue;
+          if (/^dosen\s+\w+\s*\d*$/i.test(u.nama.trim())) continue; // skip placeholders like "Dosen SI 1"
+          const info = findDbInfo(u.nama);
+          if (!info) continue;
+          for (const roleId of info.roleIds) {
+            const roleName = (allRoles as any[]).find((r) => r.id === roleId)?.name ?? "";
+            if (/dosen/i.test(roleName)) sheetDosenRoleIds.add(roleId);
+          }
+        }
+
+        // Duplicate pimpinan who also belong to this sheet's dosen role(s)
+        const finalUsers: TplUser[] = [...users];
+        const dualRole: string[] = [];
+        for (const u of users) {
+          if (!/wakil dekan|kepala jurusan|koordinator prodi/i.test(u.role)) continue;
+          const info = findDbInfo(u.nama);
+          if (!info) continue;
+          if ([...info.roleIds].some((rid) => sheetDosenRoleIds.has(rid))) {
+            finalUsers.push({ nama: u.nama, role: "Dosen" });
+            dualRole.push(u.nama);
+          }
+        }
+        console.log(`[Template] ${sheetName}: dosenRoleIds=${[...sheetDosenRoleIds]}, dual-role → ${dualRole.length ? dualRole.join(", ") : "(none)"}`);
+
+        const totalCols = FIXED_COLS + finalUsers.length;
+        const E = () => finalUsers.map(() => "");
 
         // ── Build rows ────────────────────────────────────────────────────────
         // Row 0: header (name labels)
@@ -631,11 +686,11 @@ export default function ImportTurunanModal({
         rows.push([
           "Kode", "Indikator Kinerja Kegiatan", "Dokumen", "Satuan",
           "Target", "Target Prodi Min",
-          ...users.map((u) => u.nama),
+          ...finalUsers.map((u) => u.nama),
         ]);
 
         // Row 1 — role labels
-        rows.push(["", "", "", "", "", "", ...users.map((u) => u.role)]);
+        rows.push(["", "", "", "", "", "", ...finalUsers.map((u) => u.role)]);
 
         // Track which row index each data row lands on
         const rowMeta: { type: "ikuL0"|"ikuL1"|"pkL1"|"pkL2"|"leaf"|"blank" }[] = [];
@@ -648,18 +703,22 @@ export default function ImportTurunanModal({
           rowMeta.push({ type: "ikuL0" });
 
           for (const l1 of l0.subIndikators) {
-            rows.push(["", l1.nama, "", "", l1.nilaiTarget ?? "", "", ...E()]);
+            rows.push(["", `${l1.kode ? l1.kode + " " : ""}${l1.nama}`, "", "", l1.nilaiTarget ?? "", "", ...E()]);
             rowMeta.push({ type: "ikuL1" });
 
             let li = 0;
             for (const l2 of l1.children) {
               if (l2.children.length > 0) {
                 for (const l3 of l2.children) {
-                  rows.push(["", `${LETTERS[li++] ?? "?"}. ${l3.nama}`, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
+                  const l3Label = `${l3.kode ?? (LETTERS[li] + ".")} ${l3.nama}`;
+                  li++;
+                  rows.push(["", l3Label, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
                   rowMeta.push({ type: "leaf" });
                 }
               } else {
-                rows.push(["", `${LETTERS[li++] ?? "?"}. ${l2.nama}`, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
+                const l2Label = `${l2.kode ?? (LETTERS[li] + ".")} ${l2.nama}`;
+                li++;
+                rows.push(["", l2Label, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
                 rowMeta.push({ type: "leaf" });
               }
             }
@@ -677,22 +736,26 @@ export default function ImportTurunanModal({
         for (const l0 of pkGrouped) {
           let isFirstL1 = true;
           for (const l1 of l0.subIndikators) {
-            rows.push([isFirstL1 ? `PK ${l0.kode}` : "", l1.nama, "", "", "", "", ...E()]);
+            rows.push([isFirstL1 ? `PK ${l0.kode}` : "", `${l1.kode ? l1.kode + " " : ""}${l1.nama}`, "", "", "", "", ...E()]);
             rowMeta.push({ type: "pkL1" });
             isFirstL1 = false;
 
             for (const l2 of l1.children) {
-              rows.push(["", `  ${l2.nama}`, "", "", "", "", ...E()]);
+              rows.push(["", `  ${l2.kode ? l2.kode + " " : ""}${l2.nama}`, "", "", "", "", ...E()]);
               rowMeta.push({ type: "pkL2" });
 
               let li = 0;
               if (l2.children.length > 0) {
                 for (const l3 of l2.children) {
-                  rows.push(["", `    ${LETTERS[li++] ?? "?"}. ${l3.nama}`, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
+                  const l3Label = `    ${l3.kode ?? (LETTERS[li] + ".")} ${l3.nama}`;
+                  li++;
+                  rows.push(["", l3Label, "", l3.satuan ?? "", l3.nilaiTarget ?? "", "", ...E()]);
                   rowMeta.push({ type: "leaf" });
                 }
               } else {
-                rows.push(["", `    ${LETTERS[li++] ?? "?"}. ${l2.nama}`, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
+                const l2LeafLabel = `    ${l2.kode ?? (LETTERS[li] + ".")} ${l2.nama}`;
+                li++;
+                rows.push(["", l2LeafLabel, "", l2.satuan ?? "", l2.nilaiTarget ?? "", "", ...E()]);
                 rowMeta.push({ type: "leaf" });
               }
             }
@@ -735,9 +798,9 @@ export default function ImportTurunanModal({
         // ── Row heights & col widths ──────────────────────────────────────────
         ws["!rows"] = [{ hpt: 36 }, { hpt: 28 }]; // header rows taller
         ws["!cols"] = [
-          { wch: 10 }, { wch: 60 }, { wch: 10 }, { wch: 14 },
+          { wch: 12 }, { wch: 72 }, { wch: 10 }, { wch: 14 },
           { wch: 10 }, { wch: 16 },
-          ...users.map(() => ({ wch: 22 })),
+          ...finalUsers.map(() => ({ wch: 22 })),
         ];
 
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -857,13 +920,36 @@ export default function ImportTurunanModal({
         return bestScore <= 8 ? best : null;
       }
 
+      // Kode-based indicator lookup (used when subLabel has a kode prefix from new template format)
+      function matchByKode(kode: string, grouped: IndikatorGrouped[]): { id: number; kode: string } | null {
+        for (const g of grouped) {
+          for (const l1 of g.subIndikators) {
+            if (l1.kode === kode) return { id: l1.id, kode: l1.kode };
+            for (const l2 of l1.children) {
+              if (l2.kode === kode) return { id: l2.id, kode: l2.kode };
+              for (const l3 of (l2 as any).children ?? []) {
+                if (l3.kode === kode) return { id: l3.id, kode: l3.kode };
+              }
+            }
+          }
+        }
+        return null;
+      }
+
       // Keep entries per-sheet: each sheet×indicator gets its own entry.
       // This ensures each prodi's kaprodi gets the correct targetProdiMin and V-mark chain.
       const entryMap = new Map<string, MatchedEntry>();
       for (const e of allEntries) {
         const key = `${e.sheetName}|||${e.ikuCode}|||${e.subLabel}`;
         if (!entryMap.has(key)) {
-          let indMatch = matchIndicator(e.ikuCode, e.subLabel, ikuGrouped);
+          // If subLabel starts with a kode prefix (e.g. "1.3.1 Persentase..."), use kode-based
+          // lookup first — it's exact and avoids name-similarity mismatches.
+          const kodePrefix = e.subLabel.match(/^\s*([\d.]+)\s+/)?.[1] ?? null;
+          let indMatch: { id: number; kode: string } | null = null;
+          if (kodePrefix) {
+            indMatch = matchByKode(kodePrefix, ikuGrouped) ?? matchByKode(kodePrefix, pkGrouped);
+          }
+          if (!indMatch) indMatch = matchIndicator(e.ikuCode, e.subLabel, ikuGrouped);
           if (!indMatch) indMatch = matchIndicator(e.ikuCode, e.subLabel, pkGrouped);
           entryMap.set(key, {
             ikuCode: e.ikuCode, subLabel: e.subLabel, satuan: e.satuan,
@@ -892,11 +978,10 @@ export default function ImportTurunanModal({
       const previews: PreviewCascade[] = [];
       for (const me of matchedEntries) {
         if (!me.indicatorId) continue;
+        const vMarksPreview = me.vMarks.length > 0 ? me.vMarks : (sheetChains.get(me.sheetName) ?? []);
         const leaf = me.amounts
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
-        // Use per-row V marks (falls back to sheet-level chain for older entries without per-row marks)
-        const vMarksPreview = me.vMarks.length > 0 ? me.vMarks : (sheetChains.get(me.sheetName) ?? []);
         // Find deepest marked pimpinan in hierarchy: KaProdi > KaJur > WD
         // This allows partial chains (e.g. WD only, or WD+KaJur) to still build correctly
         const kaprodiMarkPreview =
@@ -1031,6 +1116,7 @@ export default function ImportTurunanModal({
         roleLabel: string;
         fromUserId: number | null;
         fromNama: string;
+        fromVMarks: boolean; // true = built from V-mark chain; false = atasanId fallback
         items: { toUserId: number; toNama: string; jumlahTarget: number }[];
       };
       const levelAccum = new Map<string, AccumLevel>();
@@ -1056,7 +1142,7 @@ export default function ImportTurunanModal({
           }
         }
 
-        // Create cascade disposisi from dosen amounts
+        // Pimpinan who also have a dosen role can appear in both chain (V mark) and leaf (numeric amount)
         const leaf = me.amounts
           .filter((a) => a.userId !== null && a.amount > 0)
           .map((a) => ({ userId: a.userId!, amount: a.amount }));
@@ -1083,19 +1169,30 @@ export default function ImportTurunanModal({
         }
 
         let levels: CascadeLevel[];
+        let fromVMarks: boolean;
         if (kaprodiUser && kaprodiAmount > 0) {
           // Build chain from V-mark users (WD→KJ→KP→Dosen) instead of atasanId traversal,
           // because atasanId is often unconfigured in the DB.
           levels = buildLevelsFromVMarks(vMarks, kaprodiUser, kaprodiAmount, leaf, allUsers, findUserLocal);
+          fromVMarks = true;
+        } else if (vMarks.length > 0) {
+          // V marks exist but kaprodi user could not be resolved — skip rather than fall through
+          // to atasanId traversal which would pollute V-mark chain levels in levelAccum.
+          skippedVMark++;
+          continue;
         } else {
           if (!leaf.length) continue;
           levels = buildCascadeLevels(leaf, allUsers);
+          fromVMarks = false;
         }
 
         maxDepth = Math.max(maxDepth, levels.reduce((m, l) => Math.max(m, l.depth), 0));
         indicatorsOk++;
 
-        // Accumulate: merge items for same (indicatorId, fromUserId) across sheets
+        // Accumulate: merge items for same (indicatorId, fromUserId) across sheets.
+        // V-mark levels (fromVMarks=true) take priority — never let atasanId-fallback
+        // levels merge into an existing V-mark entry (that would add direct dosen
+        // distributions into a KaJur→KaProdi level, creating duplicates in monitoring).
         for (const level of levels) {
           const key = `${me.indicatorId}|${level.fromUserId ?? 'null'}`;
           const existing = levelAccum.get(key);
@@ -1106,9 +1203,12 @@ export default function ImportTurunanModal({
               roleLabel: level.roleLabel,
               fromUserId: level.fromUserId,
               fromNama: level.fromNama,
+              fromVMarks,
               items: level.items.map((i) => ({ ...i })),
             });
           } else {
+            // Skip atasanId-fallback levels that would pollute a V-mark chain entry
+            if (existing.fromVMarks && !fromVMarks) continue;
             for (const item of level.items) {
               const found = existing.items.find((i) => i.toUserId === item.toUserId);
               if (found) {
@@ -1126,7 +1226,7 @@ export default function ImportTurunanModal({
         const items = level.items.map((i) => ({ toUserId: i.toUserId, jumlahTarget: i.jumlahTarget }));
         console.log(`[ImportTurunan] upsert indId=${level.indicatorId} from=${level.fromNama} (${level.fromUserId ?? 'null'}) role=${level.roleLabel} items=${items.length} totalAmt=${items.reduce((s,i)=>s+i.jumlahTarget,0)}`);
         try {
-          await upsertDisposisi(level.indicatorId, tahun, items, level.fromUserId);
+          await upsertDisposisi(level.indicatorId, tahun, items, level.fromUserId, true);
         } catch (e: any) {
           throw new Error(`[indId=${level.indicatorId} from=${level.fromNama} role=${level.roleLabel}] ${e.message}`);
         }
@@ -1329,7 +1429,7 @@ export default function ImportTurunanModal({
                       <details key={pi} style={{ borderBottom: pi < cascadePreviews.length - 1 ? "1px solid #f0f0f0" : "none" }}>
                         <summary style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 12, userSelect: "none", background: pi % 2 === 0 ? "#fff" : "#fafafa", listStyle: "none" }}>
                           <span style={{ minWidth: 64, fontFamily: "monospace", color: "#1d4ed8", fontWeight: 700 }}>{p.indicatorKode}</span>
-                          <span style={{ flex: 1, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.subLabel}</span>
+                          <span style={{ flex: 1, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.subLabel.replace(/^\s*[\d.]+\s+/, "")}</span>
                           <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>{p.levels.length} disposisi · {p.levels.reduce((s, l) => s + l.items.length, 0)} penerima</span>
                           <span style={{ color: "#9ca3af", fontSize: 16, flexShrink: 0 }}>›</span>
                         </summary>

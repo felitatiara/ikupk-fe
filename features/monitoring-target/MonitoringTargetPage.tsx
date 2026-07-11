@@ -392,19 +392,42 @@ function L1Row({ entry, allRoles, router, tahun, activeProdi }: {
 
                     {/* Dosen drill-down */}
                     {l2DosenExpanded && (() => {
+                      function detectProdiUnit(userRoles?: Array<{ role: { name: string; unitNama: string } }>): string {
+                        if (!userRoles) return "";
+                        for (const { role } of userRoles) {
+                          const u = role.unitNama?.toLowerCase() ?? "";
+                          if (u.includes("d3") || u.includes("diploma 3")) return "D3 SI";
+                          if (u.includes("data science") || u.includes("sains data")) return "S1 SD";
+                          if (u.includes("informatika")) return "S1 IF";
+                          if (u.includes("sistem informasi")) return "S1 SI";
+                        }
+                        return "";
+                      }
+
                       // Leaf recipients: users who received but did NOT further distribute.
                       const senderIds = new Set(l2DosenItems.map(i => i.fromUserId).filter((id): id is number => id != null));
                       const leafItems = l2DosenItems.filter(i => !senderIds.has(i.toUserId));
-                      // Group leaf dosens by fromUserId (kaprodi who distributed to them)
-                      const groupMap = new Map<number, typeof leafItems>();
+
+                      // Group leaf dosens by their prodi unit (S1 SI, S1 IF, D3 SI, S1 SD, Lainnya)
+                      const PRODI_ORDER = ["S1 SI", "S1 IF", "D3 SI", "S1 SD", "Lainnya"];
+                      const prodiMap = new Map<string, typeof leafItems>();
                       for (const item of leafItems) {
-                        const key = item.fromUserId ?? -1;
-                        if (!groupMap.has(key)) groupMap.set(key, []);
-                        groupMap.get(key)!.push(item);
+                        const prodi = detectProdiUnit(item.toUser?.userRoles) || "Lainnya";
+                        if (!prodiMap.has(prodi)) prodiMap.set(prodi, []);
+                        prodiMap.get(prodi)!.push(item);
                       }
-                      // Show all groups — prodi tabs already filter which indicator rows appear,
-                      // so within a single indicator row all leaf recipients should be visible.
-                      const groups = Array.from(groupMap.entries());
+                      const prodiGroups = PRODI_ORDER
+                        .filter(p => prodiMap.has(p))
+                        .map(p => ({ prodi: p, items: prodiMap.get(p)! }));
+
+                      const PRODI_COLOR: Record<string, { bg: string; text: string; border: string }> = {
+                        "S1 SI":  { bg: "#eff6ff", text: "#1d4ed8", border: "#bfdbfe" },
+                        "S1 IF":  { bg: "#f0fdf4", text: "#15803d", border: "#bbf7d0" },
+                        "D3 SI":  { bg: "#fff7ed", text: "#c2410c", border: "#fed7aa" },
+                        "S1 SD":  { bg: "#fdf4ff", text: "#7e22ce", border: "#e9d5ff" },
+                        "Lainnya":{ bg: "#f8fafc", text: "#475569", border: "#e2e8f0" },
+                      };
+
                       return (
                         <div style={{ padding: "8px 12px 10px 24px", background: "#f5f3ff", borderBottom: "1px solid #e5e7eb" }}>
                           {l2DosenLoading ? (
@@ -413,45 +436,30 @@ function L1Row({ entry, allRoles, router, tahun, activeProdi }: {
                             <p style={{ margin: 0, fontSize: 11, color: "#9ca3af", fontStyle: "italic" }}>Belum ada distribusi ke dosen.</p>
                           ) : (
                             <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
-                              {groups.map(([kaprodId, items]) => {
-                                // Find kaprodi name: they appear as toUserId in l2DosenItems sent by kajur
-                                const kaprodEntry = l2DosenItems.find(i => i.toUserId === kaprodId);
-                                const kaprodNama = kaprodEntry?.toUser?.nama ?? `Kaprodi #${kaprodId}`;
-                                const kaprodUnit = kaprodEntry?.toUser?.role ?? "";
+                              {prodiGroups.map(({ prodi, items }) => {
+                                const c = PRODI_COLOR[prodi] ?? PRODI_COLOR["Lainnya"];
                                 return (
-                                  <div key={kaprodId}>
-                                    {groups.length > 1 && (
-                                      <p style={{ margin: "0 0 5px", fontSize: 10.5, fontWeight: 800, color: "#7c3aed", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                                        {kaprodNama}{kaprodUnit ? ` · ${kaprodUnit}` : ""} — {items.length} Dosen
-                                      </p>
-                                    )}
-                                    {groups.length === 1 && (
-                                      <p style={{ margin: "0 0 5px", fontSize: 10.5, fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
-                                        {items.length} Penerima Target
-                                      </p>
-                                    )}
+                                  <div key={prodi}>
+                                    <p style={{ margin: "0 0 5px", fontSize: 10.5, fontWeight: 800, color: c.text, textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                                      {prodi} — {items.length} Dosen
+                                    </p>
                                     <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
                                       {items.map((item) => (
                                         <div
-                                          key={item.toUserId}
+                                          key={item.id ?? item.toUserId}
                                           style={{
                                             display: "flex",
                                             alignItems: "center",
                                             gap: 8,
                                             padding: "5px 12px",
                                             borderRadius: 8,
-                                            background: "#fff",
-                                            border: "1px solid #ddd6fe",
+                                            background: c.bg,
+                                            border: `1px solid ${c.border}`,
                                             fontSize: 11.5,
                                           }}
                                         >
                                           <span style={{ fontWeight: 600, color: "#1e293b" }}>{item.toUser?.nama ?? `User #${item.toUserId}`}</span>
-                                          {item.toUser?.role && (
-                                            <span style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", padding: "1px 6px", borderRadius: 12, fontWeight: 600 }}>
-                                              {item.toUser.role}
-                                            </span>
-                                          )}
-                                          <span style={{ fontWeight: 700, color: "#4f46e5" }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
+                                          <span style={{ fontWeight: 700, color: c.text }}>{fmt(item.jumlahTarget)}{l2.satuan ? ` ${l2.satuan}` : ""}</span>
                                         </div>
                                       ))}
                                     </div>

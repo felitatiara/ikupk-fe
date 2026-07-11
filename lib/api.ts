@@ -660,6 +660,11 @@ export interface DisposisiItem {
     email?: string;
     userRoles?: Array<{ role: { name: string; unitNama: string } }>;
   };
+  fromUser?: {
+    id: number;
+    nama: string;
+    userRoles?: Array<{ role: { name: string; unitNama: string } }>;
+  };
 }
 
 export async function getDisposisi(indikatorId: number, tahun: string, fromUserId?: number | null): Promise<DisposisiItem[]> {
@@ -680,11 +685,11 @@ export async function getReceivedDisposisiJumlah(toUserId: number, indikatorId: 
   return Number(data.jumlah) || 0;
 }
 
-export async function upsertDisposisi(indikatorId: number, tahun: string, items: { toUserId: number; jumlahTarget: number }[], fromUserId?: number | null): Promise<any> {
+export async function upsertDisposisi(indikatorId: number, tahun: string, items: { toUserId: number; jumlahTarget: number }[], fromUserId?: number | null, skipValidation = false): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/disposisi`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ indikatorId, tahun, items, fromUserId: fromUserId ?? null }),
+    body: JSON.stringify({ indikatorId, tahun, items, fromUserId: fromUserId ?? null, skipValidation }),
   });
   if (!response.ok) {
     let detail = '';
