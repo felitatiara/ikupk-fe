@@ -4,8 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import PageTransition from "@/components/layout/PageTransition";
-import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getAllRoles, getAllDosen, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, getValidasiBiroPKU, API_BASE_URL } from "../../lib/api";
-import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile, ValidasiBiroPKUItem } from "../../lib/api";
+import { getUsersByRole, getUsersByLevel, getRelatedUsersFor, getDosenByUnit, getAllRoles, getAllDosen, getReceivedDisposisiJumlah, getIndikatorGrouped, getIndikatorGroupedForUser, getDisposisi, upsertDisposisi, getAllRealisasiFiles, submitFileRealisasiWithAuth, submitRealisasiDirect, uploadIkupkFile, getIkupkFiles, deleteIkupkFile, getIndikatorCascadeChain, getAvailableYears, getValidasiBiroPKU, getMyNeedsRevision, API_BASE_URL } from "../../lib/api";
+import type { UnitUser, IndikatorGrouped, IndikatorGroupedSub, IndikatorGroupedChild, IndikatorGroupedLevel3, IkupkFile, ValidasiBiroPKUItem, NeedsRevisionItem } from "../../lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnConfigUpdate } from "@/hooks/useOnConfigUpdate";
 
@@ -71,6 +71,10 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [directInputSubmitting, setDirectInputSubmitting] = useState(false);
   const ikupkFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Revision state — indikator yang perlu direvisi oleh user ini
+  const [needsRevisionMap, setNeedsRevisionMap] = useState<Map<number, NeedsRevisionItem>>(new Map());
+  const [directNeedsRevision, setDirectNeedsRevision] = useState<NeedsRevisionItem | null>(null);
+
   // Grouped data for admin/dekan view
   const [groupedData, setGroupedData] = useState<IndikatorGrouped[]>([]);
   // For isTopLevel non-admin (Dekan/WD) who may also receive disposisi from Kaprodi
@@ -110,6 +114,16 @@ const [tahun, setTahun] = useState("2026");
       setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
     });
   }, []);
+
+  // Fetch indikator yang perlu direvisi oleh user ini
+  useEffect(() => {
+    if (!authUser?.id) return;
+    getMyNeedsRevision(authUser.id, tahun).then((items) => {
+      const map = new Map<number, NeedsRevisionItem>();
+      for (const item of items) map.set(item.indikatorId, item);
+      setNeedsRevisionMap(map);
+    }).catch(() => {});
+  }, [authUser?.id, tahun, refreshKey]);
 
   // Fetch grouped data
   useEffect(() => {
@@ -391,9 +405,12 @@ const [tahun, setTahun] = useState("2026");
 
   const handleDirectInputClick = async (indikatorId: number, nama: string) => {
     if (!token) { toast.error('Token tidak ditemukan, silakan login ulang.'); return; }
+    const revisionItem = needsRevisionMap.get(indikatorId) ?? null;
+    setDirectNeedsRevision(revisionItem);
     setDirectModalIndikatorId(indikatorId);
     setDirectModalNama(nama);
-    setFileRepoPeriode(periodeOptions[0]);
+    // Pre-select periode dari record yang perlu direvisi agar upsert menemukan record yang tepat
+    setFileRepoPeriode(revisionItem?.periode ?? periodeOptions[0]);
     setIkupkFiles([]);
     setDirectModalOpen(true);
     try {
@@ -440,7 +457,8 @@ const [tahun, setTahun] = useState("2026");
         periode: fileRepoPeriode,
         realisasiAngka: ikupkFiles.length,
       }, token);
-      toast.success('Realisasi berhasil disimpan.');
+      toast.success(directNeedsRevision ? 'Upload ulang berhasil, menunggu re-validasi.' : 'Realisasi berhasil disimpan.');
+      setDirectNeedsRevision(null);
       setDirectModalOpen(false);
       setRefreshKey(k => k + 1);
     } catch {
@@ -600,8 +618,8 @@ const [tahun, setTahun] = useState("2026");
       isLeaf: boolean;
     };
     return (
-      <div className="table-wrapper">
-        <table className="table-universal">
+      <div className="table-wrapper ikupk-table-wrapper">
+        <table className="table-universal ikupk-table">
           <thead>
             <tr>
               <th className="col-w5 text-center">No</th>
@@ -659,13 +677,6 @@ const [tahun, setTahun] = useState("2026");
                           <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
                           <td rowSpan={totalRowSpan} className="td-cell v-top">
                             <div>{group.nama}</div>
-                            {group.fromUserNama && (
-                              <div style={{ marginTop: 4 }}>
-                                <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
-                                  dari {group.fromUserNama}
-                                </span>
-                              </div>
-                            )}
                           </td>
                         </>
                       )}
@@ -703,7 +714,12 @@ const [tahun, setTahun] = useState("2026");
                     <td className={`td-cell td-cell--center fw-700 ${leafCapaianClass}`}>
                       {leafCapaianPct}
                     </td>
-                    <td className="action-cell">
+                    <td className="action-cell" style={{ whiteSpace: 'nowrap' }}>
+                      {needsRevisionMap.has(row.actionId) && (
+                        <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', borderRadius: 4, padding: '2px 6px', marginRight: 6, fontWeight: 700, verticalAlign: 'middle' }}>
+                          ⚠ Revisi
+                        </span>
+                      )}
                       <button
                         onClick={() => row.actionSumberData === 'ikupk'
                           ? handleDirectInputClick(row.actionId, row.actionNama)
@@ -1113,7 +1129,7 @@ const [tahun, setTahun] = useState("2026");
         {directModalOpen && createPortal(
           <div
             style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}
-            onClick={() => setDirectModalOpen(false)}
+            onClick={() => { setDirectModalOpen(false); setDirectNeedsRevision(null); }}
           >
             <div
               style={{ background: '#fff', borderRadius: 16, width: 520, maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}
@@ -1132,6 +1148,27 @@ const [tahun, setTahun] = useState("2026");
               </div>
 
               <div style={{ padding: '18px 24px' }}>
+                {/* Banner revisi — muncul jika indikator ini punya record needs_revision */}
+                {directNeedsRevision && (
+                  <div className="alert-banner alert-banner--warning" style={{ marginBottom: 16 }}>
+                    <div className="fw-700 mb-4">⚠ Revisi Diperlukan</div>
+                    {directNeedsRevision.catatanRevisi && (
+                      <div className="alert-banner alert-banner--warning" style={{ fontSize: 12, marginBottom: 6 }}>
+                        <span className="fw-700">Catatan validator: </span>{directNeedsRevision.catatanRevisi}
+                      </div>
+                    )}
+                    {!directNeedsRevision.catatanRevisi && directNeedsRevision.keterangan && (
+                      <div className="mb-4" style={{ fontSize: 12 }}>{directNeedsRevision.keterangan}</div>
+                    )}
+                    {directNeedsRevision.validFileCount !== null && (
+                      <div className="mb-4" style={{ fontSize: 11 }}>
+                        {directNeedsRevision.validFileCount} file sebelumnya sudah tervalidasi — unggah file yang perlu diperbaiki saja.
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11 }}>Upload file baru lalu klik Simpan untuk mengirim ulang ke validator.</div>
+                  </div>
+                )}
+
                 {/* Periode */}
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Periode</label>
@@ -1254,7 +1291,7 @@ const [tahun, setTahun] = useState("2026");
 
               {/* Footer */}
               <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button onClick={() => setDirectModalOpen(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                <button onClick={() => { setDirectModalOpen(false); setDirectNeedsRevision(null); }} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
                   Tutup
                 </button>
                 <button
@@ -1262,11 +1299,11 @@ const [tahun, setTahun] = useState("2026");
                   disabled={directInputSubmitting || ikupkFiles.length === 0}
                   style={{
                     padding: '9px 20px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: directInputSubmitting || ikupkFiles.length === 0 ? 'not-allowed' : 'pointer',
-                    background: directInputSubmitting || ikupkFiles.length === 0 ? '#d1d5db' : '#16a34a', color: '#fff',
+                    background: directInputSubmitting || ikupkFiles.length === 0 ? '#d1d5db' : directNeedsRevision ? '#d97706' : '#16a34a', color: '#fff',
                     display: 'flex', alignItems: 'center', gap: 6,
                   }}
                 >
-                  {directInputSubmitting ? 'Menyimpan...' : `✓ Simpan Realisasi (${ikupkFiles.length} file)`}
+                  {directInputSubmitting ? 'Menyimpan...' : directNeedsRevision ? `↑ Upload Ulang (${ikupkFiles.length} file)` : `✓ Simpan Realisasi (${ikupkFiles.length} file)`}
                 </button>
               </div>
             </div>
@@ -1274,32 +1311,77 @@ const [tahun, setTahun] = useState("2026");
           document.body
         )}
 
-        <div className="page-card">
-          <h3 className="ikupk-card-title">
-            Indikator Kinerja Utama & Perjanjian Kinerja
-          </h3>
+        <style>{`
+          .ikupk-hero { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px 32px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+          .ikupk-hero-eyebrow { font-size: 11px; font-weight: 700; color: #2563eb; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+          .ikupk-hero-title { font-size: 22px; font-weight: 800; color: #0f2f4f; margin: 0 0 6px; }
+          .ikupk-hero-sub { font-size: 13px; color: #6b7280; margin: 0; }
+          .ikupk-stats-card { background: #fff; border-radius: 12px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; display: flex; flex-direction: row; align-items: center; gap: 0; }
+          .ikupk-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 18px; }
+          .ikupk-stat + .ikupk-stat { border-left: 1px solid #e5e7eb; }
+          .ikupk-stat-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+          .ikupk-stat-val { font-size: 18px; font-weight: 800; color: #2563eb; }
+          .ikupk-toolbar { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px 20px; margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+          .ikupk-filter-group { display: flex; flex-direction: column; gap: 4px; }
+          .ikupk-filter-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+          .ikupk-select { border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 12px; font-size: 13px; color: #374151; background: #fff; cursor: pointer; outline: none; }
+          .ikupk-select:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
+          .ikupk-vpanel-header { background: #0f2f4f !important; }
+          .ikupk-vpanel-header .verification-panel__eyebrow { color: #7dd3fc !important; }
+          .ikupk-vpanel-header .verification-panel__title { color: #ffffff !important; }
+          .ikupk-vpanel-header .verification-panel__summary span { color: #cbd5e1 !important; }
+          .ikupk-table th { background-color: #0f2f4f !important; color: #e8eef7 !important; font-weight: 900 !important; border-bottom: 1px solid rgba(255,255,255,0.12) !important; letter-spacing: 0.06em; text-transform: uppercase; }
+          .ikupk-table { overflow: hidden; }
+          .ikupk-table-card { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); }
+          .ikupk-table-wrapper { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); margin-bottom: 20px; }
+        `}</style>
 
+        {/* ── Hero Card ── */}
+        <div className="ikupk-hero">
+          <div>
+            <h3 className="ikupk-card-title">
+              {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
+            </h3>
+            <p className="ikupk-hero-sub">Target dan realisasi indikator kinerja kegiatan dan perjanjian kinerja.</p>
+          </div>
+          {isTopLevel && !loading && groupedData.length > 0 && (
+            <div className="ikupk-stats-card">
+              <div className="ikupk-stat">
+                <span className="ikupk-stat-label">Sasaran</span>
+                <span className="ikupk-stat-val">{groupedData.length}</span>
+              </div>
+              {displayRole === 'admin' && (
+                <div className="ikupk-stat">
+                  <span className="ikupk-stat-label">Terverifikasi</span>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: "#047857" }}>{validasiBiroPKU.length}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
           {isTopLevel ? (
             <>
-              <div className="filter filter--mb20">
-                <div className="filter-content">
-                  <label className="filter-content-label">Target</label>
+              <div className="ikupk-toolbar">
+                <div className="ikupk-filter-group">
+                  <span className="ikupk-filter-label">Target</span>
                   <select
                     value={jenis}
                     onChange={(e) => setJenis(e.target.value)}
-                    className="filter-isi"
+                    className="ikupk-select"
                   >
                     <option value="IKU">Indikator Kinerja Utama</option>
                     <option value="PK">Perjanjian Kinerja</option>
                     <option value="PK_IKU">PK Berbasis IKU</option>
                   </select>
                 </div>
-                <div className="filter-content">
-                  <label className="filter-content-label">Tahun</label>
+                <div className="ikupk-filter-group">
+                  <span className="ikupk-filter-label">Tahun</span>
                   <select
                     value={tahun}
                     onChange={(e) => setTahun(e.target.value)}
-                    className="filter-isi"
+                    className="ikupk-select"
                   >
                     {availableYears.map((y) => (
                       <option key={y} value={y}>{y}</option>
@@ -1310,11 +1392,24 @@ const [tahun, setTahun] = useState("2026");
 
               {loading && <p className="text-loading">Loading...</p>}
 
-              {(displayRole === 'admin' || isActualDekan) ? (
+              {displayRole === 'admin' ? (
                 <>
                 {!loading && groupedData.length > 0 && (
-                <div className="table-wrapper">
-                  <table className="table-universal">
+                <div className="verification-panel">
+                  <div className="verification-panel__header ikupk-vpanel-header">
+                    <div>
+                      <p className="verification-panel__eyebrow">Verifikasi Biro PKU</p>
+                      <h4 className="verification-panel__title">
+                        Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis} Tahun {tahun}
+                      </h4>
+                    </div>
+                    <div className="verification-panel__summary">
+                      <span>{groupedData.length} sasaran</span>
+                      <span>{validasiBiroPKU.length} hasil verifikasi</span>
+                    </div>
+                  </div>
+                <div className="table-wrapper verification-table-wrapper">
+                  <table className="table-universal verification-table ikupk-table">
                     <thead>
                       <tr>
                         <th rowSpan={2} className="col-w5 text-center">Nomor</th>
@@ -1376,11 +1471,14 @@ const [tahun, setTahun] = useState("2026");
                                         const biroPKU = validasiBiroPKU.find((v) => v.indikatorId === group.id);
                                         if (!biroPKU || biroPKU.jumlahValid == null) return null;
                                         return (
-                                          <div style={{ marginTop: 6, padding: "5px 8px", background: "#eff6ff", borderRadius: 6, border: "1px solid #bfdbfe", fontSize: 11 }}>
-                                            <span style={{ fontWeight: 600, color: "#1d4ed8" }}>Hasil Biro PKU: </span>
-                                            <span style={{ fontWeight: 700, color: "#0369a1" }}>{biroPKU.jumlahValid}</span>
-                                            <span style={{ color: "#6b7280" }}> valid</span>
-                                            {biroPKU.keterangan && <div style={{ color: "#6b7280", marginTop: 2 }}>{biroPKU.keterangan}</div>}
+                                          <div className="biro-pku-result">
+                                            <div className="biro-pku-result__top">
+                                              <span className="biro-pku-result__label">Biro PKU</span>
+                                              <span className="biro-pku-result__value">{biroPKU.jumlahValid} valid</span>
+                                            </div>
+                                            {biroPKU.keterangan && (
+                                              <div className="biro-pku-result__note">{biroPKU.keterangan}</div>
+                                            )}
                                           </div>
                                         );
                                       })()}
@@ -1444,6 +1542,7 @@ const [tahun, setTahun] = useState("2026");
                     </tbody>
                   </table>
                 </div>
+                </div>
               )}
 
               {!loading && groupedData.length === 0 && (
@@ -1461,8 +1560,8 @@ const [tahun, setTahun] = useState("2026");
                   {receivedGroupedData.length === 0 ? (
                     <p className="text-empty">Belum ada target yang didisposisikan kepada Anda melalui alur disposisi.</p>
                   ) : (
-                    <div className="table-wrapper">
-                      <table className="table-universal">
+                    <div className="table-wrapper ikupk-table-wrapper">
+                      <table className="table-universal ikupk-table">
                         <thead>
                           <tr>
                             <th className="col-w5 text-center">No</th>
@@ -1498,13 +1597,6 @@ const [tahun, setTahun] = useState("2026");
                                       <td rowSpan={totalRowSpan} className="td-cell td-cell--center td-cell--bold">{group.kode}</td>
                                       <td rowSpan={totalRowSpan} className="td-cell v-top">
                                         <div>{group.nama}</div>
-                                        {group.fromUserNama && (
-                                          <div style={{ marginTop: 4, fontSize: 11, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <span style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 4, padding: '1px 6px', fontWeight: 600, fontSize: 10 }}>
-                                              dari {group.fromUserNama}
-                                            </span>
-                                          </div>
-                                        )}
                                       </td>
                                     </>
                                   )}
@@ -1571,46 +1663,36 @@ const [tahun, setTahun] = useState("2026");
 
               {!loading && groupedData.length > 0 && (
                 <>
-<<<<<<< HEAD
                   {/* ── Tabel 1: Target untuk Input File ──
                       Hanya ditampilkan ketika user adalah leaf (Dosen) atau punya secondary Dosen role.
                       Untuk non-Dosen (Kajur/Kaprodi) tanpa secondary Dosen role: hanya section Disposisi. */}
+                  {/* ── Tabel 1: Target untuk Input File — hanya Dosen ── */}
                   {isDosen && (
                     <>
-                      <h4 className="ikupk-section-title">Target IKU dan PK</h4>
+                      <h4 className="ikupk-section-title">Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis}</h4>
                       {renderInputFileTable(groupedData, 'input')}
                     </>
                   )}
-=======
-                  {/* ── Tabel 1: Target untuk Input File ── */}
-                  <h4 className="ikupk-section-title">Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis}</h4>
-                  {renderInputFileTable(groupedData, 'input')}
->>>>>>> 1bbf2342ef61ca30d92f8e1eda8365ba2ae4adce
 
-                  {/* ── Tabel 2: Disposisi ke Bawahan (hanya untuk non-dosen) ── */}
+                  {/* ── Tabel 2: Disposisi ke Bawahan (hanya untuk non-dosen / pimpinan) ── */}
                   {!isDosen && (
                     <>
                       <div className="ikupk-section-divider" />
-<<<<<<< HEAD
-                      <h4 className="ikupk-section-title">
-                        Disposisi Target IKU dan PK
-                      </h4>
-=======
                       <h4 className="ikupk-section-title">Disposisi Target {jenis === 'PK_IKU' ? 'PK Berbasis IKU' : jenis}</h4>
->>>>>>> 1bbf2342ef61ca30d92f8e1eda8365ba2ae4adce
-                      <div className="table-wrapper">
-                        <table className="table-universal">
+                      <div className="table-wrapper ikupk-table-wrapper">
+                        <table className="table-universal ikupk-table">
                           <thead>
                             <tr>
                               <th className="col-w5 text-center">No</th>
                               <th className="col-w20">Sasaran Program</th>
                               <th>Sub Indikator Kinerja</th>
                               <th className="col-w10 text-center">Target Diterima</th>
+                              <th className="col-w10 text-center">Tenggat</th>
                               <th className="col-w15 text-center">Aksi</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {renderWithKategori(groupedData, 5, 'disp', (group, groupIdx) => {
+                            {renderWithKategori(groupedData, 6, 'disp', (group, groupIdx) => {
                               const flatRows: FlatRow[] = [];
                               for (const sub of group.subIndikators) {
                                 const hasPkL3 = sub.children.some(c => (c.children ?? []).length > 0);
@@ -1647,7 +1729,7 @@ const [tahun, setTahun] = useState("2026");
                                           <td rowSpan={totalRowSpan} className="td-cell v-top">{group.nama}</td>
                                         </>
                                       )}
-                                      <td colSpan={3} className="td-cell" style={{
+                                      <td colSpan={4} className="td-cell" style={{
                                         paddingLeft: row.level === 2 ? 32 : 16,
                                         fontWeight: 600,
                                         color: row.level === 2 ? '#4b5563' : '#374151',
@@ -1673,6 +1755,9 @@ const [tahun, setTahun] = useState("2026");
                                     </td>
                                     <td className="td-cell td-cell--center td-cell--bold">
                                       {leafDisposisi !== null ? leafDisposisi : "-"}
+                                    </td>
+                                    <td className="td-cell td-cell--center" style={{ color: '#6b7280', fontSize: 12, whiteSpace: 'nowrap' }}>
+                                      {group.tenggat ?? '—'}
                                     </td>
                                     <td className="action-cell">
                                       <div className="action-cell-inner">

@@ -427,19 +427,32 @@ export default function CetakSKP() {
         <div style={{ flex: 1 }} />
 
         {(!rencanaStatus || rencanaStatus.status === 'draft') ? (
-          <button
-            onClick={() => setSignModalOpen(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 7,
-              padding: "7px 20px", border: "none", borderRadius: 8,
-              background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-              color: "#fff", fontWeight: 600, fontSize: 13,
-              cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(245,158,11,.30)",
-            }}
-          >
-            ✅ Setuju &amp; Tandatangani Rencana SKP
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => toast.info("Fitur Banding akan segera tersedia.")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 16px", border: "1px solid #dc2626", borderRadius: 8,
+                background: "white", color: "#dc2626", fontWeight: 600, fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              ⚖️ Ajukan Banding
+            </button>
+            <button
+              onClick={() => setSignModalOpen(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                padding: "7px 20px", border: "none", borderRadius: 8,
+                background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+                color: "#fff", fontWeight: 600, fontSize: 13,
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(245,158,11,.30)",
+              }}
+            >
+              ✅ Setuju &amp; Tandatangani Rencana SKP
+            </button>
+          </div>
         ) : rencanaStatus.status === 'signed_pegawai' ? (
           <span style={{
             display: "flex", alignItems: "center", gap: 6,

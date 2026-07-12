@@ -111,23 +111,77 @@ export default function MasterRoleContent() {
     fontSize: 13, color: "#111", width: "100%", background: "#fff", outline: "none", boxSizing: "border-box",
   };
   const fLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 };
-
   const levelOptions = [0, 1, 2, 3, 4];
 
   return (
     <PageTransition>
       <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+        <style>{`
+          .mr-hero {
+            display: flex; justify-content: space-between; gap: 24px; align-items: stretch;
+            margin-bottom: 18px; padding: 22px 24px; border: 1px solid #e2e8f0; border-radius: 18px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #fdf4ff 100%);
+            box-shadow: 0 18px 42px rgba(15,23,42,0.08);
+          }
+          .mr-eyebrow { margin: 0 0 6px; color: #7c3aed; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+          .mr-title { margin: 0 0 8px; color: #0f172a; font-size: 22px; font-weight: 900; }
+          .mr-subtitle { max-width: 560px; margin: 0; color: #64748b; font-size: 14px; line-height: 1.5; }
+          .mr-stats-card { min-width: 300px; padding: 16px 20px; border: 1px solid #ddd6fe; border-radius: 14px; background: #fff; display: flex; align-items: center; }
+          .mr-stats-grid { display: flex; align-items: center; gap: 0; width: 100%; }
+          .mr-stat { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+          .mr-stat-val { font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1; }
+          .mr-stat-lbl { font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; text-align: center; }
+          .mr-stat-divider { width: 1px; height: 40px; background: #e2e8f0; margin: 0 6px; flex-shrink: 0; }
+          .mr-toolbar {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+            margin-bottom: 18px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 14px;
+            background: #fff; box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+          }
+          .mr-toolbar-left, .mr-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+          .mr-search {
+            border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 14px;
+            font-size: 13px; color: #374151; background: #f8fafc; outline: none; min-width: 220px;
+          }
+          .mr-search:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.10); background: #fff; }
+          .mr-select {
+            border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 14px;
+            font-size: 13px; color: #374151; background: #f8fafc; outline: none; cursor: pointer; min-width: 180px;
+          }
+          .mr-select:focus { border-color: #7c3aed; }
+          .mr-count { font-size: 12px; color: #9ca3af; }
+          .mr-btn-primary {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 18px; border-radius: 12px; border: none;
+            background: #16a34a; color: #fff; font-size: 13px; font-weight: 700;
+            cursor: pointer; white-space: nowrap; box-shadow: 0 3px 10px rgba(22,163,74,0.28);
+            transition: all 0.15s;
+          }
+          .mr-btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+          .mr-table-card { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; box-shadow: 0 8px 28px rgba(15,23,42,0.07); }
+          .mr-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+          .mr-table thead tr { background: #0f2f4f; }
+          .mr-table thead th { padding: 12px 16px; color: #e8eef7; font-size: 11px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+          .mr-table thead th.center { text-align: center; }
+          .mr-table tbody tr { border-bottom: 1px solid #f3f4f6; transition: background 0.1s; }
+          .mr-table tbody tr:hover { background: #f9fafb; }
+          .mr-table tbody td { padding: 12px 16px; }
+          .mr-btn-edit { padding: 5px 12px; border-radius: 7px; border: 1px solid #e5e7eb; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; color: #374151; transition: border-color 0.1s; }
+          .mr-btn-edit:hover { border-color: #7c3aed; color: #7c3aed; }
+          .mr-btn-del { padding: 5px 12px; border-radius: 7px; border: none; background: #dc2626; font-size: 12px; font-weight: 600; cursor: pointer; color: #fff; transition: opacity 0.1s; }
+          .mr-btn-del:hover { opacity: 0.85; }
+          @media (max-width: 900px) {
+            .mr-hero { flex-direction: column; align-items: stretch; }
+            .mr-stats-card { min-width: 0; }
+            .mr-toolbar { flex-direction: column; align-items: stretch; }
+          }
+        `}</style>
 
         {/* ── Delete Confirm ── */}
         {deleteTarget && createPortal(
-          <div
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
-            onClick={() => !deleteLoading && setDeleteTarget(null)}
-          >
-            <div
-              style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 400, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
-              onClick={e => e.stopPropagation()}
-            >
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
+            onClick={() => !deleteLoading && setDeleteTarget(null)}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 400, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
+              onClick={e => e.stopPropagation()}>
               <div style={{ width: 48, height: 48, borderRadius: 12, background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, margin: "0 auto 16px" }}>🗑️</div>
               <h5 style={{ textAlign: "center", fontWeight: 800, fontSize: 18, margin: "0 0 4px", color: "#111" }}>Hapus Role?</h5>
               <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>Role yang masih digunakan pengguna tidak dapat dihapus.</p>
@@ -146,68 +200,39 @@ export default function MasterRoleContent() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  disabled={deleteLoading}
-                  style={{ padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}
-                >Batal</button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleteLoading}
-                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: deleteLoading ? "#d1d5db" : "#dc2626", color: "#fff", fontWeight: 700, fontSize: 13, cursor: deleteLoading ? "not-allowed" : "pointer" }}
-                >{deleteLoading ? "Menghapus…" : "Hapus"}</button>
+                <button onClick={() => setDeleteTarget(null)} disabled={deleteLoading}
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}>Batal</button>
+                <button onClick={handleDelete} disabled={deleteLoading}
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: deleteLoading ? "#d1d5db" : "#dc2626", color: "#fff", fontWeight: 700, fontSize: 13, cursor: deleteLoading ? "not-allowed" : "pointer" }}>
+                  {deleteLoading ? "Menghapus…" : "Hapus"}</button>
               </div>
             </div>
-          </div>,
-          document.body
+          </div>, document.body
         )}
 
         {/* ── Modal Tambah / Edit ── */}
         {modalOpen && createPortal(
-          <div
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9998 }}
-            onClick={() => !saving && setModalOpen(false)}
-          >
-            <div
-              style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 460, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
-              onClick={e => e.stopPropagation()}
-            >
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9998 }}
+            onClick={() => !saving && setModalOpen(false)}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 460, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
+              onClick={e => e.stopPropagation()}>
               <h5 style={{ fontWeight: 800, fontSize: 18, margin: "0 0 20px", color: "#111" }}>
                 {modalMode === "tambah" ? "Tambah Role" : "Edit Role"}
               </h5>
-
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div>
                   <label style={fLabel}>Nama Role <span style={{ color: "#dc2626" }}>*</span></label>
-                  <input
-                    style={fInput}
-                    placeholder="contoh: Dosen, Koordinator Prodi"
-                    value={form.name}
-                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  />
+                  <input style={fInput} placeholder="contoh: Dosen, Koordinator Prodi" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
                 </div>
-
                 <div>
                   <label style={fLabel}>Unit / Jabatan</label>
-                  <input
-                    style={fInput}
-                    placeholder="contoh: S1 Sistem Informasi, FIK"
-                    value={form.unitNama}
-                    onChange={e => setForm(p => ({ ...p, unitNama: e.target.value }))}
-                  />
+                  <input style={fInput} placeholder="contoh: S1 Sistem Informasi, FIK" value={form.unitNama} onChange={e => setForm(p => ({ ...p, unitNama: e.target.value }))} />
                   <p style={{ margin: "4px 0 0", fontSize: 11, color: "#9ca3af" }}>Kosongkan jika tidak ada unit spesifik (misal: Dekan)</p>
                 </div>
-
                 <div>
                   <label style={fLabel}>Level Hierarki <span style={{ color: "#dc2626" }}>*</span></label>
-                  <select
-                    style={{ ...fInput, cursor: "pointer" }}
-                    value={form.level}
-                    onChange={e => setForm(p => ({ ...p, level: Number(e.target.value) }))}
-                  >
-                    {levelOptions.map(lv => (
-                      <option key={lv} value={lv}>Level {lv} — {LEVEL_LABEL[lv]}</option>
-                    ))}
+                  <select style={{ ...fInput, cursor: "pointer" }} value={form.level} onChange={e => setForm(p => ({ ...p, level: Number(e.target.value) }))}>
+                    {levelOptions.map(lv => <option key={lv} value={lv}>Level {lv} — {LEVEL_LABEL[lv]}</option>)}
                   </select>
                   {(() => {
                     const c = LEVEL_COLOR[form.level] ?? LEVEL_COLOR[4];
@@ -220,77 +245,87 @@ export default function MasterRoleContent() {
                   })()}
                 </div>
               </div>
-
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 24 }}>
-                <button
-                  onClick={() => setModalOpen(false)}
-                  disabled={saving}
-                  style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}
-                >Batal</button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: saving ? "#d1d5db" : "#16a34a", color: "#fff", fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer" }}
-                >{saving ? "Menyimpan…" : modalMode === "tambah" ? "Tambah" : "Simpan"}</button>
+                <button onClick={() => setModalOpen(false)} disabled={saving}
+                  style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}>Batal</button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: saving ? "#d1d5db" : "#16a34a", color: "#fff", fontWeight: 700, fontSize: 13, cursor: saving ? "not-allowed" : "pointer" }}>
+                  {saving ? "Menyimpan…" : modalMode === "tambah" ? "Tambah" : "Simpan"}</button>
               </div>
             </div>
-          </div>,
-          document.body
+          </div>, document.body
         )}
 
-        {/* ── Header ── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
+        {/* ── Hero Card ── */}
+        <div className="mr-hero">
           <div>
-            <h2 style={{ fontWeight: 800, fontSize: 22, color: "#111827", margin: "0 0 4px" }}>Master Role</h2>
+            <h3 className="ikupk-card-title">Master Role</h3>
             <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>Kelola daftar role dan hierarki jabatan yang digunakan dalam sistem.</p>
           </div>
-          <button
-            onClick={openTambah}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 1px 4px rgba(22,163,74,0.25)", whiteSpace: "nowrap" }}
-          >
-            + Tambah Role
-          </button>
-        </div>
-
-        {/* ── Filters ── */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-          <input
-            style={{ ...fInput, width: 240, flex: "0 0 240px" }}
-            placeholder="Cari nama atau unit..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <select
-            style={{ ...fInput, width: 220, flex: "0 0 220px", cursor: "pointer" }}
-            value={filterLevel === "all" ? "all" : String(filterLevel)}
-            onChange={e => setFilterLevel(e.target.value === "all" ? "all" : Number(e.target.value))}
-          >
-            <option value="all">Semua Level</option>
-            {levelOptions.map(lv => (
-              <option key={lv} value={lv}>Level {lv} — {LEVEL_LABEL[lv]}</option>
-            ))}
-          </select>
-          <div style={{ display: "flex", alignItems: "center", fontSize: 12, color: "#9ca3af", marginLeft: "auto" }}>
-            {filtered.length} role ditemukan
+          <div className="mr-stats-card">
+            <div className="mr-stats-grid">
+              <div className="mr-stat">
+                <span className="mr-stat-val">{roles.length}</span>
+                <span className="mr-stat-lbl">Total Role</span>
+              </div>
+              <div className="mr-stat-divider" />
+              <div className="mr-stat">
+                <span className="mr-stat-val">{roles.filter(r => r.level <= 1).length}</span>
+                <span className="mr-stat-lbl">Pimpinan</span>
+              </div>
+              <div className="mr-stat-divider" />
+              <div className="mr-stat">
+                <span className="mr-stat-val">{roles.filter(r => r.level >= 4).length}</span>
+                <span className="mr-stat-lbl">Dosen/Tendik</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── Table ── */}
-        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        {/* ── Toolbar ── */}
+        <div className="mr-toolbar">
+          <div className="mr-toolbar-left">
+            <input
+              className="mr-search"
+              placeholder="Cari nama atau unit..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <select
+              className="mr-select"
+              value={filterLevel === "all" ? "all" : String(filterLevel)}
+              onChange={e => setFilterLevel(e.target.value === "all" ? "all" : Number(e.target.value))}
+            >
+              <option value="all">Semua Level</option>
+              {levelOptions.map(lv => <option key={lv} value={lv}>Level {lv} — {LEVEL_LABEL[lv]}</option>)}
+            </select>
+            <span className="mr-count">{filtered.length} role ditemukan</span>
+          </div>
+          <div className="mr-toolbar-right">
+            <button onClick={openTambah} className="mr-btn-primary">+ Tambah Role</button>
+          </div>
+        </div>
+
+        {/* ── Table Card ── */}
+        <div className="mr-table-card">
           {loading ? (
             <div style={{ padding: "60px 32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Memuat data...</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: "60px 32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-              {roles.length === 0 ? "Belum ada role. Klik \"Tambah Role\" untuk memulai." : "Tidak ada role yang sesuai filter."}
+              {roles.length === 0 ? "Belum ada role. Klik \"+ Tambah Role\" untuk memulai." : "Tidak ada role yang sesuai filter."}
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="mr-table">
               <thead>
-                <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e5e7eb" }}>
-                  {["No", "Nama Role", "Unit / Jabatan", "Level", ""].map((h, i) => (
-                    <th key={i} style={{ padding: "10px 16px", fontSize: 11, fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: i === 4 ? "right" : "left" }}>
-                      {h}
-                    </th>
+                <tr>
+                  {[
+                    { label: "No", cls: "center", w: "4%" },
+                    { label: "Nama Role", cls: "", w: "30%" },
+                    { label: "Unit / Jabatan", cls: "", w: "35%" },
+                    { label: "Level", cls: "center", w: "20%" },
+                    { label: "Aksi", cls: "center", w: "11%" },
+                  ].map((h, i) => (
+                    <th key={i} className={h.cls} style={{ width: h.w }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -298,37 +333,24 @@ export default function MasterRoleContent() {
                 {filtered.map((role, idx) => {
                   const c = LEVEL_COLOR[role.level] ?? LEVEL_COLOR[4];
                   return (
-                    <tr
-                      key={role.id}
-                      style={{ borderBottom: "1px solid #f3f4f6", transition: "background 0.1s" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "")}
-                    >
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: "#9ca3af", width: 40 }}>{idx + 1}</td>
-                      <td style={{ padding: "12px 16px" }}>
+                    <tr key={role.id}>
+                      <td style={{ textAlign: "center", fontSize: 12, color: "#9ca3af" }}>{idx + 1}</td>
+                      <td>
                         <span style={{ fontWeight: 700, fontSize: 13.5, color: "#111827" }}>{role.name}</span>
                       </td>
-                      <td style={{ padding: "12px 16px" }}>
-                        <span style={{ fontSize: 13, color: role.unitNama ? "#374151" : "#d1d5db" }}>
-                          {role.unitNama || "—"}
-                        </span>
+                      <td>
+                        <span style={{ fontSize: 13, color: role.unitNama ? "#374151" : "#d1d5db" }}>{role.unitNama || "—"}</span>
                       </td>
-                      <td style={{ padding: "12px 16px" }}>
+                      <td style={{ textAlign: "center" }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
                           <span style={{ fontSize: 10, opacity: 0.7 }}>L{role.level}</span>
                           {LEVEL_LABEL[role.level] ?? `Level ${role.level}`}
                         </span>
                       </td>
-                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <button
-                            onClick={() => openEdit(role)}
-                            style={{ padding: "5px 12px", borderRadius: 7, border: "1px solid #e5e7eb", background: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#374151" }}
-                          >Edit</button>
-                          <button
-                            onClick={() => setDeleteTarget(role)}
-                            style={{ padding: "5px 12px", borderRadius: 7, border: "1px solid #fecaca", background: "#fff5f5", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}
-                          >Hapus</button>
+                      <td style={{ textAlign: "center" }}>
+                        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                          <button onClick={() => openEdit(role)} className="mr-btn-edit">Edit</button>
+                          <button onClick={() => setDeleteTarget(role)} className="mr-btn-del">Hapus</button>
                         </div>
                       </td>
                     </tr>

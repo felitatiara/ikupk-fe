@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -1280,31 +1280,55 @@ export default function MasterIndikatorContent() {
 
       {/* ── Main content (hidden while in edit mode) ── */}
       {!editMode && <>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
+      {/* Hero Card */}
+      <div className="mi-hero">
         <div>
           <h3 className="ikupk-card-title">Master Indikator</h3>
-          <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>Daftar Sasaran Program dan hierarki indikator kinerja.</p>
+          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>Kelola Data Indikator Kinerja Utama dan Perjanjian Kinerja</p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="mi-stats-card">
+          <div className="mi-stats-grid">
+            <div className="mi-stat">
+              <span className="mi-stat-val">{hierarchy.length}</span>
+              <span className="mi-stat-lbl">Sasaran Program</span>
+            </div>
+            <div className="mi-stat-divider" />
+            <div className="mi-stat">
+              <span className="mi-stat-val">{hierarchy.reduce((a, h) => a + h.children.length, 0)}</span>
+              <span className="mi-stat-lbl">Indikator Kinerja</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="mi-toolbar">
+        <div className="mi-toolbar-left">
+          <div className="mi-jenis-tabs">
+            {([
+              { key: "IKU", label: "Indikator Kinerja Utama", color: "#FF7900" },
+              { key: "PK", label: "Perjanjian Kinerja", color: "#7c3aed" },
+              { key: "PK_IKU", label: "PK Berbasis IKU", color: "#0891b2" },
+            ] as const).map(({ key, label, color }) => (
+              <button key={key} onClick={() => setFilterJenis(key)}
+                className={`mi-jenis-tab${filterJenis === key ? " mi-jenis-tab--active" : ""}`}
+                style={filterJenis === key ? { background: color, borderColor: color } : {}}>
+                {label}
+              </button>
+            ))}
+          </div>
+          
+        </div>
+        <div className="mi-toolbar-right">
           {selectedIds.size > 0 && (
-            <button onClick={() => setConfirmDeleteSelected(true)}
-              style={{
-                padding: "8px 16px", borderRadius: 8, border: "none", background: "#dc2626",
-                fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#fff"
-              }}>
+            <button onClick={() => setConfirmDeleteSelected(true)} className="mi-btn mi-btn--danger">
               Hapus ({selectedIds.size})
             </button>
           )}
-          <button onClick={() => setConfirmDeleteOpen(true)}
-            style={{
-              padding: "8px 16px", borderRadius: 8, border: "1px solid #fca5a5",
-              background: "#fff7f7", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#dc2626"
-            }}>
+          <button onClick={() => setConfirmDeleteOpen(true)} className="mi-btn mi-btn--ghost-danger">
             Hapus Semua
           </button>
-          <button
-            onClick={() => setImportTurunanOpen(true)}
-            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #FF7900", background: "#fff8f0", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#c05a00" }}>
+          <button onClick={() => setImportTurunanOpen(true)} className="mi-btn mi-btn--ghost-orange">
             Import Turunan
           </button>
           <button
@@ -1315,77 +1339,47 @@ export default function MasterIndikatorContent() {
               setImportFileError(null);
               setImportModalOpen(true);
             }}
-            style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #0284c7", background: "#f0f9ff", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#0369a1" }}>
+            className="mi-btn mi-btn--ghost-blue">
             Import Indikator
           </button>
           <button onClick={() => { window.location.href = "/admin/master-indikator/tambah"; }}
-            style={{
-              padding: "8px 20px", borderRadius: 8, border: "none", background: "#FF7900",
-              fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#fff"
-            }}>
+            className="mi-btn mi-btn--primary">
             + Tambah
           </button>
         </div>
       </div>
 
-      {/* ── Jenis Toggle ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "inline-flex", background: "#f3f4f6", borderRadius: 10, padding: 3, gap: 2 }}>
-          {([
-            { key: "IKU", label: "Indikator Kinerja Utama", color: "#FF7900" },
-            { key: "PK", label: "Perjanjian Kinerja", color: "#7c3aed" },
-            { key: "PK_IKU", label: "PK Berbasis IKU", color: "#0891b2" },
-          ] as const).map(({ key, label, color }) => (
-            <button key={key} onClick={() => setFilterJenis(key)}
-              style={{
-                padding: "6px 18px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                background: filterJenis === key ? color : "transparent",
-                color: filterJenis === key ? "#fff" : "#6b7280", transition: "all 0.15s"
-              }}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <span style={{ fontSize: 13, color: "#9ca3af" }}>
-          <b style={{ color: "#374151" }}>{hierarchy.length}</b> Sasaran Program
-        </span>
-      </div>
-
       {/* ── Table Card ── */}
-      <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      <div className="mi-table-card">
         {loading && (
           <div style={{ padding: "60px 24px", textAlign: "center", color: "#9ca3af" }}>
-            <div className="spinner-border spinner-border-sm text-secondary me-2" />
-            <span style={{ fontSize: 14 }}>Memuat data indikator...</span>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Memuat data indikator…</span>
           </div>
         )}
         {!loading && hierarchy.length === 0 && (
           <div style={{ padding: "56px 24px", textAlign: "center" }}>
             <div style={{ fontSize: 40, marginBottom: 8, opacity: 0.35 }}>📋</div>
             <div style={{ fontWeight: 700, color: "#374151", marginBottom: 4 }}>Belum Ada Indikator</div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>Klik "+ Tambah" untuk membuat indikator baru.</div>
+            <div style={{ fontSize: 13, color: "#9ca3af" }}>Klik tombol tambah untuk membuat indikator baru.</div>
           </div>
         )}
         {!loading && hierarchy.length > 0 && (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table className="mi-table">
               <thead>
-                <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
-                  <th style={{ padding: "11px 14px", textAlign: "center", width: 44 }}>
+                <tr>
+                  <th className="is-center" style={{ width: 44 }}>
                     <input type="checkbox"
                       checked={selectedIds.size === hierarchy.length && hierarchy.length > 0}
-                      onChange={toggleSelectAll} style={{ cursor: "pointer" }} />
+                      onChange={toggleSelectAll} style={{ cursor: "pointer", accentColor: "#fff" }} />
                   </th>
                   {[
-                    { label: "Kode", w: "8%" }, { label: "Sasaran Program", w: "26%" },
-                    { label: filterJenis === "IKU" ? "Indikator Kinerja" : filterJenis === "PK_IKU" ? "Indikator PK (Berbasis IKU)" : "Indikator PK", w: "auto" },
-                    { label: "Aksi", w: "9%" },
+                    { label: "Kode", w: "8%", cls: "is-center" },
+                    { label: "Sasaran Program", w: "26%", cls: "is-left" },
+                    { label: filterJenis === "IKU" ? "Indikator Kinerja" : filterJenis === "PK_IKU" ? "Indikator PK (Berbasis IKU)" : "Indikator PK", w: "auto", cls: "is-left" },
+                    { label: "Aksi", w: "9%", cls: "is-center" },
                   ].map((h, i) => (
-                    <th key={i} style={{
-                      padding: "11px 14px", fontSize: 11, fontWeight: 700, color: "#9ca3af",
-                      textTransform: "uppercase", letterSpacing: "0.06em",
-                      textAlign: i === 3 ? "center" : "left", width: h.w, whiteSpace: "nowrap"
-                    }}>{h.label}</th>
+                    <th key={i} className={h.cls} style={{ width: h.w }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -1396,57 +1390,74 @@ export default function MasterIndikatorContent() {
                   const IKU_KAT: Record<string, string> = { '1':'Wajib','2':'Wajib','3':'Wajib','5':'Wajib','7':'Wajib','4':'Pilihan','6':'Pilihan','8':'Pilihan','10':'Pilihan' };
 
                   const renderRows = (rows: typeof rowsPerLevel0): React.ReactNode[] =>
-                    rows.flatMap((row, rowGroupIdx) => {
+                    rows.map((row, rowGroupIdx) => {
                       const level0Group = hierarchy.find(h => h.record.id === row.parent.id) ?? null;
                       const isLastGroup = rowGroupIdx === rows.length - 1;
-                      return row.entries.map((entry, idx) => (
-                        <tr key={`${row.parent.id}-${entry.key}`} style={{ borderBottom: idx === row.entries.length - 1 && !isLastGroup ? "2px solid #f0f0f0" : "1px solid #f8f8f8" }}>
-                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: 14, textAlign: "center", verticalAlign: "middle" }}><input type="checkbox" checked={selectedIds.has(row.parent.id)} onChange={() => toggleSelect(row.parent.id)} style={{ cursor: "pointer" }} /></td>}
-                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13, borderRight: "1px solid #f3f4f6" }}>{row.parent.kode}</td>}
-                          {idx === 0 && <td rowSpan={row.entries.length} style={{ padding: "14px", verticalAlign: "top", borderRight: "1px solid #f3f4f6" }}><span style={{ fontWeight: 700, fontSize: 13, color: "#111", lineHeight: 1.5 }}>{row.parent.nama}</span></td>}
-                          <td style={{ padding: 0 }}>
-                            {entry.level === 1 ? (
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 14px 11px 20px" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <span style={{ width: 3, height: 14, borderRadius: 2, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : filterJenis === "PK_IKU" ? "#0891b2" : "#7c3aed" }} />
-                                  <span style={{ fontWeight: 600, color: "#1f2937", fontSize: 12 }}>{entry.text}</span>
+                      return (
+                        <tr key={`group-${row.parent.id}`} style={{ borderBottom: isLastGroup ? "1px solid #eef2f7" : "10px solid #f8fafc", background: "#fff" }}>
+                          <td style={{ padding: "18px 14px", textAlign: "center", verticalAlign: "top" }}>
+                            <input type="checkbox" checked={selectedIds.has(row.parent.id)} onChange={() => toggleSelect(row.parent.id)} style={{ cursor: "pointer", width: 16, height: 16 }} />
+                          </td>
+                          <td style={{ padding: "18px 14px", verticalAlign: "top", borderRight: "1px solid #eef2f7" }}>
+                            <span style={{ display: "inline-flex", minWidth: 34, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 9, background: "#f1f5f9", color: "#334155", fontFamily: "monospace", fontWeight: 800, fontSize: 13 }}>
+                              {row.parent.kode}
+                            </span>
+                          </td>
+                          <td style={{ padding: "18px 18px", verticalAlign: "top", borderRight: "1px solid #eef2f7" }}>
+                            <div style={{ fontWeight: 800, fontSize: 14, color: "#111827", lineHeight: 1.45 }}>{row.parent.nama}</div>
+                            <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 9px", borderRadius: 999, background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b", fontSize: 11, fontWeight: 800 }}>
+                              {row.entries.filter(e => e.level === 1).length} indikator
+                            </div>
+                          </td>
+                          <td style={{ padding: 0, verticalAlign: "top" }}>
+                            <div style={{ display: "grid" }}>
+                              {row.entries.map((entry) => (
+                                <div key={entry.key} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                  {entry.level === 1 ? (
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "13px 16px 13px 22px", background: "#ffffff" }}>
+                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+                                        <span style={{ width: 4, height: 18, marginTop: 1, borderRadius: 3, flexShrink: 0, background: filterJenis === "IKU" ? "#FF7900" : filterJenis === "PK_IKU" ? "#0891b2" : "#7c3aed" }} />
+                                        <span style={{ fontWeight: 800, color: "#1f2937", fontSize: 13, lineHeight: 1.45 }}>{entry.text}</span>
+                                      </div>
+                                      <button
+                                        onClick={() => { const l1Id = entry.key.split('-')[1]; window.location.href = `/admin/master-indikator/${l1Id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }}
+                                        style={{ flexShrink: 0, padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: "pointer", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", whiteSpace: "nowrap" }}
+                                      >
+                                        Alur
+                                      </button>
+                                    </div>
+                                  ) : entry.level === 2 ? (
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "11px 16px 11px 52px", background: "#fcfdff" }}>
+                                      <span style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.6, flexShrink: 0, fontFamily: "monospace" }}> |_</span>
+                                      <span style={{ color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>{entry.text}</span>
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 16px 10px 82px", background: "#ffffff" }}>
+                                      <span style={{ color: "#dbe2ea", fontSize: 12, lineHeight: 1.6, flexShrink: 0, fontFamily: "monospace" }}> |_</span>
+                                      <span style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
+                                      {filterJenis === "PK_IKU" && (() => {
+                                        const l3Id = Number(entry.key.replace("l3-", ""));
+                                        const l3 = indikatorList.find(i => i.id === l3Id);
+                                        return l3?.linkedIkuId ? (
+                                          <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 6, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", lineHeight: 1.4 }}>IKU</span>
+                                        ) : null;
+                                      })()}
+                                    </div>
+                                  )}
                                 </div>
-                                <button
-                                  onClick={() => { const l1Id = entry.key.split('-')[1]; window.location.href = `/admin/master-indikator/${l1Id}/cascade?jenis=${filterJenis}&tahun=${targetTahun}`; }}
-                                  style={{ flexShrink: 0, padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: "1px solid #bae6fd", background: "#f0f9ff", color: "#0369a1", whiteSpace: "nowrap" }}
-                                >
-                                  Alur
-                                </button>
-                              </div>
-                            ) : entry.level === 2 ? (
-                              <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 40px" }}>
-                                <span style={{ color: "#d1d5db", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
-                                <span style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
-                              </div>
-                            ) : (
-                              <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "7px 14px 7px 64px" }}>
-                                <span style={{ color: "#e5e7eb", fontSize: 11, lineHeight: "1.7", flexShrink: 0, fontFamily: "monospace" }}>└─</span>
-                                <span style={{ color: "#9ca3af", fontSize: 12, lineHeight: 1.5 }}>{entry.text}</span>
-                                {filterJenis === "PK_IKU" && (() => {
-                                  const l3Id = Number(entry.key.replace("l3-", ""));
-                                  const l3 = indikatorList.find(i => i.id === l3Id);
-                                  return l3?.linkedIkuId ? (
-                                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", lineHeight: "1.6" }}>IKU</span>
-                                  ) : null;
-                                })()}
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ padding: "18px", textAlign: "center", verticalAlign: "top", borderLeft: "1px solid #eef2f7" }}>
+                            {level0Group && (
+                              <div style={{ display: "grid", gap: 8, minWidth: 92 }}>
+                                <button onClick={() => handleEditClick(level0Group)} style={{ padding: "8px 14px", borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: "pointer", border: "1px solid #d7dde8", background: "#fff", color: "#334155" }}>Edit</button>
+                                <button onClick={() => setConfirmDeleteSingleId(row.parent.id)} style={{ padding: "8px 14px", borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: "pointer", border: "1px solid #fecaca", background: "#fff7f7", color: "#dc2626" }}>Hapus</button>
                               </div>
                             )}
                           </td>
-                          {idx === 0 && level0Group && (
-                            <td rowSpan={row.entries.length} style={{ padding: "14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f3f4f6" }}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-                                <button onClick={() => handleEditClick(level0Group)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #e5e7eb", background: "#fff", color: "#374151", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.borderColor = "#d1d5db")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>Edit</button>
-                                <button onClick={() => setConfirmDeleteSingleId(row.parent.id)} style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626", width: "100%" }} onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")} onMouseLeave={e => (e.currentTarget.style.background = "#fff7f7")}>Hapus</button>
-                              </div>
-                            </td>
-                          )}
                         </tr>
-                      ));
+                      );
                     });
 
                   if (filterJenis !== 'IKU') return renderRows(rowsPerLevel0);
@@ -1458,7 +1469,7 @@ export default function MasterIndikatorContent() {
                     if (items.length === 0) return [];
                     const isCollapsed = collapsedMasterKat.has(kat);
                     return [
-                      <tr key={`master-kat-${kat}`} onClick={() => setCollapsedMasterKat(prev => { const s = new Set(prev); s.has(kat) ? s.delete(kat) : s.add(kat); return s; })} style={{ background: "#1e3a5f", cursor: "pointer", userSelect: "none" }}>
+                      <tr key={`master-kat-${kat}`} onClick={() => setCollapsedMasterKat(prev => { const s = new Set(prev); if (s.has(kat)) s.delete(kat); else s.add(kat); return s; })} style={{ background: "#1e3a5f", cursor: "pointer", userSelect: "none" }}>
                         <td colSpan={5} style={{ padding: "9px 16px", color: "#fff", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em" }}>
                           <span style={{ marginRight: 8, fontSize: 10 }}>{isCollapsed ? '▶' : '▼'}</span>
                           {KAT_LABEL[kat]}
@@ -1757,6 +1768,73 @@ export default function MasterIndikatorContent() {
           </div>
         </div>
       )}
+
+      <style>{`
+        .mi-hero {
+          display: flex; justify-content: space-between; gap: 24px; align-items: stretch;
+          margin-bottom: 18px; padding: 22px 24px; border: 1px solid #e2e8f0; border-radius: 18px;
+          background: linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #fff8f0 100%);
+          box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+        }
+        .mi-eyebrow { margin: 0 0 6px; color: #FF7900; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+        .mi-title { margin: 0 0 8px; color: #0f172a; font-size: 22px; font-weight: 900; }
+        .mi-subtitle { max-width: 560px; margin: 0; color: #64748b; font-size: 14px; line-height: 1.5; }
+        .mi-stats-card {
+          min-width: 300px; padding: 16px 20px; border: 1px solid #fed7aa; border-radius: 14px;
+          background: #ffffff; display: flex; align-items: center;
+        }
+        .mi-stats-grid { display: flex; align-items: center; gap: 0; width: 100%; }
+        .mi-stat { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+        .mi-stat-val { font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1; }
+        .mi-stat-lbl { font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; text-align: center; }
+        .mi-stat-divider { width: 1px; height: 40px; background: #e2e8f0; margin: 0 6px; flex-shrink: 0; }
+        .mi-toolbar {
+          display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+          margin-bottom: 18px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 14px;
+          background: #ffffff; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+        }
+        .mi-toolbar-left, .mi-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .mi-jenis-tabs { display: flex; background: #f3f4f6; border-radius: 10px; padding: 3px; gap: 2px; }
+        .mi-jenis-tab {
+          padding: 6px 16px; border-radius: 8px; border: 1.5px solid transparent;
+          font-size: 12px; font-weight: 700; cursor: pointer; background: transparent;
+          color: #6b7280; transition: all 0.15s;
+        }
+        .mi-jenis-tab--active { color: #fff; }
+        .mi-count-badge { font-size: 13px; color: #64748b; padding-left: 6px; }
+        .mi-count-badge b { color: #374151; }
+        .mi-btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 9px 18px; border-radius: 12px; font-size: 13px; font-weight: 700;
+          cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        }
+        .mi-btn:not(:disabled):hover { transform: translateY(-1px); opacity: 0.92; }
+        .mi-btn:not(:disabled):active { transform: translateY(0); opacity: 1; }
+        .mi-btn--primary { border: none; background: #16a34a; color: #fff; box-shadow: 0 3px 10px rgba(22,163,74,0.28); }
+        .mi-btn--ghost-blue { border: none; background: #2563eb; color: #fff; box-shadow: 0 3px 10px rgba(37,99,235,0.25); }
+        .mi-btn--ghost-orange { border: none; background: #ca8a04; color: #fff; box-shadow: 0 3px 10px rgba(202,138,4,0.25); }
+        .mi-btn--ghost-danger { border: none; background: #dc2626; color: #fff; box-shadow: 0 3px 10px rgba(220,38,38,0.22); }
+        .mi-btn--danger { border: none; background: #b91c1c; color: #fff; box-shadow: 0 3px 10px rgba(185,28,28,0.22); }
+        .mi-table-card {
+          overflow: hidden; border: 1px solid #e2e8f0; border-radius: 16px;
+          background: #ffffff; box-shadow: 0 8px 28px rgba(15, 23, 42, 0.07);
+        }
+        .mi-table { width: 100%; min-width: 1040px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+        .mi-table thead tr { background: #0f2f4f; }
+        .mi-table thead th {
+          padding: 14px 14px; border-bottom: 1px solid rgba(255,255,255,0.14);
+          color: #e8eef7; font-size: 11px; font-weight: 900; letter-spacing: 0.06em;
+          text-transform: uppercase; white-space: nowrap; text-align: center;
+        }
+        .mi-table thead th.is-left { text-align: left; }
+        .mi-table thead th.is-center { text-align: center; }
+        @media (max-width: 900px) {
+          .mi-hero { flex-direction: column; align-items: stretch; }
+          .mi-stats-card { min-width: 0; }
+          .mi-toolbar { flex-direction: column; align-items: stretch; }
+          .mi-toolbar-right { flex-wrap: wrap; }
+        }
+      `}</style>
       </>}
     </div>
   );

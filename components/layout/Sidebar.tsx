@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   CheckCircle2,
@@ -17,6 +18,7 @@ import {
   Target,
   UsersRound,
 } from "lucide-react";
+import { getRoleFeatureKeys } from "@/lib/api";
 
 interface SidebarProps {
   role?: string;
@@ -34,8 +36,38 @@ interface MenuItem {
 
 export default function Sidebar({ role = 'admin', roleLevel, authRole }: SidebarProps) {
   const pathname = usePathname();
+  const [sidebarState, setSidebarState] = useState<{
+    primaryRoleLevel: number | null;
+    allowedFeatureKeys: string[] | null;
+  }>({ primaryRoleLevel: null, allowedFeatureKeys: null });
 
   const isSuperAdmin = (roleLevel ?? 99) === 0;
+
+  useEffect(() => {
+    try {
+      const userStr = sessionStorage.getItem("user");
+      if (!userStr) return;
+      const user = JSON.parse(userStr);
+
+      // Read primary role level from the roles array — unaffected by switchRole which only
+      // overwrites roleLevel to the currently active role (e.g. dosen = 4 after switching).
+      let primaryLevel: number | null = null;
+      if (Array.isArray(user?.roles) && user.roles.length > 0) {
+        const primary = user.roles.find((r: { isPrimary?: boolean }) => r.isPrimary) ?? user.roles[0];
+        if (primary?.level != null) primaryLevel = primary.level as number;
+      }
+
+      const featuresFetch = user?.roleId
+        ? getRoleFeatureKeys(user.roleId)
+        : Promise.resolve<string[]>([]);
+
+      featuresFetch
+        .then(keys => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: keys }))
+        .catch(() => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: null }));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const getMenus = (): MenuItem[] => {
     if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
@@ -43,19 +75,29 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
         { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard", icon: LayoutDashboard },
         { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/pimpinan/monitoring-unit-kerja", icon: BarChart3 },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk", icon: Target },
-        { key: "validasi_realisasi", label: "Validasi Realisasi", href: "/pimpinan/validasi-realisasi", icon: CheckCircle2 },
+        { key: "verifikasi_capaian", label: "Verifikasi Capaian", href: "/pimpinan/validasi-realisasi", icon: CheckCircle2 },
         { key: "skp", label: "SKP", href: "/pimpinan/skp", icon: FileSpreadsheet },
       ];
     }
 
     if (role === 'user') {
       const isAtasan = (roleLevel ?? 4) < 4;
+      // Use primaryRoleLevel from sessionStorage so switchRole doesn't affect this check.
+      // Hide SKP from the user/dosen menu when:
+      //   (a) primaryLevel < 3: user has a pimpinan workspace (/pimpinan/skp) — SKP lives there, OR
+      //   (b) primaryLevel < 4 AND current active level ≥ 4: user has a pimpinan/atasan primary role
+      //       (e.g. Kaprodi=3) but is currently viewing in Dosen/Tendik secondary-role mode.
+      // Multi-role users only ever have ONE SKP page — the one for their highest role.
+      const activeLevel = roleLevel ?? 4;
+      const hasPimpinanPrimary = primaryRoleLevel !== null
+        ? primaryRoleLevel < 3 || (primaryRoleLevel < 4 && activeLevel >= 4)
+        : activeLevel < 3;
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard", icon: LayoutDashboard },
         { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/user/monitoring-unit-kerja", icon: BarChart3 },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/user/iku-pk", icon: Target },
-        ...(isAtasan ? [{ key: "validasi_realisasi", label: "Validasi Realisasi", href: "/user/validasi-realisasi", icon: CheckCircle2 }] : []),
-        { key: "skp", label: "SKP", href: "/user/skp", icon: FileSpreadsheet },
+        ...(isAtasan ? [{ key: "verifikasi_capaian", label: "Verifikasi Capaian", href: "/user/validasi-realisasi", icon: CheckCircle2 }] : []),
+        ...(!hasPimpinanPrimary ? [{ key: "skp", label: "SKP", href: "/user/skp", icon: FileSpreadsheet }] : []),
       ];
     }
 
@@ -77,7 +119,13 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
     ];
   };
 
-  const menus = getMenus();
+  const { primaryRoleLevel, allowedFeatureKeys } = sidebarState;
+  const allMenus = getMenus();
+
+  // Apply feature restrictions: if no keys configured (null or empty) → show all
+  const menus = (allowedFeatureKeys === null || allowedFeatureKeys.length === 0)
+    ? allMenus
+    : allMenus.filter(m => m.key === 'beranda' || allowedFeatureKeys.includes(m.key));
 
   const isCurrentPage = (href: string) => {
     return pathname === href || pathname?.startsWith(href + '/');

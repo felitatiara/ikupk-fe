@@ -1207,6 +1207,7 @@ export interface RealisasiSubmission {
   dosenEmail: string;
   fileCount: number;
   validFileCount: number | null;
+  catatanRevisi: string | null;
   targetDosen: number | null;
   status: string;
   tahun: string | null;
@@ -1243,6 +1244,51 @@ export async function validateRealisasiAtasan(
     body: JSON.stringify({ validFileCount }),
   });
   if (!res.ok) throw new Error('Failed to validate submission');
+}
+
+/** Atasan meminta user merevisi submission — set status needs_revision */
+export async function requestRevision(
+  id: number,
+  catatan?: string,
+  token?: string,
+): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE_URL}/realisasi/${id}/request-revision`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ catatan }),
+  });
+  if (!res.ok) throw new Error('Gagal meminta revisi');
+}
+
+export interface NeedsRevisionItem {
+  id: number;
+  indikatorId: number;
+  indikatorKode: string;
+  indikatorNama: string;
+  periode: string | null;
+  realisasiAngka: number;
+  validFileCount: number | null;
+  keterangan: string | null;
+  catatanRevisi: string | null;
+  createdAt: string;
+}
+
+/** Daftar realisasi milik user yang sedang menunggu revisi */
+export async function getMyNeedsRevision(
+  userId: number,
+  tahun: string,
+): Promise<NeedsRevisionItem[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/my-needs-revision?userId=${userId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 export interface SubmissionPerIndikator {
@@ -1448,7 +1494,38 @@ export async function approveBawahanSkp(
   if (!res.ok) throw new Error('Failed to approve/reject SKP bawahan');
 }
 
-/** WD2: semua user yang punya realisasi validated_atasan */
+/**
+ * Pimpinan: daftar realisasi bawahan yang sudah divalidasi atasan langsung,
+ * dikelompokkan per bawahan → per indikator (mengikuti rantai disposisi).
+ */
+export async function getSubmissionsForPimpinan(pimpinanId: number, tahun: string): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/submissions-for-pimpinan?pimpinanId=${pimpinanId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/** Pimpinan memvalidasi capaian bawahan untuk satu indikator → validated_wd2 */
+export async function validatePimpinan(
+  pimpinanId: number,
+  bawahanId: number,
+  indikatorId: number,
+  tahun: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/validate-pimpinan`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pimpinanId, bawahanId, indikatorId, tahun }),
+  });
+  if (!res.ok) throw new Error('Failed to validate');
+}
+
+/** @deprecated Gunakan getSubmissionsForPimpinan */
 export async function getSubmissionsForWD2(tahun: string): Promise<any[]> {
   try {
     const res = await fetch(`${API_BASE_URL}/realisasi/submissions-for-wd2?tahun=${encodeURIComponent(tahun)}`);
@@ -1459,7 +1536,7 @@ export async function getSubmissionsForWD2(tahun: string): Promise<any[]> {
   }
 }
 
-/** WD2: validasi semua realisasi validated_atasan milik seorang user → validated_wd2 */
+/** @deprecated Gunakan validatePimpinan */
 export async function validateWD2Batch(userId: number, tahun: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/realisasi/skp-wd2/${userId}/validate`, {
     method: 'PATCH',
@@ -1692,16 +1769,20 @@ export async function signRencanaSKPPihakKedua(targetUserId: number, tahun: stri
 export interface SkpCheckerBawahan {
   checkerBawahan: SkpCheckerUser[];
   rencanaSKPBawahan: SkpCheckerUser[];
-  ekpBawahan: SkpCheckerUser[];
+  ekpBawahan: (SkpCheckerUser & { skpStatus: string; hasilStatus: string })[];
+  hasilCheckerBawahan: (SkpCheckerUser & { hasilStatus: string })[];
+  hasilPenilaiDapatTTD: (SkpCheckerUser & { hasilStatus: string })[];
 }
 
 export async function getSkpCheckerBawahan(userId: number, tahun: string): Promise<SkpCheckerBawahan> {
+  const empty: SkpCheckerBawahan = { checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [], hasilCheckerBawahan: [], hasilPenilaiDapatTTD: [] };
   try {
     const res = await fetch(`${API_BASE_URL}/skp-penilai/checker/${userId}?tahun=${encodeURIComponent(tahun)}`);
-    if (!res.ok) return { checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] };
-    return res.json();
+    if (!res.ok) return empty;
+    const data = await res.json();
+    return { ...empty, ...data };
   } catch {
-    return { checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] };
+    return empty;
   }
 }
 
@@ -1712,6 +1793,66 @@ export async function checkRencanaSKPChecker(targetUserId: number, tahun: string
     body: JSON.stringify({ targetUserId, tahun, signature }),
   });
   if (!res.ok) throw new Error('Gagal memvalidasi Rencana SKP');
+  return res.json();
+}
+
+// ── Hasil SKP ─────────────────────────────────────────────────────────────────
+
+export interface SkpHasilStatusData {
+  userId: number;
+  tahun: string;
+  status: 'pending' | 'signed_pegawai' | 'checked' | 'signed_penilai';
+  signaturePegawai: string | null;
+  signatureChecker: string | null;
+  signaturePenilai: string | null;
+  signedAtPegawai: string | null;
+  checkedAt: string | null;
+  signedAtPenilai: string | null;
+}
+
+const EMPTY_HASIL = (userId: number, tahun: string): SkpHasilStatusData => ({
+  userId, tahun, status: 'pending',
+  signaturePegawai: null, signatureChecker: null, signaturePenilai: null,
+  signedAtPegawai: null, checkedAt: null, signedAtPenilai: null,
+});
+
+export async function getSkpHasilStatus(userId: number, tahun: string): Promise<SkpHasilStatusData> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/skp-hasil/status?userId=${userId}&tahun=${encodeURIComponent(tahun)}`);
+    if (!res.ok) return EMPTY_HASIL(userId, tahun);
+    return res.json();
+  } catch {
+    return EMPTY_HASIL(userId, tahun);
+  }
+}
+
+export async function submitHasilSKPPegawai(userId: number, tahun: string, signature: string | null): Promise<SkpHasilStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/submit-pegawai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, tahun, signature }),
+  });
+  if (!res.ok) throw new Error('Gagal mengajukan Hasil SKP');
+  return res.json();
+}
+
+export async function checkHasilSKPChecker(targetUserId: number, tahun: string): Promise<SkpHasilStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/check-checker`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId, tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal memvalidasi Hasil SKP');
+  return res.json();
+}
+
+export async function signHasilSKPPenilai(targetUserId: number, tahun: string, signature: string | null): Promise<SkpHasilStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/sign-penilai`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetUserId, tahun, signature }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan tanda tangan Pejabat Penilai');
   return res.json();
 }
 
@@ -1751,4 +1892,73 @@ export async function getViewableRoleIds(viewerRoleId: number): Promise<number[]
   const res = await fetch(`${API_BASE_URL}/role-view-permissions/${viewerRoleId}/viewable-ids`);
   if (!res.ok) return [];
   return res.json();
+}
+
+// ── RBAC Feature Permissions ───────────────────────────────────────────────────
+
+export interface RoleFeaturePermission {
+  id: number;
+  roleId: number;
+  featureKey: string;
+}
+
+export async function getAllRoleFeaturePermissions(): Promise<RoleFeaturePermission[]> {
+  const res = await fetch(`${API_BASE_URL}/role-feature-permissions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getRoleFeatureKeys(roleId: number): Promise<string[]> {
+  const res = await fetch(`${API_BASE_URL}/role-feature-permissions/${roleId}/feature-keys`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function setRoleFeaturePermissions(roleId: number, featureKeys: string[]): Promise<RoleFeaturePermission[]> {
+  const res = await fetch(`${API_BASE_URL}/role-feature-permissions/${roleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKeys }),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan konfigurasi fitur');
+  return res.json();
+}
+
+// ── Verifikasi Ekspektasi ──────────────────────────────────────────────────────
+
+export interface EkspektasiBawahanRow {
+  userId: number;
+  nama: string;
+  email: string;
+  totalIndikator: number;
+  validatedCount: number;
+  ekspektasi: 'melebihi' | 'sesuai' | 'di_bawah' | null;
+  catatan: string | null;
+}
+
+export async function getEkspektasiBawahan(penilaiId: number, tahun: string): Promise<EkspektasiBawahanRow[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/realisasi/ekspektasi-bawahan?penilaiId=${penilaiId}&tahun=${encodeURIComponent(tahun)}`,
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertEkspektasi(data: {
+  penilaiId: number;
+  targetUserId: number;
+  tahun: string;
+  ekspektasi: string;
+  catatan?: string;
+}): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/realisasi/ekspektasi`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Gagal menyimpan penilaian ekspektasi');
 }

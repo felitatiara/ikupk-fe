@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
@@ -41,7 +41,7 @@ export default function RealisasiBiroPKUContent() {
   const [importing, setImporting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // -- Helpers -----------------------------------------------------------------
 
   /** Kumpulkan semua leaf (L2 IKU / L3 PK) dari satu L0 */
   function leafIdsOf(l0: IndikatorGrouped, jenis: string): number[] {
@@ -79,7 +79,7 @@ export default function RealisasiBiroPKUContent() {
     return ids.reduce((s, id) => s + (realisasiCounts[id] ?? 0), 0);
   }
 
-  // ── Data fetch ───────────────────────────────────────────────────────────────
+  // -- Data fetch ---------------------------------------------------------------
 
   useEffect(() => {
     getAvailableYears()
@@ -131,7 +131,7 @@ export default function RealisasiBiroPKUContent() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Edit / Save ──────────────────────────────────────────────────────────────
+  // -- Edit / Save --------------------------------------------------------------
 
   function startEdit(leafId: number) {
     const existing = validasiData.find((v) => v.indikatorId === leafId);
@@ -170,7 +170,7 @@ export default function RealisasiBiroPKUContent() {
     }
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────────
+  // -- Export -------------------------------------------------------------------
 
   async function handleExport() {
     setExporting(true);
@@ -258,7 +258,7 @@ export default function RealisasiBiroPKUContent() {
     }
   }
 
-  // ── Import ───────────────────────────────────────────────────────────────────
+  // -- Import -------------------------------------------------------------------
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -314,7 +314,7 @@ export default function RealisasiBiroPKUContent() {
     }
   }
 
-  // ── Render tabel hierarki ────────────────────────────────────────────────────
+  // -- Render tabel hierarki ----------------------------------------------------
 
   function renderLeafInputCell(leafId: number) {
     const isEditing = editingId === leafId;
@@ -406,7 +406,7 @@ export default function RealisasiBiroPKUContent() {
       const l0Hasil = sumHasil(l0Ids);
       const l0Realisasi = sumRealisasiIds(l0Ids);
 
-      // ── L0 row ──
+      // -- L0 row --
       rows.push(
         <tr key={`l0-${l0.id}`} style={{ background: "#f5f7fa", borderBottom: "1px solid #f0f0f0", borderTop: "1px solid #f0f0f0" }}>
           <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13 }}>{l0.kode}</td>
@@ -426,7 +426,7 @@ export default function RealisasiBiroPKUContent() {
         const subHasil = sumHasil(subIds);
         const subRealisasi = sumRealisasiIds(subIds);
 
-        // ── L1 row ──
+        // -- L1 row --
         rows.push(
           <tr key={`l1-${sub.id}`} style={{ background: "#fff", borderBottom: "1px solid #f8f8f8" }}>
             <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>{sub.kode}</td>
@@ -442,7 +442,7 @@ export default function RealisasiBiroPKUContent() {
 
         for (const child of sub.children) {
           if (selectedJenis === "IKU") {
-            // ── L2 = leaf IKU ──
+            // -- L2 = leaf IKU --
             const isEditing = editingId === child.id;
             rows.push(
               <tr key={`l2-${child.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f8f8f8" }}>
@@ -460,7 +460,7 @@ export default function RealisasiBiroPKUContent() {
               </tr>,
             );
           } else {
-            // ── L2 = intermediate PK ──
+            // -- L2 = intermediate PK --
             const childIds = child.children.map((l3) => l3.id);
             const childHasil = sumHasil(childIds);
             const childRealisasi = sumRealisasiIds(child.children.map((l3) => l3.id));
@@ -478,7 +478,7 @@ export default function RealisasiBiroPKUContent() {
             );
 
             for (const l3 of child.children) {
-              // ── L3 = leaf PK ──
+              // -- L3 = leaf PK --
               const l3Realisasi = realisasiCounts[l3.id] ?? 0;
               const isEditing = editingId === l3.id;
               rows.push(
@@ -504,88 +504,156 @@ export default function RealisasiBiroPKUContent() {
     return rows;
   }
 
-  // ── Submitted count ──────────────────────────────────────────────────────────
+  // -- Submitted count ----------------------------------------------------------
 
   const leafIds = allLeafIds(selectedJenis);
   const submitted = validasiData.filter((v) => leafIds.includes(v.indikatorId) && v.jumlahValid != null).length;
   const total = leafIds.length;
+  const progressPct = total > 0 ? Math.round((submitted / total) * 100) : 0;
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // -- Render -------------------------------------------------------------------
 
   return (
-    <div>
+    <div className="biro-pku-page">
       <PageTransition>
-        <h3 className="ikupk-card-title">Input Hasil Verifikasi Biro PKU</h3>
-
-        {/* Filter bar */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Jenis</label>
-            <select value={selectedJenis} onChange={(e) => setSelectedJenis(e.target.value)}
-              style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, background: "#fff" }}>
-              <option value="IKU">Indikator Kinerja Utama (IKU)</option>
-              <option value="PK">Perjanjian Kinerja (PK)</option>
-            </select>
+        <div className="biro-pku-hero">
+          <div>
+            <h3 className="ikupk-card-title">Verifikasi Capaian</h3>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
+              Rekap realisasi, hasil validasi, keterangan, dan folder bukti untuk setiap indikator.
+            </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Tahun</label>
-            <select value={selectedTahun} onChange={(e) => setSelectedTahun(e.target.value)}
-              style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, background: "#fff" }}>
-              {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
+          <div className="biro-pku-progress-card">
+            <div className="biro-pku-progress-card__top">
+              <span>Progress Verifikasi</span>
+              <strong>{progressPct}%</strong>
+            </div>
+            <div className="biro-pku-progress-track">
+              <div className="biro-pku-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+            <div className="biro-pku-progress-meta">
+              <span>{submitted} dari {total} indikator</span>
+              <span>{selectedJenis} {selectedTahun}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="biro-pku-toolbar">
+          <div className="biro-pku-filter-grid">
+            <label className="biro-pku-field">
+              <span>Jenis</span>
+              <select value={selectedJenis} onChange={(e) => setSelectedJenis(e.target.value)}>
+                <option value="IKU">Indikator Kinerja Utama (IKU)</option>
+                <option value="PK">Perjanjian Kinerja (PK)</option>
+              </select>
+            </label>
+            <label className="biro-pku-field biro-pku-field--year">
+              <span>Tahun</span>
+              <select value={selectedTahun} onChange={(e) => setSelectedTahun(e.target.value)}>
+                {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </label>
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleExport} disabled={loading || exporting || grouped.length === 0}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: loading || exporting || grouped.length === 0 ? "not-allowed" : "pointer", opacity: loading || exporting || grouped.length === 0 ? 0.5 : 1 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+          <div className="biro-pku-actions">
+            <button onClick={handleExport} disabled={loading || exporting || grouped.length === 0} className="biro-pku-btn biro-pku-btn--secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
               {exporting ? "Mengekspor..." : "Export Excel"}
             </button>
-            <button onClick={() => importRef.current?.click()} disabled={importing || loading}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "none", background: "#0369a1", fontSize: 13, fontWeight: 600, color: "#fff", cursor: importing || loading ? "not-allowed" : "pointer", opacity: importing || loading ? 0.7 : 1 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+            <button onClick={() => importRef.current?.click()} disabled={importing || loading} className="biro-pku-btn biro-pku-btn--primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
               {importing ? "Mengimpor..." : "Import Excel"}
             </button>
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
           </div>
-
-          <div style={{ marginLeft: "auto", fontSize: 13, color: "#6b7280" }}>
-            <span style={{ fontWeight: 700, color: "#0369a1" }}>{submitted}</span>
-            {" "}dari{" "}
-            <span style={{ fontWeight: 700 }}>{total}</span>
-            {" "}indikator sudah diverifikasi
-          </div>
         </div>
 
-        {/* Table */}
-        <div style={{ background: "white", borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+        <div className="biro-pku-table-card">
           {loading ? (
-            <p style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data...</p>
+            <div className="biro-pku-state">Memuat data...</div>
           ) : grouped.length === 0 ? (
-            <p style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada indikator untuk {selectedJenis} {selectedTahun}.</p>
+            <div className="biro-pku-state biro-pku-state--empty">Tidak ada indikator untuk {selectedJenis} {selectedTahun}.</div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
-                  {[
-                    { label: "Kode", w: "7%" },
-                    { label: "Indikator", w: "auto" },
-                    { label: "Realisasi Diajukan", w: "12%" },
-                    { label: "Hasil Biro PKU", w: "12%" },
-                    { label: "Keterangan", w: "18%" },
-                    { label: "Link Folder", w: "9%" },
-                    { label: "Aksi", w: "9%" },
-                  ].map((h) => (
-                    <th key={h.label} style={{ width: h.w, padding: "11px 16px", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#9ca3af", textAlign: h.label === "Indikator" || h.label === "Keterangan" ? "left" : "center" }}>
-                      {h.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>{renderRows()}</tbody>
-            </table>
+            <div className="biro-pku-table-scroll">
+              <table className="biro-pku-table">
+                <thead>
+                  <tr>
+                    {[
+                      { label: "Kode", w: "8%" },
+                      { label: "Indikator", w: "auto" },
+                      { label: "Realisasi Diajukan", w: "12%" },
+                      { label: "Hasil Biro PKU", w: "12%" },
+                      { label: "Keterangan", w: "18%" },
+                      { label: "Link Folder", w: "10%" },
+                      { label: "Aksi", w: "9%" },
+                    ].map((h) => (
+                      <th key={h.label} style={{ width: h.w }} className={h.label === "Indikator" || h.label === "Keterangan" ? "is-left" : ""}>
+                        {h.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>{renderRows()}</tbody>
+              </table>
+            </div>
           )}
         </div>
+
+        <style>{`
+          .biro-pku-page { color: #111827; }
+          .biro-pku-hero {
+            display: flex; justify-content: space-between; gap: 24px; align-items: stretch;
+            margin-bottom: 18px; padding: 22px 24px; border: 1px solid #e2e8f0; border-radius: 18px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 58%, #eef6ff 100%);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+          }
+          .biro-pku-eyebrow { margin: 0 0 6px; color: #2563eb; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+          .biro-pku-title { margin: 0; color: #0f172a; font-size: 26px; font-weight: 900; }
+          .biro-pku-subtitle { max-width: 680px; margin: 8px 0 0; color: #64748b; font-size: 14px; line-height: 1.5; }
+          .biro-pku-progress-card { min-width: 300px; padding: 16px; border: 1px solid #dbeafe; border-radius: 14px; background: #ffffff; }
+          .biro-pku-progress-card__top, .biro-pku-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+          .biro-pku-progress-card__top span { color: #475569; font-size: 13px; font-weight: 800; }
+          .biro-pku-progress-card__top strong { color: #1d4ed8; font-size: 24px; font-weight: 900; }
+          .biro-pku-progress-track { height: 9px; margin: 12px 0 10px; overflow: hidden; border-radius: 999px; background: #e5e7eb; }
+          .biro-pku-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #0f9f6e); }
+          .biro-pku-progress-meta { color: #64748b; font-size: 12px; font-weight: 700; }
+          .biro-pku-toolbar {
+            display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 18px; padding: 14px;
+            border: 1px solid #e5e7eb; border-radius: 16px; background: #ffffff; box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+          }
+          .biro-pku-filter-grid, .biro-pku-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+          .biro-pku-field { display: grid; gap: 6px; }
+          .biro-pku-field span { color: #64748b; font-size: 12px; font-weight: 800; }
+          .biro-pku-field select {
+            min-width: 290px; height: 42px; padding: 0 38px 0 12px; border: 1px solid #d7dde8; border-radius: 11px;
+            background: #f8fafc; color: #334155; font-size: 14px; font-weight: 700; outline: none;
+          }
+          .biro-pku-field--year select { min-width: 116px; }
+          .biro-pku-field select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14); }
+          .biro-pku-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 16px;
+            border-radius: 11px; font-size: 14px; font-weight: 900; cursor: pointer; transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+          }
+          .biro-pku-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+          .biro-pku-btn:not(:disabled):hover { transform: translateY(-1px); }
+          .biro-pku-btn--secondary { border: 1px solid #d7dde8; background: #ffffff; color: #334155; }
+          .biro-pku-btn--primary { border: 0; background: linear-gradient(135deg, #2563eb, #0f766e); color: #ffffff; box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22); }
+          .biro-pku-table-card { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 18px; background: #ffffff; box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08); }
+          .biro-pku-table-scroll { overflow-x: auto; }
+          .biro-pku-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+          .biro-pku-table thead tr { background: #0f2f4f; }
+          .biro-pku-table th { padding: 15px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); color: #e8eef7; font-size: 12px; font-weight: 900; letter-spacing: 0.06em; text-align: center; text-transform: uppercase; }
+          .biro-pku-table th.is-left { text-align: left; }
+          .biro-pku-table tbody tr { transition: background 140ms ease; }
+          .biro-pku-table tbody tr:hover { background: #f0f9ff !important; }
+          .biro-pku-table tbody td { border-bottom: 1px solid #eef2f7; }
+          .biro-pku-state { padding: 48px 24px; color: #64748b; font-size: 14px; font-weight: 800; text-align: center; }
+          .biro-pku-state--empty { color: #94a3b8; }
+          @media (max-width: 900px) {
+            .biro-pku-hero, .biro-pku-toolbar { align-items: stretch; flex-direction: column; }
+            .biro-pku-progress-card, .biro-pku-field select { min-width: 0; width: 100%; }
+          }
+        `}</style>
       </PageTransition>
     </div>
   );

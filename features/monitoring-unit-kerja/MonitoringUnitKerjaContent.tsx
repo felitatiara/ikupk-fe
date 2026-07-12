@@ -1624,101 +1624,97 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
   const personalChartHeight = Math.max(200, personalChartData.length * 64);
 
   return (
-    <div>
+    <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+      <style>{`
+        .mik-hero { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px 32px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+        .mik-hero-eyebrow { font-size: 11px; font-weight: 700; color: #0f9f6e; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+        .mik-hero-title { font-size: 22px; font-weight: 800; color: #0f2f4f; margin: 0 0 6px; }
+        .mik-hero-sub { font-size: 13px; color: #6b7280; margin: 0; }
+        .mik-stats-card { background: #fff; border-radius: 12px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; display: flex; flex-direction: row; align-items: center; gap: 0; }
+        .mik-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 18px; }
+        .mik-stat + .mik-stat { border-left: 1px solid #e5e7eb; }
+        .mik-stat-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+        .mik-stat-val { font-size: 18px; font-weight: 800; color: #0f9f6e; }
+        .mik-toolbar { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 10px 14px; margin-bottom: 20px; display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+        .mik-tab { padding: 8px 16px; border-radius: 10px; border: none; background: transparent; color: #6b7280; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .mik-tab:hover { background: #f0fdf4; color: #0f9f6e; }
+        .mik-tab--active { background: #f0fdf4; color: #0f9f6e; font-weight: 700; box-shadow: 0 1px 4px rgba(15,159,110,0.12); }
+        .mik-toolbar-sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 4px; align-self: center; flex-shrink: 0; }
+        .mik-toolbar-spacer { flex: 1; min-width: 8px; }
+        .mik-filter-group { display: flex; flex-direction: column; gap: 3px; }
+        .mik-filter-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+        .mik-select { border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: #374151; background: #fff; cursor: pointer; outline: none; }
+        .mik-select:focus { border-color: #0f9f6e; box-shadow: 0 0 0 2px rgba(15,159,110,0.12); }
+      `}</style>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Monitoring Indikator
-        </p>
 
-          {/* ── Tab Switcher ── */}
-          {(() => {
-            const hasBawahan = (monitoringBawahan?.bawahanList?.length ?? 0) > 0;
-            const tabs = [
-              ...(isPimpinan ? [{ key: "keseluruhan" as const, label: "Monitoring Keseluruhan" }] : []),
-              { key: "diterima" as const, label: "Target Saya" },
-              ...(hasBawahan ? [{ key: "bawahan" as const, label: "Distribusi Target Dosen" }] : []),
-            ];
-            if (tabs.length <= 1) return null;
-            return (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{
-                  display: "inline-flex",
-                  backgroundColor: "#fafafa",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 10,
-                  padding: 3,
-                  gap: 2,
-                }}>
-                  {tabs.map((tab) => {
-                    const isActive = activeTab === tab.key;
-                    return (
-                      <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        style={{
-                          padding: "7px 18px",
-                          fontSize: 13,
-                          fontWeight: isActive ? 700 : 500,
-                          color: isActive ? "#ffffff" : "#64748b",
-                          background: isActive ? "#0f9f6e" : "transparent",
-                          border: "none",
-                          borderRadius: 8,
-                          cursor: "pointer",
-                          boxShadow: isActive ? "0 1px 4px rgba(15,159,110,0.25)" : "none",
-                          transition: "all 0.15s",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
+        {/* ── Hero Card ── */}
+        <div className="mik-hero">
+          <div>
+           
+            <h2 className="ikupk-card-title">Monitoring Indikator</h2>
+            <p className="mik-hero-sub">Pantau progress capaian indikator kinerja kegiatan dan perjanjian kinerja.</p>
+          </div>
+          {isPimpinan && !loading && (
+            <div className="mik-stats-card">
+              <div className="mik-stat">
+                <span className="mik-stat-label">Total</span>
+                <span className="mik-stat-val">{displayedChartData.length}</span>
               </div>
-            );
-          })()}
+              <div className="mik-stat">
+                <span className="mik-stat-label">Tercapai</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: "#047857" }}>{doneCount}</span>
+              </div>
+              <div className="mik-stat">
+                <span className="mik-stat-label">Proses</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: "#b45309" }}>{prosesCount}</span>
+              </div>
+              <div className="mik-stat">
+                <span className="mik-stat-label">Rata Progress</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: "#be123c" }}>{avgProgress}%</span>
+              </div>
+            </div>
+          )}
+        </div>
 
-          {/* Filters — hidden on bawahan tab (has its own filters) */}
-          {activeTab !== "bawahan" && <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            marginBottom: 20,
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            padding: "14px 16px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-          }}>
-            <div>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Jenis Indikator
-              </label>
-              <select
-                value={selectedJenis}
-                onChange={(e) => setSelectedJenis(e.target.value)}
-                style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 13, background: "#fff", cursor: "pointer", color: "#111827", outline: "none" }}
-              >
-                {jenisOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+        {/* ── Toolbar: Tabs + Filters ── */}
+        {(() => {
+          const hasBawahan = (monitoringBawahan?.bawahanList?.length ?? 0) > 0;
+          const tabs = [
+            ...(isPimpinan ? [{ key: "keseluruhan" as const, label: "Monitoring Keseluruhan" }] : []),
+            { key: "diterima" as const, label: "Target Saya" },
+            ...(hasBawahan ? [{ key: "bawahan" as const, label: "Distribusi Target Dosen" }] : []),
+          ];
+          return (
+            <div className="mik-toolbar">
+              {tabs.length > 1 && tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`mik-tab${activeTab === tab.key ? " mik-tab--active" : ""}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              {tabs.length > 1 && <div className="mik-toolbar-sep" />}
+              <div className="mik-toolbar-spacer" />
+              {activeTab !== "bawahan" && (
+                <>
+                  <div className="mik-filter-group">
+                    <select className="mik-select" value={selectedJenis} onChange={(e) => setSelectedJenis(e.target.value)}>
+                      {jenisOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="mik-filter-group">
+                    <select className="mik-select" value={selectedTahun} onChange={(e) => setSelectedTahun(e.target.value)}>
+                      {yearOptions.map((yr) => <option key={yr} value={yr}>{yr}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
-            <div>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Tahun
-              </label>
-              <select
-                value={selectedTahun}
-                onChange={(e) => setSelectedTahun(e.target.value)}
-                style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 13, background: "#fff", cursor: "pointer", color: "#111827", outline: "none" }}
-              >
-                {yearOptions.map((yr) => (
-                  <option key={yr} value={yr}>{yr}</option>
-                ))}
-              </select>
-            </div>
-          </div>}
+          );
+        })()}
 
         {/* ── PIMPINAN / ADMIN: Monitoring Keseluruhan ── */}
         {isPimpinan && activeTab === "keseluruhan" && (
@@ -1769,7 +1765,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
               </div>
             </div>
 
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 20, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", marginBottom: 32 }}>
+            <div style={{ marginBottom: 32 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>
                   Rangkuman Target & Realisasi
@@ -1802,10 +1798,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   )}
                 </div>
               </div>
-              <div style={{ overflowX: "auto" }}>
+              <div style={{ overflowX: "auto", borderRadius: 16, overflow: "hidden", border: "1px solid #e2e8f0", marginTop: 0, boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
                 <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                    <tr style={{ background: "#0f2f4f" }}>
                       {[
                         { label: "No", w: 48 },
                         { label: "Sasaran", w: 130 },
@@ -1816,11 +1812,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         { label: "Status", w: 90 },
                         { label: "Hasil Validasi", w: 110 },
                       ].map((h) => (
-                        <th key={h.label} style={{ minWidth: h.w, padding: "11px 16px", fontWeight: 700, color: "#9ca3af", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap" }}>
+                        <th key={h.label} style={{ minWidth: h.w, padding: "12px 16px", fontWeight: 900, color: "#e8eef7", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
                           {h.label}
                         </th>
                       ))}
-                      <th style={{ minWidth: 80, padding: "11px 16px", fontWeight: 700, color: "#9ca3af", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", whiteSpace: "nowrap", position: "sticky", right: 0, zIndex: 3, background: "#fafafa", boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                      <th style={{ minWidth: 80, padding: "12px 16px", fontWeight: 900, color: "#e8eef7", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", whiteSpace: "nowrap", position: "sticky", right: 0, zIndex: 3, background: "#0f2f4f", boxShadow: "-2px 0 6px rgba(0,0,0,0.2)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
                         Aksi
                       </th>
                     </tr>
@@ -2098,22 +2094,23 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           )}
 
           {/* Tabel personal */}
-          <div style={{ overflowX: "auto", backgroundColor: "white", borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+          <div style={{ overflow: "hidden", backgroundColor: "white", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
-                <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                <tr style={{ background: "#0f2f4f" }}>
                   {["No", "Kode", "Nama Indikator", "Target", "Realisasi", "Tenggat", "Capaian (%)", "File"].map((h) => (
                     <th
                       key={h}
                       style={{
                         textAlign: h === "No" || h === "Target" || h === "Realisasi" || h === "Tenggat" || h === "Capaian (%)" || h === "File" ? "center" : "left",
-                        padding: "10px 14px",
+                        padding: "12px 14px",
                         fontSize: 11,
-                        fontWeight: 700,
-                        color: "#9ca3af",
+                        fontWeight: 900,
+                        color: "#e8eef7",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
                         whiteSpace: "nowrap",
+                        borderBottom: "1px solid rgba(255,255,255,0.12)",
                       }}
                     >
                       {h}
@@ -2402,15 +2399,15 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                 const groups = [...groupMap.values()];
 
                 return (
-                  <div style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  <div style={{ borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                       <thead>
-                        <tr style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 40, whiteSpace: "nowrap" }}>No</th>
-                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 88, whiteSpace: "nowrap" }}>Kode</th>
-                          <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Indikator / Dosen</th>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap" }}>Target</th>
-                          <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap" }}>Realisasi</th>
+                        <tr style={{ background: "#0f2f4f" }}>
+                          <th style={{ padding: "12px 12px", textAlign: "center", fontSize: 11, fontWeight: 900, color: "#e8eef7", textTransform: "uppercase", letterSpacing: "0.06em", width: 40, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>No</th>
+                          <th style={{ padding: "12px 12px", textAlign: "left", fontSize: 11, fontWeight: 900, color: "#e8eef7", textTransform: "uppercase", letterSpacing: "0.06em", width: 88, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>Kode</th>
+                          <th style={{ padding: "12px 12px", textAlign: "left", fontSize: 11, fontWeight: 900, color: "#e8eef7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>Indikator / Dosen</th>
+                          <th style={{ padding: "12px 12px", textAlign: "center", fontSize: 11, fontWeight: 900, color: "#e8eef7", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>Target</th>
+                          <th style={{ padding: "12px 12px", textAlign: "center", fontSize: 11, fontWeight: 900, color: "#e8eef7", textTransform: "uppercase", letterSpacing: "0.06em", width: 100, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>Realisasi</th>
                         </tr>
                       </thead>
                       <tbody>

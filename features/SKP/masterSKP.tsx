@@ -10,9 +10,47 @@ import {
   type SkpPenilaiConfigRow, type SkpPenilaiRole, type SkpPenilaiUser,
 } from "@/lib/api";
 
-// ─────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────
+const CSS = `
+  .mskp-hero { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px 32px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .mskp-hero-eyebrow { font-size: 11px; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .mskp-hero-title { font-size: 22px; font-weight: 800; color: #0f2f4f; margin: 0 0 6px; }
+  .mskp-hero-sub { font-size: 13px; color: #6b7280; margin: 0; }
+  .mskp-stats-card { background: #fff; border-radius: 12px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; display: flex; flex-direction: row; align-items: center; gap: 0; }
+  .mskp-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 18px; }
+  .mskp-stat + .mskp-stat { border-left: 1px solid #e5e7eb; }
+  .mskp-stat-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+  .mskp-stat-val { font-size: 18px; font-weight: 800; color: #ea580c; }
+  .mskp-stat-val--sm { font-size: 17px; font-weight: 700; }
+  .mskp-toolbar { background: #fff; border: 1px solid #f0f0f0; border-radius: 14px; padding: 6px 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .mskp-tab { padding: 8px 20px; border-radius: 10px; border: none; background: transparent; color: #6b7280; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .mskp-tab:hover { background: #f9fafb; color: #374151; }
+  .mskp-tab--active { background: #fff7ed; color: #ea580c; font-weight: 700; box-shadow: 0 1px 4px rgba(234,88,12,0.12); }
+  .mskp-toolbar-sep { width: 1px; height: 24px; background: #f0f0f0; margin: 0 4px; }
+  .mskp-toolbar-spacer { flex: 1; }
+  .mskp-btn { padding: 9px 18px; border-radius: 12px; font-weight: 700; font-size: 13px; transition: all 0.15s; white-space: nowrap; cursor: pointer; }
+  .mskp-btn:not(:disabled):hover { transform: translateY(-1px); opacity: 0.92; }
+  .mskp-btn:not(:disabled):active { transform: translateY(0); opacity: 1; }
+  .mskp-btn--primary { border: none; background: #16a34a; color: #fff; box-shadow: 0 3px 10px rgba(22,163,74,0.28); }
+  .mskp-filter-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .mskp-filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .mskp-filter-label { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+  .mskp-select { border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 12px; font-size: 13px; color: #374151; background: #fff; cursor: pointer; outline: none; }
+  .mskp-select:focus { border-color: #ea580c; box-shadow: 0 0 0 2px rgba(234,88,12,0.12); }
+  .mskp-panel { background: #fff; border: 1px solid #f0f0f0; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .mskp-panel-hdr { background: #0f2f4f; padding: 13px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .mskp-panel-hdr-title { color: #fff; font-weight: 700; font-size: 14px; }
+  .mskp-panel-hdr-count { font-size: 12px; color: #94a3b8; }
+  .mskp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mskp-table thead th { padding: 10px 14px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.06em; background: #0f2f4f; border-bottom: 1px solid #1e4a6e; white-space: nowrap; }
+  .mskp-table tbody tr { border-bottom: 1px solid #f3f4f6; transition: background 0.1s; }
+  .mskp-table tbody tr:hover { background: #fafafa; }
+  .mskp-table tbody td { padding: 10px 14px; font-size: 13px; color: #374151; vertical-align: middle; }
+  .mskp-btn-edit { padding: 5px 12px; border-radius: 6px; border: 1px solid #d1d5db; background: white; color: #374151; font-weight: 600; font-size: 11px; cursor: pointer; transition: border-color 0.1s; }
+  .mskp-btn-edit:hover { border-color: #9ca3af; }
+  .mskp-btn-del { padding: 5px 12px; border-radius: 6px; border: none; background: #dc2626; color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; }
+  .mskp-btn-del:hover { opacity: 0.85; }
+`;
+
 function skpStatusBadge(status: MasterSKPRow["statusSKP"]) {
   const map = {
     draft: { label: "Draft", bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
@@ -22,18 +60,10 @@ function skpStatusBadge(status: MasterSKPRow["statusSKP"]) {
   };
   const s = map[status];
   return (
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        padding: "3px 10px",
-        borderRadius: 20,
-        backgroundColor: s.bg,
-        color: s.color,
-        border: `1px solid ${s.border}`,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
+      backgroundColor: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: "nowrap",
+    }}>
       {s.label}
     </span>
   );
@@ -48,34 +78,24 @@ function progressBar(current: number, total: number) {
         <span style={{ fontSize: 11, color: "#374151", fontWeight: 600 }}>{pct}%</span>
       </div>
       <div style={{ height: 6, borderRadius: 4, backgroundColor: "#e5e7eb", overflow: "hidden" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${pct}%`,
-            borderRadius: 4,
-            backgroundColor: pct === 100 ? "#16a34a" : pct >= 50 ? "#2563eb" : "#d97706",
-            transition: "width 0.4s ease",
-          }}
-        />
+        <div style={{
+          height: "100%", width: `${pct}%`, borderRadius: 4, transition: "width 0.4s ease",
+          backgroundColor: pct === 100 ? "#16a34a" : pct >= 50 ? "#2563eb" : "#d97706",
+        }} />
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────
-//  Component
-// ─────────────────────────────────────────────
-export default function MasterSKPContent({ role = "admin" }: { role?: string }) {
+export default function MasterSKPContent() {
   const [activeTab, setActiveTab] = useState<"status" | "penilai">("status");
 
-  // ── Tab: Status SKP ──
   const [data, setData] = useState<MasterSKPRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterUnit, setFilterUnit] = useState("semua");
   const [filterPeriode, setFilterPeriode] = useState("semua");
   const [filterStatus, setFilterStatus] = useState("semua");
 
-  // ── Tab: Konfigurasi Penilai ──
   const [penilaiConfigs, setPenilaiConfigs] = useState<SkpPenilaiConfigRow[]>([]);
   const [penilaiLoading, setPenilaiLoading] = useState(false);
   const [penilaiModal, setPenilaiModal] = useState<{
@@ -91,24 +111,16 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
   }>({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
   const [penilaiSaving, setPenilaiSaving] = useState(false);
 
-  // ── Fetch data dari API ──
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
-      try {
-        const rows = await getMasterSKP();
-        setData(rows);
-      } catch (err) {
-        console.error("Failed to fetch master SKP:", err);
-        setData([]);
-      } finally {
-        setLoading(false);
-      }
+      try { setData(await getMasterSKP()); }
+      catch (err) { console.error("Failed to fetch master SKP:", err); setData([]); }
+      finally { setLoading(false); }
     }
     fetchAll();
   }, []);
 
-  // Load configs saat tab penilai aktif
   useEffect(() => {
     if (activeTab !== "penilai") return;
     setPenilaiLoading(true);
@@ -119,15 +131,10 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
 
   const openPenilaiModal = (config?: SkpPenilaiConfigRow) => {
     setPenilaiModal({
-      open: true,
-      editId: config?.id ?? null,
-      roleId: config?.roleId ?? "",
-      checkerUserId: config?.checkerUserId ?? "",
-      pihakKeduaUserId: config?.pihakKeduaUserId ?? "",
-      penilaiEKPUserId: config?.penilaiUserId ?? "",
-      roles: [],
-      users: [],
-      loadingOptions: true,
+      open: true, editId: config?.id ?? null,
+      roleId: config?.roleId ?? "", checkerUserId: config?.checkerUserId ?? "",
+      pihakKeduaUserId: config?.pihakKeduaUserId ?? "", penilaiEKPUserId: config?.penilaiUserId ?? "",
+      roles: [], users: [], loadingOptions: true,
     });
     Promise.all([getSkpPenilaiRoles(), getSkpPenilaiUsers()]).then(([roles, users]) => {
       setPenilaiModal((prev) => ({ ...prev, roles, users, loadingOptions: false }));
@@ -156,145 +163,198 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
     setPenilaiConfigs((prev) => prev.filter((c) => c.id !== id));
   };
 
-  // ── Options ──
   const unitOptions = ["semua", ...Array.from(new Set(data.map((r) => r.unitKerja)))];
   const periodeOptions = ["semua", ...Array.from(new Set(data.map((r) => r.periode)))];
 
-  const filtered = data.filter((r) => {
-    return (
-      (filterUnit === "semua" || r.unitKerja === filterUnit) &&
-      (filterPeriode === "semua" || r.periode === filterPeriode) &&
-      (filterStatus === "semua" || r.statusSKP === filterStatus)
-    );
-  });
+  const filtered = data.filter((r) =>
+    (filterUnit === "semua" || r.unitKerja === filterUnit) &&
+    (filterPeriode === "semua" || r.periode === filterPeriode) &&
+    (filterStatus === "semua" || r.statusSKP === filterStatus)
+  );
 
-  // ── Stats ──
   const total = data.length;
   const approved = data.filter((r) => r.statusSKP === "approved").length;
   const submitted = data.filter((r) => r.statusSKP === "submitted").length;
   const draft = data.filter((r) => r.statusSKP === "draft").length;
 
-  const th: React.CSSProperties = {
-    padding: "10px 14px",
-    fontWeight: 700,
-    fontSize: 12,
-    color: "#374151",
-    borderBottom: "1px solid #e5e7eb",
-    backgroundColor: "#f9fafb",
-    textAlign: "left",
-    whiteSpace: "nowrap",
-  };
-  const td: React.CSSProperties = {
-    padding: "10px 14px",
-    fontSize: 12,
-    color: "#374151",
-    borderBottom: "1px solid #f3f4f6",
-    verticalAlign: "middle",
-  };
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "8px 20px",
-    borderRadius: "8px 8px 0 0",
-    border: "1px solid",
-    borderColor: active ? "#e5e7eb" : "transparent",
-    borderBottom: active ? "1px solid white" : "1px solid #e5e7eb",
-    background: active ? "white" : "transparent",
-    color: active ? "#FF7900" : "#6b7280",
-    fontWeight: active ? 700 : 500,
-    fontSize: 13,
-    cursor: "pointer",
-    marginBottom: -1,
-  });
+  const closePenilaiModal = () =>
+    setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false });
 
   return (
-    <div>
+    <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+      <style>{CSS}</style>
       <PageTransition>
-        <p style={{ color: "#FF7900", fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-          Master SKP
-        </p>
 
-        {/* ── Tab switcher ── */}
-        <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #e5e7eb", marginBottom: 20 }}>
-          <button style={tabStyle(activeTab === "status")} onClick={() => setActiveTab("status")}>
-            Status SKP Pegawai
-          </button>
-          <button style={tabStyle(activeTab === "penilai")} onClick={() => setActiveTab("penilai")}>
-            Konfigurasi Penilai
-          </button>
+        {/* ── Hero Card ── */}
+        <div className="mskp-hero">
+          <div>
+            <h2 className="ikupk-card-title">Master SKP</h2>
+            <p className="mskp-hero-sub">Kelola status SKP pegawai dan konfigurasi pejabat penilai kinerja.</p>
+          </div>
+          <div className="mskp-stats-card">
+            <div className="mskp-stat">
+              <span className="mskp-stat-label">Total</span>
+              <span className="mskp-stat-val">{loading ? "—" : total}</span>
+            </div>
+            <div className="mskp-stat">
+              <span className="mskp-stat-label">Disetujui</span>
+              <span className="mskp-stat-val--sm" style={{ color: "#166534" }}>{loading ? "—" : approved}</span>
+            </div>
+            <div className="mskp-stat">
+              <span className="mskp-stat-label">Diajukan</span>
+              <span className="mskp-stat-val--sm" style={{ color: "#1d4ed8" }}>{loading ? "—" : submitted}</span>
+            </div>
+            <div className="mskp-stat">
+              <span className="mskp-stat-label">Draft</span>
+              <span className="mskp-stat-val--sm" style={{ color: "#6b7280" }}>{loading ? "—" : draft}</span>
+            </div>
+          </div>
         </div>
 
-        {/* ══════════════════════════════════════════
-            TAB: KONFIGURASI PEJABAT PENILAI KINERJA
-        ══════════════════════════════════════════ */}
-        {activeTab === "penilai" && (
-          <div className="page-card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: 0 }}>
-                  Pejabat Penilai Kinerja per Jabatan
-                </h3>
-                <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-                  Tetapkan siapa yang menandatangani Rencana SKP &amp; Formulir EKP untuk setiap jabatan.
-                </p>
+        {/* ── Tab Toolbar ── */}
+        <div className="mskp-toolbar">
+          <button
+            className={`mskp-tab${activeTab === "status" ? " mskp-tab--active" : ""}`}
+            onClick={() => setActiveTab("status")}
+          >
+            Status SKP Pegawai
+          </button>
+          <button
+            className={`mskp-tab${activeTab === "penilai" ? " mskp-tab--active" : ""}`}
+            onClick={() => setActiveTab("penilai")}
+          >
+            Konfigurasi Penilai
+          </button>
+          <div className="mskp-toolbar-spacer" />
+          {activeTab === "penilai" && (
+            <button className="mskp-btn mskp-btn--primary" onClick={() => openPenilaiModal()}>
+              + Tambah Konfigurasi
+            </button>
+          )}
+        </div>
+
+        {/* ══ TAB: STATUS SKP PEGAWAI ══ */}
+        {activeTab === "status" && (
+          <>
+            {/* Filter */}
+            <div className="mskp-filter-card">
+              <div className="mskp-filter-group">
+                <span className="mskp-filter-label">Unit Kerja</span>
+                <select className="mskp-select" value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+                  {unitOptions.map(o => <option key={o} value={o}>{o === "semua" ? "Semua Unit" : o}</option>)}
+                </select>
               </div>
-              <button
-                onClick={() => openPenilaiModal()}
-                style={{
-                  padding: "8px 18px", borderRadius: 8, border: "none",
-                  background: "#FF7900", color: "white", fontWeight: 600,
-                  fontSize: 13, cursor: "pointer",
-                }}
-              >
-                + Tambah Konfigurasi
-              </button>
+              <div className="mskp-filter-group">
+                <span className="mskp-filter-label">Periode</span>
+                <select className="mskp-select" value={filterPeriode} onChange={e => setFilterPeriode(e.target.value)}>
+                  {periodeOptions.map(o => <option key={o} value={o}>{o === "semua" ? "Semua Periode" : o}</option>)}
+                </select>
+              </div>
+              <div className="mskp-filter-group">
+                <span className="mskp-filter-label">Status SKP</span>
+                <select className="mskp-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                  <option value="semua">Semua Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="submitted">Diajukan</option>
+                  <option value="approved">Disetujui</option>
+                  <option value="rejected">Ditolak</option>
+                </select>
+              </div>
             </div>
 
+            {/* Table */}
+            <div className="mskp-panel">
+              <div className="mskp-panel-hdr">
+                <span className="mskp-panel-hdr-title">Daftar SKP Pegawai</span>
+                {!loading && <span className="mskp-panel-hdr-count">{filtered.length} pegawai</span>}
+              </div>
+              {loading ? (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>Memuat data…</div>
+              ) : filtered.length === 0 ? (
+                <div style={{ padding: "48px 24px", textAlign: "center" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.4 }}>📋</div>
+                  <div style={{ fontWeight: 700, color: "#374151", marginBottom: 4 }}>Tidak ada data</div>
+                  <div style={{ fontSize: 13, color: "#9ca3af" }}>Tidak ada data untuk filter ini.</div>
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="mskp-table" style={{ minWidth: 900 }}>
+                    <thead>
+                      <tr>
+                        {["No", "NIP", "Nama Pegawai", "Unit Kerja", "Periode", "Progres Validasi", "Rata Capaian", "Status SKP"].map(h => (
+                          <th key={h} style={{ textAlign: h === "No" || h === "Periode" || h === "Rata Capaian" ? "center" : "left" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((row, idx) => (
+                        <tr key={row.id}>
+                          <td style={{ textAlign: "center", width: 36, color: "#9ca3af" }}>{idx + 1}</td>
+                          <td style={{ fontFamily: "monospace", fontSize: 11 }}>{row.nip}</td>
+                          <td style={{ fontWeight: 600 }}>{row.namaPegawai}</td>
+                          <td style={{ fontSize: 11, color: "#6b7280" }}>{row.unitKerja}</td>
+                          <td style={{ textAlign: "center" }}>{row.periode}</td>
+                          <td style={{ minWidth: 160 }}>{progressBar(row.tervalidasi, row.jumlahIndikator)}</td>
+                          <td style={{
+                            textAlign: "center", fontWeight: 700,
+                            color: row.rataCapaian !== null
+                              ? row.rataCapaian >= 76 ? "#16a34a" : row.rataCapaian >= 51 ? "#d97706" : "#dc2626"
+                              : "#9ca3af",
+                          }}>
+                            {row.rataCapaian !== null ? `${row.rataCapaian.toFixed(1)}%` : "—"}
+                          </td>
+                          <td>{skpStatusBadge(row.statusSKP)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══ TAB: KONFIGURASI PENILAI ══ */}
+        {activeTab === "penilai" && (
+          <div className="mskp-panel">
+            <div className="mskp-panel-hdr">
+              <span className="mskp-panel-hdr-title">Pejabat Penilai Kinerja per Jabatan</span>
+              <span className="mskp-panel-hdr-count">{penilaiConfigs.length} konfigurasi</span>
+            </div>
             {penilaiLoading ? (
-              <p style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data…</p>
+              <div style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>Memuat data…</div>
             ) : penilaiConfigs.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
+              <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
                 <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
                 <p style={{ fontSize: 13 }}>Belum ada konfigurasi. Klik &quot;Tambah Konfigurasi&quot; untuk mulai.</p>
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <table className="mskp-table">
                   <thead>
                     <tr>
-                      {["No", "Jabatan (Role)", "Level", "Checker", "Pihak Kedua (Rencana SKP)", "Pejabat Penilai (EKP)", "Aksi"].map((h) => (
-                        <th key={h} style={{ padding: "10px 14px", fontWeight: 700, fontSize: 12, color: "#374151", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", textAlign: "left", whiteSpace: "nowrap" }}>
-                          {h}
-                        </th>
+                      {["No", "Jabatan (Role)", "Level", "Checker", "Pihak Kedua (Rencana SKP)", "Pejabat Penilai (EKP)", "Aksi"].map(h => (
+                        <th key={h}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {penilaiConfigs.map((row, idx) => (
-                      <tr key={row.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                        <td style={{ padding: "10px 14px", fontSize: 12, textAlign: "center", width: 36, color: "#374151" }}>{idx + 1}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, fontWeight: 600, color: "#1f2937" }}>{row.roleName}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, textAlign: "center" }}>
+                      <tr key={row.id}>
+                        <td style={{ textAlign: "center", width: 36, color: "#9ca3af" }}>{idx + 1}</td>
+                        <td style={{ fontWeight: 600, color: "#1f2937" }}>{row.roleName}</td>
+                        <td style={{ textAlign: "center" }}>
                           <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 20, background: "#f3f4f6", color: "#374151", fontWeight: 600, fontSize: 11 }}>
                             L{row.roleLevel}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.checkerNama ?? <span style={{ color: "#9ca3af" }}>—</span>}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.pihakKeduaNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151" }}>{row.penilaiNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
-                        <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                        <td>{row.checkerNama ?? <span style={{ color: "#9ca3af" }}>—</span>}</td>
+                        <td>{row.pihakKeduaNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
+                        <td>{row.penilaiNama ?? <span style={{ color: "#9ca3af" }}>Belum diset</span>}</td>
+                        <td>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button
-                              onClick={() => openPenilaiModal(row)}
-                              style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #d1d5db", background: "white", color: "#374151", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => removePenilai(row.id)}
-                              style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#fee2e2", color: "#991b1b", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
-                            >
-                              Hapus
-                            </button>
+                            <button onClick={() => openPenilaiModal(row)} className="mskp-btn-edit">Edit</button>
+                            <button onClick={() => removePenilai(row.id)} className="mskp-btn-del">Hapus</button>
                           </div>
                         </td>
                       </tr>
@@ -306,154 +366,11 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
           </div>
         )}
 
-        {/* ══════════════════════════════════════════
-            TAB: STATUS SKP PEGAWAI (existing)
-        ══════════════════════════════════════════ */}
-        {activeTab === "status" && (
-        <div className="page-card">
-
-        {/* ── Ringkasan statistik ── */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 14,
-            marginBottom: 20,
-          }}
-        >
-          {[
-            { label: "Total Pegawai", value: total, color: "#6366f1", bg: "#eef2ff" },
-            { label: "Draft", value: draft, color: "#6b7280", bg: "#f9fafb" },
-            { label: "Diajukan", value: submitted, color: "#2563eb", bg: "#dbeafe" },
-            { label: "Disetujui", value: approved, color: "#1DB362", bg: "#E6F6EA" },
-          ].map((s) => (
-            <div
-              key={s.label}
-              style={{
-                backgroundColor: "white",
-                borderRadius: 10,
-                padding: "16px 20px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                borderLeft: `4px solid ${s.color}`,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{s.label}</p>
-              <p style={{ margin: "4px 0 0", fontSize: 28, fontWeight: 700, color: s.color }}>{s.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Filter ── */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: 12,
-            padding: 20,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
-            {[
-              { label: "Unit Kerja", value: filterUnit, setter: setFilterUnit, options: unitOptions },
-              { label: "Periode", value: filterPeriode, setter: setFilterPeriode, options: periodeOptions },
-              {
-                label: "Status SKP",
-                value: filterStatus,
-                setter: setFilterStatus,
-                options: [
-                  { value: "semua", label: "Semua Status" },
-                  { value: "draft", label: "Draft" },
-                  { value: "submitted", label: "Diajukan" },
-                  { value: "approved", label: "Disetujui" },
-                  { value: "rejected", label: "Ditolak" },
-                ],
-              },
-            ].map((f) => (
-              <div key={f.label}>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#374151", fontWeight: 600 }}>
-                  {f.label}
-                </label>
-                <select
-                  value={f.value}
-                  onChange={(e) => f.setter(e.target.value)}
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "#374151" }}
-                >
-                  {(f.options as Array<string | { value: string; label: string }>).map((opt) => {
-                    const val = typeof opt === "string" ? opt : opt.value;
-                    const lbl = typeof opt === "string" ? (opt === "semua" ? "Semua" : opt) : opt.label;
-                    return <option key={val} value={val}>{lbl}</option>;
-                  })}
-                </select>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Tabel ── */}
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: 12,
-            padding: 24,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 20 }}>
-            Daftar SKP Pegawai
-          </h3>
-
-          {loading ? (
-            <p style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Memuat data…</p>
-          ) : filtered.length === 0 ? (
-            <p style={{ textAlign: "center", color: "#6b7280", padding: 40 }}>Tidak ada data untuk filter ini.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-                <thead>
-                  <tr>
-                    {["No", "NIP", "Nama Pegawai", "Unit Kerja", "Periode", "Progres Validasi", "Rata Capaian", "Status SKP"].map(
-                      (h) => <th key={h} style={th}>{h}</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((row, idx) => (
-                    <tr key={row.id}>
-                      <td style={{ ...td, textAlign: "center", width: 36 }}>{idx + 1}</td>
-                      <td style={{ ...td, fontFamily: "monospace", fontSize: 11 }}>{row.nip}</td>
-                      <td style={{ ...td, fontWeight: 600 }}>{row.namaPegawai}</td>
-                      <td style={{ ...td, fontSize: 11, color: "#6b7280" }}>{row.unitKerja}</td>
-                      <td style={{ ...td, textAlign: "center" }}>{row.periode}</td>
-                      <td style={{ ...td, minWidth: 160 }}>{progressBar(row.tervalidasi, row.jumlahIndikator)}</td>
-                      <td
-                        style={{
-                          ...td,
-                          textAlign: "center",
-                          fontWeight: 700,
-                          color: row.rataCapaian !== null
-                            ? row.rataCapaian >= 76 ? "#16a34a" : row.rataCapaian >= 51 ? "#d97706" : "#dc2626"
-                            : "#9ca3af",
-                        }}
-                      >
-                        {row.rataCapaian !== null ? `${row.rataCapaian.toFixed(1)}%` : "—"}
-                      </td>
-                      <td style={td}>{skpStatusBadge(row.statusSKP)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        </div>
-        )} {/* end activeTab === "status" */}
-
-        {/* Modals are rendered via portal to escape PageTransition's CSS transform */}
+        {/* ── Modal Tambah/Edit Penilai ── */}
         {penilaiModal.open && createPortal(
           <div
             style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
-            onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+            onClick={closePenilaiModal}
           >
             <div
               style={{ backgroundColor: "white", borderRadius: 14, padding: "28px 32px", maxWidth: 520, width: "92%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
@@ -467,12 +384,9 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
               </p>
 
               {penilaiModal.loadingOptions ? (
-                <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 13 }}>
-                  Memuat data…
-                </div>
+                <div style={{ textAlign: "center", padding: "32px 0", color: "#6b7280", fontSize: 13 }}>Memuat data…</div>
               ) : (
                 <>
-                  {/* Jabatan */}
                   <div style={{ marginBottom: 20 }}>
                     <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>
                       Jabatan (Role) <span style={{ color: "#ef4444" }}>*</span>
@@ -489,9 +403,8 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                     </select>
                   </div>
 
-                  {/* Divider Rencana SKP */}
                   <div style={{ borderTop: "1px solid #e5e7eb", margin: "4px 0 16px" }} />
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#FF7900", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ea580c", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
                     Rencana SKP
                   </p>
 
@@ -528,9 +441,8 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                     </select>
                   </div>
 
-                  {/* Divider EKP */}
                   <div style={{ borderTop: "1px solid #e5e7eb", margin: "4px 0 16px" }} />
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#FF7900", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#ea580c", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
                     Formulir EKP
                   </p>
 
@@ -554,7 +466,7 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
 
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => setPenilaiModal({ open: false, editId: null, roleId: "", checkerUserId: "", pihakKeduaUserId: "", penilaiEKPUserId: "", roles: [], users: [], loadingOptions: false })}
+                  onClick={closePenilaiModal}
                   style={{ padding: "10px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
                 >
                   Batal
@@ -562,7 +474,12 @@ export default function MasterSKPContent({ role = "admin" }: { role?: string }) 
                 <button
                   onClick={savePenilai}
                   disabled={!penilaiModal.roleId || penilaiSaving || penilaiModal.loadingOptions}
-                  style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: (penilaiSaving || penilaiModal.loadingOptions) ? "#9ca3af" : "#16a34a", color: "white", fontWeight: 600, fontSize: 13, cursor: (penilaiSaving || penilaiModal.loadingOptions) ? "not-allowed" : "pointer" }}
+                  style={{
+                    padding: "10px 22px", borderRadius: 8, border: "none",
+                    background: (penilaiSaving || penilaiModal.loadingOptions) ? "#9ca3af" : "#16a34a",
+                    color: "white", fontWeight: 600, fontSize: 13,
+                    cursor: (penilaiSaving || penilaiModal.loadingOptions) ? "not-allowed" : "pointer",
+                  }}
                 >
                   {penilaiSaving ? "Menyimpan…" : "Simpan"}
                 </button>

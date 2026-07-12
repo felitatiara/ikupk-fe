@@ -12,7 +12,6 @@ const STRUCTURAL_ROLES = new Set([
 ]);
 const JENIS_OPTIONS = ["Dosen", "Tendik", "Administrasi"];
 
-/* helpers */
 function getInitials(nama: string) {
   return nama.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
 }
@@ -76,25 +75,17 @@ export default function InputUserContent() {
     if (!roleId || formData.roleIds.includes(roleId)) return;
     const role = allRoles.find(r => r.id === roleId);
     const structural = role ? STRUCTURAL_ROLES.has(role.name.toLowerCase()) : false;
-    setFormData(p => ({
-      ...p,
-      roleIds: [...p.roleIds, roleId],
-      jenis: structural && p.roleIds.length === 0 ? "Dosen" : p.jenis,
-    }));
+    setFormData(p => ({ ...p, roleIds: [...p.roleIds, roleId], jenis: structural && p.roleIds.length === 0 ? "Dosen" : p.jenis }));
     setRolePick("");
   };
 
-  const removeRole = (roleId: number) =>
-    setFormData(p => ({ ...p, roleIds: p.roleIds.filter(id => id !== roleId) }));
-
+  const removeRole = (roleId: number) => setFormData(p => ({ ...p, roleIds: p.roleIds.filter(id => id !== roleId) }));
   const addAtasan = (userId: number) => {
     if (!userId || formData.atasanIds.includes(userId)) return;
     setFormData(p => ({ ...p, atasanIds: [...p.atasanIds, userId] }));
     setAtasanPick("");
   };
-
-  const removeAtasan = (userId: number) =>
-    setFormData(p => ({ ...p, atasanIds: p.atasanIds.filter(id => id !== userId) }));
+  const removeAtasan = (userId: number) => setFormData(p => ({ ...p, atasanIds: p.atasanIds.filter(id => id !== userId) }));
 
   const openTambah = () => { setFormData(blankForm()); setRolePick(""); setAtasanPick(""); setModalMode("tambah"); setModalOpen(true); };
   const openEdit = (u: UnitUser) => {
@@ -102,9 +93,7 @@ export default function InputUserContent() {
     const primaryRoleId = userRoles.find((ur: any) => ur.isPrimary)?.roleId ?? userRoles[0]?.roleId;
     const nonPrimaryIds = userRoles.filter((ur: any) => !ur.isPrimary).map((ur: any) => ur.roleId);
     const roleIds = primaryRoleId ? [primaryRoleId, ...nonPrimaryIds] : nonPrimaryIds;
-    const atasanIds: number[] = (u as any).atasanIds?.length
-      ? (u as any).atasanIds
-      : (u as any).atasanId ? [(u as any).atasanId] : [];
+    const atasanIds: number[] = (u as any).atasanIds?.length ? (u as any).atasanIds : (u as any).atasanId ? [(u as any).atasanId] : [];
     setFormData({ id: u.id, nip: (u as any).nip || "", nama: u.nama, email: u.email, password: "", roleIds, jenis: (u as any).jenis || "Dosen", atasanIds });
     setRolePick(""); setAtasanPick("");
     setModalMode("edit"); setModalOpen(true);
@@ -147,44 +136,90 @@ export default function InputUserContent() {
   const uniqueRoleNames = Array.from(new Set(allUsers.map(u => u.role).filter(Boolean)));
   const uniqueUnitNames = Array.from(new Set(allUsers.map(u => (u as any).unitNama).filter(Boolean))).sort();
 
-  /* form input style */
   const fInput: React.CSSProperties = {
     border: "1px solid #e5e7eb", borderRadius: 8, padding: "9px 12px",
     fontSize: 13, color: "#111", width: "100%", background: "#fff", outline: "none", boxSizing: "border-box"
   };
   const fLabel: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 };
 
+  const dosenCount = allUsers.filter(u => ((u as any).jenis || "").toLowerCase() === "dosen").length;
+  const tendikCount = allUsers.filter(u => ((u as any).jenis || "").toLowerCase() === "tendik").length;
+
   return (
     <PageTransition>
       <div style={{ fontFamily: "var(--font-nunito-sans), Nunito Sans, sans-serif" }}>
+        <style>{`
+          .mu-hero {
+            display: flex; justify-content: space-between; gap: 24px; align-items: stretch;
+            margin-bottom: 18px; padding: 22px 24px; border: 1px solid #e2e8f0; border-radius: 18px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #eff6ff 100%);
+            box-shadow: 0 18px 42px rgba(15,23,42,0.08);
+          }
+          .mu-eyebrow { margin: 0 0 6px; color: #2563eb; font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+          .mu-title { margin: 0 0 8px; color: #0f172a; font-size: 22px; font-weight: 900; }
+          .mu-subtitle { max-width: 560px; margin: 0; color: #64748b; font-size: 14px; line-height: 1.5; }
+          .mu-stats-card { min-width: 320px; padding: 16px 20px; border: 1px solid #bfdbfe; border-radius: 14px; background: #fff; display: flex; align-items: center; }
+          .mu-stats-grid { display: flex; align-items: center; gap: 0; width: 100%; }
+          .mu-stat { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+          .mu-stat-val { font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1; }
+          .mu-stat-lbl { font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; text-align: center; }
+          .mu-stat-divider { width: 1px; height: 40px; background: #e2e8f0; margin: 0 6px; flex-shrink: 0; }
+          .mu-toolbar {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+            margin-bottom: 18px; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 14px;
+            background: #fff; box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+          }
+          .mu-toolbar-left, .mu-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+          .mu-search {
+            border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 14px;
+            font-size: 13px; color: #374151; background: #f8fafc; outline: none; min-width: 220px;
+          }
+          .mu-search:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.10); background: #fff; }
+          .mu-select {
+            border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 14px;
+            font-size: 13px; color: #374151; background: #f8fafc; outline: none; cursor: pointer;
+          }
+          .mu-select:focus { border-color: #2563eb; }
+          .mu-count { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+          .mu-btn-primary {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 18px; border-radius: 12px; border: none;
+            background: #16a34a; color: #fff; font-size: 13px; font-weight: 700;
+            cursor: pointer; white-space: nowrap; box-shadow: 0 3px 10px rgba(22,163,74,0.28);
+            transition: all 0.15s;
+          }
+          .mu-btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+          .mu-table-card { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; box-shadow: 0 8px 28px rgba(15,23,42,0.07); }
+          .mu-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+          .mu-table thead tr { background: #0f2f4f; }
+          .mu-table thead th { padding: 12px 16px; color: #e8eef7; font-size: 11px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+          .mu-table thead th.center { text-align: center; }
+          .mu-table tbody tr { border-bottom: 1px solid #f8f8f8; transition: background 0.1s; }
+          .mu-table tbody tr:hover { background: #fafafa; }
+          .mu-table tbody td { padding: 13px 16px; }
+          .mu-table tfoot td { padding: 10px 16px; font-size: 12px; color: #9ca3af; background: #f8fafc; border-top: 1px solid #f0f0f0; }
+          .mu-btn-edit { padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #e5e7eb; background: #fff; color: #374151; transition: border-color 0.1s; }
+          .mu-btn-edit:hover { border-color: #2563eb; color: #2563eb; }
+          .mu-btn-del { padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; background: #dc2626; color: #fff; transition: opacity 0.1s; }
+          .mu-btn-del:hover { opacity: 0.85; }
+          @media (max-width: 900px) {
+            .mu-hero { flex-direction: column; align-items: stretch; }
+            .mu-stats-card { min-width: 0; }
+            .mu-toolbar { flex-direction: column; align-items: stretch; }
+          }
+        `}</style>
 
         {/* ── Delete Confirm ── */}
         {deleteTarget && createPortal(
-          <div style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
-          }}
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
             onClick={() => !deleteLoading && setDeleteTarget(null)}>
-            <div style={{
-              background: "#fff", borderRadius: 16, padding: "32px 28px", width: 400, maxWidth: "92vw",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.15)"
-            }} onClick={e => e.stopPropagation()}>
-              <div style={{
-                width: 48, height: 48, borderRadius: 12, background: "#fef2f2",
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, margin: "0 auto 16px"
-              }}>🗑️</div>
+            <div style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 400, maxWidth: "92vw", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, margin: "0 auto 16px" }}>🗑️</div>
               <h5 style={{ textAlign: "center", fontWeight: 800, fontSize: 18, margin: "0 0 4px", color: "#111" }}>Hapus User?</h5>
               <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>Akun ini akan dihapus permanen.</p>
-              <div style={{
-                background: "#fafafa", border: "1px solid #f0f0f0", borderRadius: 10,
-                padding: "14px 16px", textAlign: "center", marginBottom: 24
-              }}>
+              <div style={{ background: "#fafafa", border: "1px solid #f0f0f0", borderRadius: 10, padding: "14px 16px", textAlign: "center", marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 6 }}>
-                  <div style={{
-                    ...AVATAR_COLORS[deleteTarget.id % 6], width: 32, height: 32, borderRadius: 8,
-                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700,
-                    background: AVATAR_COLORS[deleteTarget.id % 6].bg, color: AVATAR_COLORS[deleteTarget.id % 6].text
-                  }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, background: AVATAR_COLORS[deleteTarget.id % 6].bg, color: AVATAR_COLORS[deleteTarget.id % 6].text }}>
                     {getInitials(deleteTarget.nama)}
                   </div>
                   <span style={{ fontWeight: 700, fontSize: 15, color: "#111" }}>{deleteTarget.nama}</span>
@@ -193,17 +228,10 @@ export default function InputUserContent() {
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                 <button onClick={() => setDeleteTarget(null)} disabled={deleteLoading}
-                  style={{
-                    padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff",
-                    fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151"
-                  }}>Batal</button>
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}>Batal</button>
                 <button onClick={handleDelete} disabled={deleteLoading}
-                  style={{
-                    padding: "8px 22px", borderRadius: 8, border: "none", background: "#dc2626",
-                    fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#fff"
-                  }}>
-                  {deleteLoading ? "Menghapus..." : "Ya, Hapus"}
-                </button>
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: "#dc2626", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#fff" }}>
+                  {deleteLoading ? "Menghapus..." : "Ya, Hapus"}</button>
               </div>
             </div>
           </div>, document.body
@@ -211,17 +239,10 @@ export default function InputUserContent() {
 
         {/* ── Add / Edit Modal ── */}
         {modalOpen && createPortal(
-          <div style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
-          }}
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}
             onClick={() => !saving && setModalOpen(false)}>
-            <div style={{
-              background: "#fff", borderRadius: 16, padding: "32px 28px", width: 560, maxWidth: "94vw",
-              maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)"
-            }}
+            <div style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", width: 560, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
               onClick={e => e.stopPropagation()}>
-              {/* Modal header */}
               <div style={{ marginBottom: 24 }}>
                 <h5 style={{ fontWeight: 800, fontSize: 17, margin: "0 0 4px", color: "#111" }}>
                   {modalMode === "tambah" ? "Tambah User Baru" : "Edit User"}
@@ -256,36 +277,24 @@ export default function InputUserContent() {
                 <div className="col-12">
                   <label style={fLabel}>Unit Kerja (Role) <span style={{ color: "#ef4444" }}>*</span></label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <select style={{ ...fInput, flex: 1 }} value={rolePick}
-                      onChange={e => setRolePick(e.target.value === "" ? "" : Number(e.target.value))}>
+                    <select style={{ ...fInput, flex: 1 }} value={rolePick} onChange={e => setRolePick(e.target.value === "" ? "" : Number(e.target.value))}>
                       <option value="">— Pilih Role —</option>
-                      {allRoles
-                        .filter(r => !formData.roleIds.includes(r.id))
-                        .map(r => <option key={r.id} value={r.id}>{r.name}{r.unitNama ? ` — ${r.unitNama}` : ""}</option>)}
+                      {allRoles.filter(r => !formData.roleIds.includes(r.id)).map(r => (
+                        <option key={r.id} value={r.id}>{r.name}{r.unitNama ? ` — ${r.unitNama}` : ""}</option>
+                      ))}
                     </select>
-                    <button type="button" onClick={() => rolePick !== "" && addRole(Number(rolePick))}
-                      disabled={rolePick === ""}
-                      style={{
-                        padding: "9px 16px", borderRadius: 8, border: "none", background: "#2563eb",
-                        color: "#fff", fontWeight: 700, fontSize: 13, cursor: rolePick === "" ? "not-allowed" : "pointer",
-                        opacity: rolePick === "" ? 0.5 : 1, whiteSpace: "nowrap"
-                      }}>+ Tambah</button>
+                    <button type="button" onClick={() => rolePick !== "" && addRole(Number(rolePick))} disabled={rolePick === ""}
+                      style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 13, cursor: rolePick === "" ? "not-allowed" : "pointer", opacity: rolePick === "" ? 0.5 : 1, whiteSpace: "nowrap" }}>+ Tambah</button>
                   </div>
                   {formData.roleIds.length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                       {formData.roleIds.map((rid, idx) => {
                         const r = allRoles.find(x => x.id === rid);
                         return (
-                          <span key={rid} style={{
-                            display: "inline-flex", alignItems: "center", gap: 6,
-                            background: idx === 0 ? "#eff6ff" : "#f3f4f6",
-                            color: idx === 0 ? "#2563eb" : "#374151",
-                            borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600
-                          }}>
+                          <span key={rid} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: idx === 0 ? "#eff6ff" : "#f3f4f6", color: idx === 0 ? "#2563eb" : "#374151", borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600 }}>
                             {idx === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a" }}>PRIMARY</span>}
                             {r ? `${r.name}${r.unitNama ? ` — ${r.unitNama}` : ""}` : `Role #${rid}`}
-                            <button type="button" onClick={() => removeRole(rid)}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
+                            <button type="button" onClick={() => removeRole(rid)} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
                           </span>
                         );
                       })}
@@ -301,34 +310,23 @@ export default function InputUserContent() {
                 <div className="col-12">
                   <label style={fLabel}>Atasan Langsung</label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <select style={{ ...fInput, flex: 1 }} value={atasanPick}
-                      onChange={e => setAtasanPick(e.target.value === "" ? "" : Number(e.target.value))}>
+                    <select style={{ ...fInput, flex: 1 }} value={atasanPick} onChange={e => setAtasanPick(e.target.value === "" ? "" : Number(e.target.value))}>
                       <option value="">— Pilih Atasan —</option>
-                      {allUsers
-                        .filter(u => u.id !== formData.id && !formData.atasanIds.includes(u.id))
-                        .map(u => <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>)}
+                      {allUsers.filter(u => u.id !== formData.id && !formData.atasanIds.includes(u.id)).map(u => (
+                        <option key={u.id} value={u.id}>{u.nama} ({u.role})</option>
+                      ))}
                     </select>
-                    <button type="button" onClick={() => atasanPick !== "" && addAtasan(Number(atasanPick))}
-                      disabled={atasanPick === ""}
-                      style={{
-                        padding: "9px 16px", borderRadius: 8, border: "none", background: "#6b7280",
-                        color: "#fff", fontWeight: 700, fontSize: 13, cursor: atasanPick === "" ? "not-allowed" : "pointer",
-                        opacity: atasanPick === "" ? 0.5 : 1, whiteSpace: "nowrap"
-                      }}>+ Tambah</button>
+                    <button type="button" onClick={() => atasanPick !== "" && addAtasan(Number(atasanPick))} disabled={atasanPick === ""}
+                      style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: "#6b7280", color: "#fff", fontWeight: 700, fontSize: 13, cursor: atasanPick === "" ? "not-allowed" : "pointer", opacity: atasanPick === "" ? 0.5 : 1, whiteSpace: "nowrap" }}>+ Tambah</button>
                   </div>
                   {formData.atasanIds.length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                       {formData.atasanIds.map(uid => {
                         const u = allUsers.find(x => x.id === uid);
                         return (
-                          <span key={uid} style={{
-                            display: "inline-flex", alignItems: "center", gap: 6,
-                            background: "#f0fdf4", color: "#16a34a",
-                            borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600
-                          }}>
+                          <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#f0fdf4", color: "#16a34a", borderRadius: 20, padding: "4px 8px 4px 12px", fontSize: 12, fontWeight: 600 }}>
                             {u ? `${u.nama} (${u.role})` : `User #${uid}`}
-                            <button type="button" onClick={() => removeAtasan(uid)}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
+                            <button type="button" onClick={() => removeAtasan(uid)} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
                           </span>
                         );
                       })}
@@ -339,106 +337,81 @@ export default function InputUserContent() {
 
               <div style={{ borderTop: "1px solid #f3f4f6", marginTop: 24, paddingTop: 20, display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button onClick={() => setModalOpen(false)} disabled={saving}
-                  style={{
-                    padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff",
-                    fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151"
-                  }}>Batal</button>
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#374151" }}>Batal</button>
                 <button onClick={handleSave} disabled={saving}
-                  style={{
-                    padding: "8px 22px", borderRadius: 8, border: "none", background: "#16a34a",
-                    fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#fff"
-                  }}>
-                  {saving ? "Menyimpan..." : modalMode === "tambah" ? "Simpan" : "Perbarui"}
-                </button>
+                  style={{ padding: "8px 22px", borderRadius: 8, border: "none", background: "#16a34a", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#fff" }}>
+                  {saving ? "Menyimpan..." : modalMode === "tambah" ? "Simpan" : "Perbarui"}</button>
               </div>
             </div>
           </div>, document.body
         )}
 
-        {/* ── Page Header ── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
+        {/* ── Hero Card ── */}
+        <div className="mu-hero">
           <div>
             <h3 className="ikupk-card-title">Master User</h3>
-            <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>Kelola akun pengguna dan hak akses sistem.</p>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>Kelola akun pengguna, hak akses, dan hierarki atasan dalam sistem.</p>
           </div>
-          <button onClick={openTambah}
-            style={{
-              padding: "9px 20px", borderRadius: 8, border: "none", background: "#FF7900",
-              fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#fff", whiteSpace: "nowrap"
-            }}>
-            + Tambah User
-          </button>
-        </div>
-
-        {/* ── Summary Cards ── */}
-        <div className="row g-3 mb-4">
-          {[
-            { label: "Total User", value: allUsers.length, color: "#2563eb" },
-            { label: "Dosen", value: allUsers.filter(u => ((u as any).jenis || "").toLowerCase() === "dosen").length, color: "#7c3aed" },
-            { label: "Tendik", value: allUsers.filter(u => ((u as any).jenis || "").toLowerCase() === "tendik").length, color: "#16a34a" },
-            { label: "Ditampilkan", value: filtered.length, color: "#ea580c" },
-          ].map((s, i) => (
-            <div className="col-6 col-md-3" key={i}>
-              <div style={{
-                background: "#fff", border: "1px solid #f0f0f0", borderRadius: 12,
-                padding: "16px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)"
-              }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{s.label}</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</div>
+          <div className="mu-stats-card">
+            <div className="mu-stats-grid">
+              <div className="mu-stat">
+                <span className="mu-stat-val">{allUsers.length}</span>
+                <span className="mu-stat-lbl">Total User</span>
+              </div>
+              <div className="mu-stat-divider" />
+              <div className="mu-stat">
+                <span className="mu-stat-val">{dosenCount}</span>
+                <span className="mu-stat-lbl">Dosen</span>
+              </div>
+              <div className="mu-stat-divider" />
+              <div className="mu-stat">
+                <span className="mu-stat-val">{tendikCount}</span>
+                <span className="mu-stat-lbl">Tendik</span>
+              </div>
+              <div className="mu-stat-divider" />
+              <div className="mu-stat">
+                <span className="mu-stat-val">{filtered.length}</span>
+                <span className="mu-stat-lbl">Ditampilkan</span>
               </div>
             </div>
-          ))}
+          </div>
         </div>
 
-        {/* ── Filter & Search ── */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Role</div>
-            <select style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", background: "#fff", outline: "none", minWidth: 160 }}
-              value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+        {/* ── Toolbar ── */}
+        <div className="mu-toolbar">
+          <div className="mu-toolbar-left">
+            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Nama, email, atau role..." className="mu-search" />
+            <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="mu-select">
               <option value="all">Semua Role</option>
               {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Unit</div>
-            <select style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#374151", background: "#fff", outline: "none", minWidth: 180 }}
-              value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+            <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)} className="mu-select">
               <option value="all">Semua Unit</option>
               {uniqueUnitNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
           </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Cari</div>
-            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Nama, email, atau role..."
-              style={{
-                border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#374151",
-                background: "#fff", outline: "none", minWidth: 220
-              }} />
+          <div className="mu-toolbar-right">
+            <button onClick={openTambah} className="mu-btn-primary">+ Tambah User</button>
           </div>
         </div>
 
         {/* ── Table Card ── */}
-        <div style={{ background: "#fff", border: "1px solid #f0f0f0", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div className="mu-table-card">
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table className="mu-table">
               <thead>
-                <tr style={{ borderBottom: "1px solid #f0f0f0", background: "#fafafa" }}>
+                <tr>
                   {[
-                    { label: "No", center: true, w: "4%" },
-                    { label: "Pengguna", center: false, w: "26%" },
-                    { label: "Email", center: false, w: "22%" },
-                    { label: "Role", center: true, w: "18%" },
-                    { label: "Unit", center: false, w: "15%" },
-                    { label: "Jenis", center: true, w: "9%" },
-                    { label: "Aksi", center: true, w: "10%" },
+                    { label: "No", cls: "center", w: "4%" },
+                    { label: "Pengguna", cls: "", w: "26%" },
+                    { label: "Email", cls: "", w: "22%" },
+                    { label: "Role", cls: "center", w: "18%" },
+                    { label: "Unit", cls: "", w: "15%" },
+                    { label: "Jenis", cls: "center", w: "9%" },
+                    { label: "Aksi", cls: "center", w: "10%" },
                   ].map((h, i) => (
-                    <th key={i} style={{
-                      padding: "11px 16px", fontSize: 11, fontWeight: 700, color: "#9ca3af",
-                      textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.center ? "center" : "left",
-                      whiteSpace: "nowrap", width: h.w
-                    }}>{h.label}</th>
+                    <th key={i} className={h.cls} style={{ width: h.w }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -461,16 +434,11 @@ export default function InputUserContent() {
                   const rc = getRoleColor(roleName);
                   const ac = AVATAR_COLORS[u.id % 6];
                   return (
-                    <tr key={u.id} style={{ borderBottom: "1px solid #f8f8f8", transition: "background 0.1s" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "#fafafa")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                      <td style={{ padding: "13px 16px", textAlign: "center", color: "#9ca3af", fontSize: 12 }}>{idx + 1}</td>
-                      <td style={{ padding: "13px 16px" }}>
+                    <tr key={u.id}>
+                      <td style={{ textAlign: "center", color: "#9ca3af", fontSize: 12 }}>{idx + 1}</td>
+                      <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{
-                            width: 34, height: 34, borderRadius: 9, background: ac.bg, color: ac.text,
-                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0
-                          }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 9, background: ac.bg, color: ac.text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                             {getInitials(u.nama)}
                           </div>
                           <div>
@@ -480,40 +448,20 @@ export default function InputUserContent() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: "13px 16px", color: "#6b7280", fontSize: 12 }}>{u.email}</td>
-                      <td style={{ padding: "13px 16px", textAlign: "center" }}>
-                        <span style={{
-                          background: rc.bg, color: rc.text, fontSize: 11, fontWeight: 700,
-                          padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap"
-                        }}>{roleName}</span>
+                      <td style={{ color: "#6b7280", fontSize: 12 }}>{u.email}</td>
+                      <td style={{ textAlign: "center" }}>
+                        <span style={{ background: rc.bg, color: rc.text, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>{roleName}</span>
                       </td>
-                      <td style={{ padding: "13px 16px", fontSize: 12, color: "#374151" }}>{unitNama}</td>
-                      <td style={{ padding: "13px 16px", textAlign: "center" }}>
-                        {jenis ? <span style={{
-                          background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600,
-                          padding: "3px 10px", borderRadius: 20
-                        }}>{jenis}</span> : <span style={{ color: "#9ca3af" }}>—</span>}
+                      <td style={{ fontSize: 12, color: "#374151" }}>{unitNama}</td>
+                      <td style={{ textAlign: "center" }}>
+                        {jenis
+                          ? <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20 }}>{jenis}</span>
+                          : <span style={{ color: "#9ca3af" }}>—</span>}
                       </td>
-                      <td style={{ padding: "13px 16px", textAlign: "center" }}>
+                      <td style={{ textAlign: "center" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                          <button onClick={() => openEdit(u)}
-                            style={{
-                              padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                              border: "1px solid #e5e7eb", background: "#fff", color: "#374151"
-                            }}
-                            onMouseEnter={e => (e.currentTarget.style.borderColor = "#d1d5db")}
-                            onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}>
-                            Edit
-                          </button>
-                          <button onClick={() => setDeleteTarget(u)}
-                            style={{
-                              padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                              border: "1px solid #fca5a5", background: "#fff7f7", color: "#dc2626"
-                            }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "#fff7f7")}>
-                            Hapus
-                          </button>
+                          <button onClick={() => openEdit(u)} className="mu-btn-edit">Edit</button>
+                          <button onClick={() => setDeleteTarget(u)} className="mu-btn-del">Hapus</button>
                         </div>
                       </td>
                     </tr>
@@ -522,10 +470,8 @@ export default function InputUserContent() {
               </tbody>
               {filtered.length > 0 && (
                 <tfoot>
-                  <tr style={{ borderTop: "1px solid #f0f0f0", background: "#fafafa" }}>
-                    <td colSpan={7} style={{ padding: "10px 16px", fontSize: 12, color: "#9ca3af" }}>
-                      Menampilkan <b>{filtered.length}</b> dari <b>{allUsers.length}</b> pengguna
-                    </td>
+                  <tr>
+                    <td colSpan={7}>Menampilkan <b>{filtered.length}</b> dari <b>{allUsers.length}</b> pengguna</td>
                   </tr>
                 </tfoot>
               )}

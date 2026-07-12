@@ -110,12 +110,19 @@ export default function PimpinanValidasiContent() {
     XLSX.writeFile(wb, `Validasi_Pimpinan_${new Date().getFullYear()}.xlsx`);
   };
 
-  const filteredData = data.filter((item) => {
-    const matchTarget = filterTarget === "semua" || item.target === filterTarget;
-    const matchPeriode = filterPeriode === "semua" || item.tenggat === filterPeriode;
-    const matchStatus = filterStatus === "semua" || item.status === filterStatus;
-    return matchTarget && matchPeriode && matchStatus;
-  });
+  const filteredData = data
+    .filter((item) => {
+      const matchTarget = filterTarget === "semua" || item.target === filterTarget;
+      const matchPeriode = filterPeriode === "semua" || item.tenggat === filterPeriode;
+      const matchStatus = filterStatus === "semua" || item.status === filterStatus;
+      return matchTarget && matchPeriode && matchStatus;
+    })
+    .sort((a, b) => {
+      // pending_pimpinan first, then validated items (disposisi / rejected) at the bottom
+      const isPendingA = a.status === "pending_pimpinan" ? 0 : 1;
+      const isPendingB = b.status === "pending_pimpinan" ? 0 : 1;
+      return isPendingA - isPendingB;
+    });
 
   return (
     <div>
