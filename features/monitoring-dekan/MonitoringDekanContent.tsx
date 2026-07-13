@@ -200,8 +200,8 @@ export default function MonitoringDekanContent() {
         {/* Header */}
         <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Dashboard Monitoring Dekan</h1>
-            <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4, margin: 0 }}>Pantau seluruh indikator kinerja, disposisi, dan capaian secara real-time.</p>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Monitoring Keseluruhan</h1>
+            <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4, margin: 0 }}>Pantau seluruh indikator kinerja, disposisi, dan capaian tingkat fakultas secara real-time.</p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 14px" }}>

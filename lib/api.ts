@@ -1746,6 +1746,7 @@ export interface SkpCheckerUser {
   roleId: number;
   skpStatus: string;
   rencanaStatus?: string;
+  hasChecker?: boolean;
 }
 
 // ── Rencana SKP Signature Status ─────────────────────────────────────────────
@@ -1944,6 +1945,24 @@ export async function getRencanaSKPRevisionLogs(userId: number, tahun: string, t
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return [];
+  return res.json();
+}
+
+export async function checkRencanaSKPNewTargets(tahun: string, token: string): Promise<{ hasNewTargets: boolean; newCount: number }> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/check-new-targets?tahun=${tahun}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return { hasNewTargets: false, newCount: 0 };
+  return res.json();
+}
+
+export async function resetRencanaSKPForNewTargets(tahun: string, token: string): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/reset-for-new-targets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal mengajukan revisi');
   return res.json();
 }
 

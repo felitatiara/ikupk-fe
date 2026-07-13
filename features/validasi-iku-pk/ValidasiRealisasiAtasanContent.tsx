@@ -53,6 +53,7 @@ type PimpinanDosenEntry = {
   dosenEmail: string;
   targetDosen: number | null;
   validFileCount: number | null;
+  realisasiAngka: number | null;
   status: string;
   tahun: string | null;
   periode: string | null;
@@ -65,9 +66,15 @@ type PimpinanIndikator = {
   sumberData?: string;
   targetBawahan: number;
   totalValidFiles: number;
+  totalRealisasiAngka: number;
   dosenCount: number;
   pendingCount: number;
   dosenList: PimpinanDosenEntry[];
+};
+
+type TraceModal = {
+  group: PimpinanGroup;
+  ind: PimpinanIndikator;
 };
 
 type PimpinanGroup = {
@@ -99,6 +106,7 @@ export default function ValidasiRealisasiAtasanContent() {
   const [pimpinanGroups, setPimpinanGroups] = useState<PimpinanGroup[]>([]);
   const [validatingPimpinan, setValidatingPimpinan] = useState<string | null>(null);
   const [expandedPimpinan, setExpandedPimpinan] = useState<Set<string>>(new Set());
+  const [traceModal, setTraceModal] = useState<TraceModal | null>(null);
 
   const [detail, setDetail] = useState<DetailModal | null>(null);
   const [detailFiles, setDetailFiles] = useState<{ name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string; sumber?: 'repository' | 'repository-all' | 'ikupk'; }[]>([]);
@@ -836,13 +844,21 @@ export default function ValidasiRealisasiAtasanContent() {
                                       </select>
                                     </td>
                                     <td className="text-center">
-                                      <button
-                                        onClick={() => handleValidasiPimpinan(g.bawahanId, ind.indikatorId)}
-                                        disabled={isValidating}
-                                        style={{ padding: "5px 12px", fontSize: 12, fontWeight: 600, border: allDone ? "1.5px solid #059669" : "none", borderRadius: 6, background: isValidating ? "#9ca3af" : allDone ? "#f0fdf4" : "#0f9f6e", color: isValidating ? "#fff" : allDone ? "#059669" : "#fff", cursor: isValidating ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
-                                      >
-                                        {isValidating ? "Memvalidasi…" : allDone ? "↺ Validasi Ulang" : "Validasi Final"}
-                                      </button>
+                                      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+                                        <button
+                                          onClick={() => setTraceModal({ group: g, ind })}
+                                          style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1.5px solid #6366f1", borderRadius: 6, background: "#fff", color: "#6366f1", cursor: "pointer", whiteSpace: "nowrap" }}
+                                        >
+                                          🔍 Bukti
+                                        </button>
+                                        <button
+                                          onClick={() => handleValidasiPimpinan(g.bawahanId, ind.indikatorId)}
+                                          disabled={isValidating}
+                                          style={{ padding: "5px 10px", fontSize: 12, fontWeight: 600, border: allDone ? "1.5px solid #059669" : "none", borderRadius: 6, background: isValidating ? "#9ca3af" : allDone ? "#f0fdf4" : "#0f9f6e", color: isValidating ? "#fff" : allDone ? "#059669" : "#fff", cursor: isValidating ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                                        >
+                                          {isValidating ? "Memvalidasi…" : allDone ? "↺ Ulang" : "Validasi Final"}
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                   {/* Dosen detail rows — expandable */}
@@ -1081,6 +1097,164 @@ export default function ValidasiRealisasiAtasanContent() {
               </div>
             ))}
       </PageTransition>
+
+      {/* ── Modal: Bukti Pendukung Capaian (Traceability) ── */}
+      {traceModal && typeof document !== "undefined" && createPortal(
+        <div
+          className="modal-overlay"
+          onClick={(e) => { if (e.target === e.currentTarget) setTraceModal(null); }}
+          style={{ zIndex: 1100 }}
+        >
+          <div style={{ background: "#fff", borderRadius: 16, width: 820, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,.22)", fontFamily: "sans-serif" }}>
+            {/* Header */}
+            <div style={{ padding: "18px 24px 14px", borderBottom: "1px solid #f3f4f6" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "#ede9fe", color: "#7c3aed" }}>BUKTI PENDUKUNG</span>
+                    <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>{traceModal.ind.kodeIndikator}</span>
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#111827", lineHeight: 1.4 }}>{traceModal.ind.namaIndikator}</h3>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
+                    Capaian <strong style={{ color: "#111827" }}>{traceModal.group.bawahanNama}</strong> · Target diterima: <strong>{traceModal.ind.targetBawahan}</strong>
+                  </p>
+                </div>
+                <button onClick={() => setTraceModal(null)} style={{ background: "#f3f4f6", border: "none", borderRadius: 8, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280", fontSize: 14, flexShrink: 0 }}>✕</button>
+              </div>
+              {/* Summary bar */}
+              <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
+                {[
+                  { label: "Total Pelaksana", value: String(traceModal.ind.dosenCount), color: "#6366f1", bg: "#eef2ff" },
+                  { label: "Total Realisasi", value: String(traceModal.ind.totalRealisasiAngka ?? 0), color: "#0f9f6e", bg: "#f0fdf4" },
+                  { label: "Total File Valid", value: String(traceModal.ind.totalValidFiles), color: "#2563eb", bg: "#eff6ff" },
+                  { label: "Capaian", value: traceModal.ind.targetBawahan > 0 ? `${Math.round(((traceModal.ind.totalRealisasiAngka ?? 0) / traceModal.ind.targetBawahan) * 100)}%` : "—", color: "#d97706", bg: "#fffbeb" },
+                ].map(({ label, value, color, bg }) => (
+                  <div key={label} style={{ flex: 1, background: bg, borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Table */}
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {traceModal.ind.dosenList.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af", fontSize: 13 }}>Tidak ada data pelaksana ditemukan.</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+                      {["No", "Pelaksana", "Target", "Realisasi", "File Valid", "Status Validasi", "Dokumen"].map(h => (
+                        <th key={h} style={{ padding: "10px 14px", textAlign: h === "No" ? "center" : h === "Target" || h === "Realisasi" || h === "File Valid" || h === "Dokumen" ? "center" : "left", fontWeight: 700, fontSize: 11, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {traceModal.ind.dosenList.map((d, idx) => {
+                      const capaianPct = d.targetDosen && d.realisasiAngka != null
+                        ? Math.round((d.realisasiAngka / d.targetDosen) * 100)
+                        : null;
+                      const statusDone = d.status === 'validated_wd2';
+                      const statusPending = d.status === 'validated_atasan';
+                      return (
+                        <tr key={d.realisasiId} style={{ borderBottom: "1px solid #f3f4f6", background: statusDone ? "#fafffe" : "#fff" }}>
+                          <td style={{ padding: "10px 14px", textAlign: "center", color: "#9ca3af", fontWeight: 600, fontSize: 12 }}>{idx + 1}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <div style={{ fontWeight: 600, color: "#111827" }}>{d.dosenNama}</div>
+                            <div style={{ fontSize: 11, color: "#9ca3af" }}>{d.dosenEmail}</div>
+                            {d.periode && <div style={{ fontSize: 10, color: "#c4b5fd", marginTop: 1 }}>{d.periode}</div>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: "#374151" }}>{d.targetDosen ?? "—"}</td>
+                          <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                            <span style={{ fontWeight: 700, color: d.realisasiAngka != null && d.targetDosen != null && d.realisasiAngka >= d.targetDosen ? "#16a34a" : "#374151" }}>
+                              {d.realisasiAngka ?? "—"}
+                            </span>
+                            {capaianPct !== null && (
+                              <div style={{ fontSize: 10, color: capaianPct >= 100 ? "#16a34a" : capaianPct >= 80 ? "#d97706" : "#dc2626", fontWeight: 600, marginTop: 1 }}>{capaianPct}%</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                            {d.validFileCount !== null
+                              ? <span style={{ fontWeight: 700, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "2px 8px", fontSize: 12 }}>{d.validFileCount} valid</span>
+                              : <span style={{ fontWeight: 600, color: "#9ca3af", fontSize: 12 }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                            {statusDone
+                              ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "2px 8px" }}>✓ Tervalidasi</span>
+                              : statusPending
+                                ? <span style={{ fontSize: 11, fontWeight: 700, color: "#d97706", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "2px 8px" }}>⏳ Menunggu Final</span>
+                                : <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: 10, padding: "2px 8px" }}>Menunggu</span>}
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                            <button
+                              onClick={() => {
+                                setTraceModal(null);
+                                setDetail({
+                                  dosenNama: d.dosenNama,
+                                  dosenEmail: d.dosenEmail,
+                                  fromPimpinan: true,
+                                  submission: {
+                                    id: d.realisasiId,
+                                    dosenId: d.dosenId,
+                                    dosenNama: d.dosenNama,
+                                    dosenEmail: d.dosenEmail,
+                                    fileCount: d.validFileCount ?? 0,
+                                    validFileCount: d.validFileCount,
+                                    catatanRevisi: null,
+                                    targetDosen: d.targetDosen,
+                                    status: d.status,
+                                    tahun: d.tahun ?? tahun,
+                                    periode: d.periode,
+                                    indikatorId: traceModal.ind.indikatorId,
+                                    indikatorKode: traceModal.ind.kodeIndikator,
+                                    indikatorNama: traceModal.ind.namaIndikator,
+                                    sumberData: traceModal.ind.sumberData ?? 'repository',
+                                  },
+                                });
+                              }}
+                              style={{ padding: "5px 12px", fontSize: 11, fontWeight: 600, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", color: "#374151" }}
+                            >
+                              Lihat Dokumen
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {/* Totals row */}
+                  <tfoot>
+                    <tr style={{ background: "#f8fafc", borderTop: "2px solid #e5e7eb" }}>
+                      <td colSpan={2} style={{ padding: "10px 14px", fontWeight: 700, color: "#374151", fontSize: 12 }}>Akumulasi Capaian {traceModal.group.bawahanNama}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: "#374151" }}>{traceModal.ind.targetBawahan}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: "#16a34a" }}>{traceModal.ind.totalRealisasiAngka ?? 0}</td>
+                      <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: "#2563eb" }}>{traceModal.ind.totalValidFiles}</td>
+                      <td colSpan={2} style={{ padding: "10px 14px", textAlign: "center" }}>
+                        {traceModal.ind.targetBawahan > 0 && (
+                          <span style={{ fontWeight: 700, fontSize: 13, color: (traceModal.ind.totalRealisasiAngka ?? 0) >= traceModal.ind.targetBawahan ? "#16a34a" : "#d97706" }}>
+                            {Math.round(((traceModal.ind.totalRealisasiAngka ?? 0) / traceModal.ind.targetBawahan) * 100)}% capaian
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "12px 24px", borderTop: "1px solid #f3f4f6", background: "#fafafa", borderRadius: "0 0 16px 16px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setTraceModal(null)}
+                style={{ padding: "8px 20px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", color: "#374151" }}
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

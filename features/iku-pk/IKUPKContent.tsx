@@ -765,13 +765,7 @@ const [internalTahun, setInternalTahun] = useState("2026");
   return (
     <div>
       <PageTransition>
-        {!headerSlot && (
-          <p className="ikupk-header-text">
-            {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
-          </p>
-        )}
-        {headerSlot}
-
+       
         {/* DISPOSISI MODAL */}
         {disposisiModalOpen && (disposisiRow || disposisiSubId) && createPortal(
           <div className="modal-overlay" onClick={() => setDisposisiModalOpen(false)}>
@@ -1359,6 +1353,9 @@ const [internalTahun, setInternalTahun] = useState("2026");
           .ikupk-table-card { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); }
           .ikupk-table-wrapper { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); margin-bottom: 20px; }
         `}</style>
+
+        {/* ── Header Slot (e.g. MonitoringBoxes on dashboard) ── */}
+        {headerSlot}
 
         {/* ── Hero Card — hidden when headerSlot already provides a dashboard summary ── */}
         {!headerSlot && (

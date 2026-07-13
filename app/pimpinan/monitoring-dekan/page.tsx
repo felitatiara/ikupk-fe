@@ -1,7 +1,12 @@
 "use client";
 
-import MonitoringDekanContent from "@/features/monitoring-dekan/MonitoringDekanContent";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function MonitoringDekanPage() {
-  return <MonitoringDekanContent />;
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/pimpinan/monitoring-keseluruhan");
+  }, [router]);
+  return null;
 }

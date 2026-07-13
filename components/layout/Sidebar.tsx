@@ -40,7 +40,8 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
   const [sidebarState, setSidebarState] = useState<{
     primaryRoleLevel: number | null;
     allowedFeatureKeys: string[] | null;
-  }>({ primaryRoleLevel: null, allowedFeatureKeys: null });
+    primaryRoleName: string;
+  }>({ primaryRoleLevel: null, allowedFeatureKeys: null, primaryRoleName: "" });
 
   const isSuperAdmin = (roleLevel ?? 99) === 0;
 
@@ -53,18 +54,22 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
       // Read primary role level from the roles array — unaffected by switchRole which only
       // overwrites roleLevel to the currently active role (e.g. dosen = 4 after switching).
       let primaryLevel: number | null = null;
+      let primaryRoleName = "";
       if (Array.isArray(user?.roles) && user.roles.length > 0) {
         const primary = user.roles.find((r: { isPrimary?: boolean }) => r.isPrimary) ?? user.roles[0];
         if (primary?.level != null) primaryLevel = primary.level as number;
+        if (primary?.name) primaryRoleName = primary.name as string;
       }
+      // Fallback: use user.role string directly
+      if (!primaryRoleName && user?.role) primaryRoleName = user.role as string;
 
       const featuresFetch = user?.roleId
         ? getRoleFeatureKeys(user.roleId)
         : Promise.resolve<string[]>([]);
 
       featuresFetch
-        .then(keys => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: keys }))
-        .catch(() => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: null }));
+        .then(keys => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: keys, primaryRoleName }))
+        .catch(() => setSidebarState({ primaryRoleLevel: primaryLevel, allowedFeatureKeys: null, primaryRoleName }));
     } catch {
       // ignore
     }
@@ -72,9 +77,16 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
 
   const getMenus = (): MenuItem[] => {
     if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
+      // Monitoring Keseluruhan hanya untuk Dekan dan Wakil Dekan II
+      const rn = (sidebarState.primaryRoleName ?? "").toLowerCase().trim();
+      const isDekan = rn === "dekan" || (rn.startsWith("dekan") && !rn.includes("wakil"));
+      const isWakilDekanII =
+        rn.includes("wakil") && rn.includes("dekan") &&
+        ((rn.includes("ii") && !rn.includes("iii")) || rn.includes(" 2") || rn.endsWith("2") || rn.includes("kedua"));
+      const showKeseluruhan = isDekan || isWakilDekanII;
       return [
         { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard", icon: LayoutDashboard },
-        { key: "monitoring_dekan", label: "Monitoring Dekan", href: "/pimpinan/monitoring-dekan", icon: PieChart },
+        ...(showKeseluruhan ? [{ key: "monitoring_keseluruhan", label: "Monitoring Keseluruhan", href: "/pimpinan/monitoring-keseluruhan", icon: PieChart }] : []),
         { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/pimpinan/monitoring-unit-kerja", icon: BarChart3 },
         { key: "disposisi_manual", label: "Disposisi Manual", href: "/pimpinan/disposisi", icon: Send },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk", icon: Target },
@@ -87,14 +99,15 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
       const isAtasan = (roleLevel ?? 4) < 4;
       // Use primaryRoleLevel from sessionStorage so switchRole doesn't affect this check.
       // Hide SKP from the user/dosen menu when:
-      //   (a) primaryLevel < 3: user has a pimpinan workspace (/pimpinan/skp) — SKP lives there, OR
-      //   (b) primaryLevel < 4 AND current active level ≥ 4: user has a pimpinan/atasan primary role
-      //       (e.g. Kaprodi=3) but is currently viewing in Dosen/Tendik secondary-role mode.
+      //   (a) primaryLevel < 2: user has a pimpinan workspace (/pimpinan/skp) — only Dekan/WD (level 0-1).
+      //       Kajur (level 2) stays in /user workspace so SKP must stay visible here.
+      //   (b) primaryLevel < 4 AND current active level ≥ 4: user has an atasan primary role
+      //       (e.g. Kajur=2, Kaprodi=3) but is currently viewing in Dosen/Tendik secondary-role mode.
       // Multi-role users only ever have ONE SKP page — the one for their highest role.
       const activeLevel = roleLevel ?? 4;
       const hasPimpinanPrimary = primaryRoleLevel !== null
-        ? primaryRoleLevel < 3 || (primaryRoleLevel < 4 && activeLevel >= 4)
-        : activeLevel < 3;
+        ? primaryRoleLevel < 2 || (primaryRoleLevel < 4 && activeLevel >= 4)
+        : activeLevel < 2;
       return [
         { key: "beranda", label: "Beranda", href: "/user/dashboard", icon: LayoutDashboard },
         { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/user/monitoring-unit-kerja", icon: BarChart3 },
@@ -126,9 +139,10 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
   const allMenus = getMenus();
 
   // Apply feature restrictions: if no keys configured (null or empty) → show all
+  // 'beranda' and 'skp' are always exempt — skp has its own hasPimpinanPrimary visibility logic
   const menus = (allowedFeatureKeys === null || allowedFeatureKeys.length === 0)
     ? allMenus
-    : allMenus.filter(m => m.key === 'beranda' || allowedFeatureKeys.includes(m.key));
+    : allMenus.filter(m => m.key === 'beranda' || m.key === 'skp' || allowedFeatureKeys.includes(m.key));
 
   const isCurrentPage = (href: string) => {
     return pathname === href || pathname?.startsWith(href + '/');

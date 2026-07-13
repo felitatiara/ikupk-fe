@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import {
   getIndikatorGroupedForUser,
   getMySkpStatus,
-  getAvailableYears,
   getSkpRencanaStatus,
   signRencanaSKPPegawai,
   checkRencanaSKPChecker,
@@ -16,6 +15,8 @@ import {
   getUserSkpInfo,
   returnRencanaSKPForRevision,
   getRencanaSKPRevisionLogs,
+  checkRencanaSKPNewTargets,
+  resetRencanaSKPForNewTargets,
   type IndikatorGrouped,
   type SkpRencanaStatusData,
   type SkpRevisionLog,
@@ -233,15 +234,18 @@ export default function CetakSKP() {
   const reviewUserIdParam = searchParams.get('reviewUserId');
   const reviewUserId = reviewUserIdParam ? Number(reviewUserIdParam) : null;
   const isReviewMode = reviewUserId !== null && reviewUserId !== user?.id;
+  const tahunParam = searchParams.get('tahun');
 
-  const [tahun, setTahun] = useState("2026");
-  const [years, setYears] = useState<string[]>(["2025", "2026", "2027"]);
+  const tahun = tahunParam ?? String(new Date().getFullYear());
   const [ikuRows, setIkuRows] = useState<DocRow[]>([]);
   const [pkRows, setPkRows] = useState<DocRow[]>([]);
   const [dekan, setDekan] = useState<{ nama: string; nip: string | null; jabatan?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [rencanaStatus, setRencanaStatus] = useState<SkpRencanaStatusData | null>(null);
   const [setujuSaving, setSetujuSaving] = useState(false);
+  const [hasNewTargets, setHasNewTargets] = useState(false);
+  const [newTargetsCount, setNewTargetsCount] = useState(0);
+  const [resetNewTargetsSaving, setResetNewTargetsSaving] = useState(false);
 
   // Review mode (approver melihat dokumen bawahan)
   const [targetUser, setTargetUser] = useState<UserSkpInfo | null>(null);
@@ -270,15 +274,13 @@ export default function CetakSKP() {
     (user?.roles as any[])?.[0]?.id ??
     0;
 
-  useEffect(() => {
-    const cy = new Date().getFullYear();
-    getAvailableYears()
-      .then((y) => {
-        const merged = [...new Set([...y, String(cy - 1), String(cy), String(cy + 1)])].sort();
-        setYears(merged);
-      })
-      .catch(() => {});
-  }, []);
+  const primaryRoleLevel: number =
+    (user as any)?.roleLevel ??
+    (user?.roles as any[])?.find((r: any) => r.isPrimary)?.level ??
+    4;
+  const isCheckerRole = primaryRoleLevel >= 2;
+  const isPihakKeduaRole = primaryRoleLevel < 2;
+
 
   useEffect(() => {
     if (!user) return;
@@ -327,6 +329,13 @@ export default function CetakSKP() {
         setPkRows(buildDocRows(mergedPk));
         setDekan(skpStatus.atasanPenilai ?? skpStatus.atasan ?? null);
         setRencanaStatus(rStatus);
+
+        // Cek target baru hanya untuk pegawai sendiri (bukan review mode) saat sudah TTD
+        if (!isReviewMode && rStatus.status === 'signed_pegawai' && token) {
+          const newTargetsResult = await checkRencanaSKPNewTargets(tahun, token);
+          setHasNewTargets(newTargetsResult.hasNewTargets);
+          setNewTargetsCount(newTargetsResult.newCount);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -378,7 +387,7 @@ export default function CetakSKP() {
         ? approverSignCanvasRef.current.toDataURL('image/png')
         : null;
       let result: SkpRencanaStatusData;
-      if (rencanaStatus?.status === 'signed_pegawai') {
+      if (isCheckerRole && rencanaStatus?.status === 'signed_pegawai') {
         result = await checkRencanaSKPChecker(reviewUserId, tahun, sig);
         toast.success('Rencana SKP berhasil divalidasi.');
       } else {
@@ -491,9 +500,7 @@ export default function CetakSKP() {
           onClick={() => router.back()}
           style={{
             display: "flex", alignItems: "center", gap: 6,
-            padding: "7px 14px", border: "1px solid #e5e7eb",
-            borderRadius: 8, cursor: "pointer",
-            background: "#f9fafb", color: "#374151",
+            padding: "7px 14px",color: "#374151",
             fontSize: 13, fontWeight: 500, transition: "all .15s",
             flexShrink: 0,
           }}
@@ -506,30 +513,8 @@ export default function CetakSKP() {
 
         {/* Title + badge */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Rencana SKP</span>
-          {isReviewMode && (
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#6d28d9", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 20, padding: "2px 10px" }}>
-              Mode Review
-            </span>
-          )}
-        </div>
-
-        {/* Year picker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "5px 10px 5px 12px" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 500 }}>Tahun</span>
-          <select
-            value={tahun}
-            onChange={(e) => setTahun(e.target.value)}
-            style={{
-              border: "none", borderRadius: 4,
-              background: "transparent", color: "#111827",
-              fontSize: 13, fontWeight: 700, padding: "0 2px",
-              cursor: "pointer", outline: "none",
-            }}
-          >
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>Rencana SKP</span>
+          
         </div>
 
         {/* Review mode: employee name chip */}
@@ -547,7 +532,7 @@ export default function CetakSKP() {
         {isReviewMode ? (
           /* ── Toolbar: Review Mode (Approver) ── */
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {(rencanaStatus?.status === 'signed_pegawai' || rencanaStatus?.status === 'checked') && (
+            {((isCheckerRole && rencanaStatus?.status === 'signed_pegawai') || (isPihakKeduaRole && (rencanaStatus?.status === 'checked' || rencanaStatus?.status === 'signed_pegawai'))) && (
               <button
                 onClick={() => setReturnRevisionOpen(true)}
                 style={{
@@ -559,10 +544,10 @@ export default function CetakSKP() {
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
-                Kembalikan untuk Revisi
+                Ajukan Revisi
               </button>
             )}
-            {rencanaStatus?.status === 'signed_pegawai' && (
+            {isCheckerRole && rencanaStatus?.status === 'signed_pegawai' && (
               <button
                 onClick={() => setApproverSignOpen(true)}
                 style={{
@@ -575,10 +560,16 @@ export default function CetakSKP() {
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                Validasi Rencana SKP
+                Validasi
               </button>
             )}
-            {rencanaStatus?.status === 'checked' && (
+            {isCheckerRole && rencanaStatus?.status === 'checked' && (
+              <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, background: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Sudah Divalidasi
+              </span>
+            )}
+            {isPihakKeduaRole && (rencanaStatus?.status === 'checked' || rencanaStatus?.status === 'signed_pegawai') && (
               <button
                 onClick={() => setApproverSignOpen(true)}
                 style={{
@@ -591,7 +582,7 @@ export default function CetakSKP() {
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
-                Setuju &amp; TTD Rencana SKP
+                Setujui
               </button>
             )}
             {rencanaStatus?.status === 'needs_revision' && (
@@ -616,21 +607,21 @@ export default function CetakSKP() {
                   onClick={() => toast.info("Fitur Banding akan segera tersedia.")}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", border: "1.5px solid #fca5a5", borderRadius: 9, background: "#fff5f5", color: "#dc2626", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
                 >
-                  ⚖️ Ajukan Banding
+                Ajukan Banding
                 </button>
                 <button
                   onClick={() => setSignModalOpen(true)}
                   style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 20px", border: "none", borderRadius: 9, background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 3px 10px rgba(217,119,6,.35)" }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  Setuju &amp; Tandatangani
+                  Validasi
                 </button>
               </div>
             )}
             {rencanaStatus?.status === 'signed_pegawai' && (
               <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, background: "#fef9c3", color: "#92400e", border: "1px solid #fde68a" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Menunggu Pengecekan Checker
+                Menunggu Pengecekan
               </span>
             )}
             {rencanaStatus?.status === 'needs_revision' && (
@@ -677,26 +668,8 @@ export default function CetakSKP() {
             {/* ── Timeline: satu baris kompak ── */}
             <div style={{ background: "#fff", padding: "10px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 14 }}>
 
-              {/* Kiri: label + badge */}
-              <div style={{ flexShrink: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Timeline</div>
-                {isFinal && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: 20, background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, border: "1px solid #bbf7d0" }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Selesai
-                  </span>
-                )}
-                {isNeedsRevision && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px", borderRadius: 20, background: "#fef9c3", color: "#b45309", fontSize: 11, fontWeight: 700, border: "1px solid #fde68a" }}>
-                    ⏳ Menunggu Revisi
-                  </span>
-                )}
-                {!isFinal && !isNeedsRevision && (
-                  <span style={{ fontSize: 11, color: "#9ca3af" }}>{doneCount}/{steps.length}</span>
-                )}
-              </div>
+              
 
-              <div style={{ width: 1, height: 32, background: "#e5e7eb", flexShrink: 0 }} />
 
               {/* Stepper inline */}
               <div style={{ display: "flex", alignItems: "center", flex: 1 }}>
@@ -810,6 +783,41 @@ export default function CetakSKP() {
           </div>
         );
       })()}
+
+      {/* ── Banner: Target Baru Belum Masuk Dokumen ── */}
+      {!isReviewMode && hasNewTargets && rencanaStatus?.status === 'signed_pegawai' && (
+        <div className="no-print" style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fef3c7", border: "2px solid #f59e0b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>
+            ⚠️
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>
+              Ada {newTargetsCount} target baru yang belum masuk ke dalam dokumen
+            </div>
+            <div style={{ fontSize: 12, color: "#78350f", marginTop: 2 }}>
+              Target baru ini didisposisikan setelah Anda menandatangani Rencana SKP. Ajukan revisi untuk menyertakannya, lalu tandatangani ulang.
+            </div>
+          </div>
+          <button
+            disabled={resetNewTargetsSaving}
+            onClick={async () => {
+              if (!token) return;
+              setResetNewTargetsSaving(true);
+              try {
+                const updated = await resetRencanaSKPForNewTargets(tahun, token);
+                setRencanaStatus(updated);
+                setHasNewTargets(false);
+                setNewTargetsCount(0);
+                toast.success('Tanda tangan direset. Silakan periksa target baru lalu tandatangani kembali.');
+              } catch { toast.error('Gagal mengajukan revisi.'); }
+              finally { setResetNewTargetsSaving(false); }
+            }}
+            style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: 13, cursor: resetNewTargetsSaving ? "not-allowed" : "pointer", whiteSpace: "nowrap", opacity: resetNewTargetsSaving ? 0.7 : 1 }}
+          >
+            {resetNewTargetsSaving ? 'Memproses...' : '↩ Ajukan Revisi'}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="no-print" style={{ textAlign: "center", padding: 80, color: "#6b7280", fontSize: 15, fontFamily: "sans-serif" }}>
@@ -1169,42 +1177,50 @@ export default function CetakSKP() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>
-                  {rencanaStatus?.status === 'signed_pegawai' ? 'Validasi Rencana SKP' : 'TTD Persetujuan Rencana SKP'}
+                  {isCheckerRole && rencanaStatus?.status === 'signed_pegawai' ? 'Validasi Rencana SKP' : 'TTD Persetujuan Rencana SKP'}
                 </h3>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>
-                  {rencanaStatus?.status === 'signed_pegawai' ? 'Validasi sebagai Checker untuk' : 'Tandatangani sebagai Pihak Kedua untuk'} {displayNama} — {tahun}
+                  {isCheckerRole && rencanaStatus?.status === 'signed_pegawai' ? 'Validasi sebagai Checker untuk' : 'Tandatangani sebagai Pihak Kedua untuk'} {displayNama} — {tahun}
                 </p>
               </div>
               <button onClick={() => setApproverSignOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
             </div>
             <div style={{ padding: "16px 24px" }}>
-              <div style={{ marginBottom: 12, padding: "10px 14px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, fontSize: 12, color: "#92400e" }}>
-                Tanda tangan Anda akan disimpan di dokumen Rencana SKP {displayNama}.
-              </div>
-              <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
-                <canvas
-                  ref={approverSignCanvasRef}
-                  width={432}
-                  height={140}
-                  style={{ display: "block", width: "100%", touchAction: "none" }}
-                  onMouseDown={approverSignHandlers.onMouseDown}
-                  onMouseMove={approverSignHandlers.onMouseMove}
-                  onMouseUp={approverSignHandlers.onMouseUp}
-                  onMouseLeave={approverSignHandlers.onMouseUp}
-                  onTouchStart={approverSignHandlers.onTouchStart}
-                  onTouchMove={approverSignHandlers.onTouchMove}
-                  onTouchEnd={approverSignHandlers.onTouchEnd}
-                />
-                {!approverSignHasDrawn && (
-                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
-                    Tanda tangan di sini
+              {isCheckerRole && rencanaStatus?.status === 'signed_pegawai' ? (
+                <div style={{ padding: "14px 16px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, fontSize: 13, color: "#92400e", lineHeight: 1.5 }}>
+                  Anda akan memvalidasi Rencana SKP <strong>{displayNama}</strong> untuk tahun {tahun}. Dokumen akan diteruskan ke Pejabat Penilai untuk persetujuan akhir.
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 12, padding: "10px 14px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, fontSize: 12, color: "#92400e" }}>
+                    Tanda tangan Anda akan disimpan di dokumen Rencana SKP {displayNama}.
                   </div>
-                )}
-              </div>
-              {approverSignHasDrawn && (
-                <button onClick={approverSignHandlers.clear} style={{ marginTop: 8, padding: "4px 12px", border: "1px solid #e5e7eb", borderRadius: 6, background: "#f9fafb", color: "#6b7280", fontSize: 12, cursor: "pointer" }}>
-                  Ulangi
-                </button>
+                  <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
+                    <canvas
+                      ref={approverSignCanvasRef}
+                      width={432}
+                      height={140}
+                      style={{ display: "block", width: "100%", touchAction: "none" }}
+                      onMouseDown={approverSignHandlers.onMouseDown}
+                      onMouseMove={approverSignHandlers.onMouseMove}
+                      onMouseUp={approverSignHandlers.onMouseUp}
+                      onMouseLeave={approverSignHandlers.onMouseUp}
+                      onTouchStart={approverSignHandlers.onTouchStart}
+                      onTouchMove={approverSignHandlers.onTouchMove}
+                      onTouchEnd={approverSignHandlers.onTouchEnd}
+                    />
+                    {!approverSignHasDrawn && (
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
+                        Tanda tangan di sini
+                      </div>
+                    )}
+                  </div>
+                  {approverSignHasDrawn && (
+                    <button onClick={approverSignHandlers.clear} style={{ marginTop: 8, padding: "4px 12px", border: "1px solid #e5e7eb", borderRadius: 6, background: "#f9fafb", color: "#6b7280", fontSize: 12, cursor: "pointer" }}>
+                      Ulangi
+                    </button>
+                  )}
+                </>
               )}
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "0 24px 20px" }}>
@@ -1214,9 +1230,9 @@ export default function CetakSKP() {
               <button
                 onClick={handleApproverSignConfirm}
                 disabled={approverSignSaving}
-                style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: rencanaStatus?.status === 'signed_pegawai' ? "#d97706" : "#059669", color: "white", fontWeight: 600, fontSize: 13, cursor: approverSignSaving ? "not-allowed" : "pointer", opacity: approverSignSaving ? 0.7 : 1 }}
+                style={{ padding: "8px 20px", borderRadius: 8, border: "none", backgroundColor: isCheckerRole && rencanaStatus?.status === 'signed_pegawai' ? "#d97706" : "#059669", color: "white", fontWeight: 600, fontSize: 13, cursor: approverSignSaving ? "not-allowed" : "pointer", opacity: approverSignSaving ? 0.7 : 1 }}
               >
-                {approverSignSaving ? "Menyimpan…" : rencanaStatus?.status === 'signed_pegawai' ? "Simpan Validasi" : "Simpan TTD"}
+                {approverSignSaving ? "Menyimpan…" : isCheckerRole && rencanaStatus?.status === 'signed_pegawai' ? "Simpan Validasi" : "Simpan TTD"}
               </button>
             </div>
           </div>

@@ -26,7 +26,10 @@ import {
   getRencanaSKPRevisionLogs,
   resubmitHasilSKP,
   getHasilSKPRevisionLogs,
+  getUsersByLevel,
+  type UnitUser,
   type SkpBawahanRow,
+  type SkpBawahanRealisasiRow,
   type MySkpStatus,
   type SkpCheckerUser,
   type SkpCheckerBawahan,
@@ -144,7 +147,13 @@ export default function SKPContent() {
   const roleLevel = user?.roleLevel ?? 4;
   const isDosen = roleLevel >= 4;
   const isDekan = user?.role?.toLowerCase() === 'dekan' && roleLevel <= 1;
-  const [tahun, setTahun] = useState("2026");
+  // Users whose primary role is pimpinan but also hold a secondary dosen/tendik role
+  // should be able to submit Rencana SKP and Hasil SKP from their primary SKP menu.
+  const allUserRolesForSkp = (user?.roles as Array<{ id: number; level: number; isPrimary: boolean }> | undefined) ?? [];
+  const primaryRoleLevelForSkp = (allUserRolesForSkp.find(r => r.isPrimary) ?? allUserRolesForSkp[0])?.level ?? roleLevel;
+  const hasSecondaryDosenRole = primaryRoleLevelForSkp < 4 && allUserRolesForSkp.some(r => r.level >= 4 && !r.isPrimary);
+  const canSubmitSKP = isDosen || hasSecondaryDosenRole;
+  const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
   const [activeTab, setActiveTab] = useState<'sendiri' | 'rencana' | 'hasil'>('sendiri');
   const [myRencanaStatus, setMyRencanaStatus] = useState<SkpRencanaStatusData | null>(null);
@@ -199,6 +208,14 @@ export default function SKPContent() {
   const [hasilPenilaiHasDrawn, setHasilPenilaiHasDrawn] = useState(false);
   const [hasilPenilaiSaving, setHasilPenilaiSaving] = useState(false);
 
+  // Dekan (untuk Pejabat Penilai Kinerja fixed di dokumen Hasil SKP)
+  const [dekan, setDekan] = useState<{ nama: string; nip: string | null; jabatan: string } | null>(null);
+
+  // Hasil Checker confirm modal + preview
+  const [hasilCheckerModal, setHasilCheckerModal] = useState<{ open: boolean; target: (SkpCheckerUser & { hasilStatus: string }) | null; saving: boolean }>({ open: false, target: null, saving: false });
+  const [hasilCheckerPreviewHtml, setHasilCheckerPreviewHtml] = useState('');
+  const [hasilCheckerPreviewLoading, setHasilCheckerPreviewLoading] = useState(false);
+
   // Modal TTD Pihak Kedua — dari checker, untuk menyetujui rencana SKP bawahan
   const [pkSignModal, setPkSignModal] = useState<{ open: boolean; target: SkpCheckerUser | null }>({ open: false, target: null });
   const pkSignCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -237,7 +254,7 @@ export default function SKPContent() {
     getAvailableYears().then(dbYears => {
       const merged = [...new Set([...dbYears, String(cy - 1), String(cy), String(cy + 1)])].sort();
       setAvailableYears(merged);
-      if (!merged.includes("2026")) setTahun(merged[merged.length - 1]);
+      if (!merged.includes(String(cy))) setTahun(merged[merged.length - 1]);
     }).catch(() => {
       setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
     });
@@ -246,9 +263,12 @@ export default function SKPContent() {
   useEffect(() => {
     if (!user) return;
     fetchOwnSKP();
-    if (isDosen) { fetchMySkpStatus(); fetchMyRencanaStatus(); fetchMyHasilStatus(); }
+    if (canSubmitSKP) { fetchMySkpStatus(); fetchMyRencanaStatus(); fetchMyHasilStatus(); }
     if (isDekan) fetchBawahanSKP();
     fetchCheckerBawahan();
+    getUsersByLevel(0).then(list => {
+      if (list[0]) setDekan({ nama: list[0].nama, nip: (list[0] as any).nip ?? null, jabatan: list[0].role ?? 'Dekan' });
+    }).catch(() => {});
   }, [user, tahun]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchOwnSKP() {
@@ -374,7 +394,7 @@ export default function SKPContent() {
     try {
       const data = await getSkpRencanaStatus(user!.id, tahun);
       setMyRencanaStatus(data);
-      if (isDosen && token) {
+      if (canSubmitSKP && token) {
         getRencanaSKPRevisionLogs(user!.id, tahun, token).then(setMyRencanaRevisions).catch(() => {});
       }
     } catch { /* ignore */ }
@@ -385,7 +405,7 @@ export default function SKPContent() {
     try {
       const data = await getSkpHasilStatus(user!.id, tahun);
       setMyHasilStatus(data);
-      if (isDosen && token) {
+      if (canSubmitSKP && token) {
         getHasilSKPRevisionLogs(user!.id, tahun, token).then(setMyHasilRevisions).catch(() => {});
       }
     } catch { /* ignore */ }
@@ -918,9 +938,9 @@ export default function SKPContent() {
     const nip = user?.nip ?? "—";
     const jabatan = [...(user?.roles ?? [])].sort((a, b) => a.level - b.level)[0]?.name ?? user?.role ?? "—";
     const unitKerja = user?.unitNama ?? "Fakultas Ilmu Komputer";
-    const atasanNama = mySkpStatus?.atasan?.nama ?? "—";
-    const atasanNip = mySkpStatus?.atasan?.nip ?? "—";
-    const atasanJabatan = mySkpStatus?.atasan?.jabatan ?? "—";
+    const atasanNama = dekan?.nama ?? mySkpStatus?.atasanPenilai?.nama ?? mySkpStatus?.atasan?.nama ?? "—";
+    const atasanNip = dekan?.nip ?? mySkpStatus?.atasanPenilai?.nip ?? mySkpStatus?.atasan?.nip ?? "—";
+    const atasanJabatan = dekan?.jabatan ?? mySkpStatus?.atasanPenilai?.jabatan ?? mySkpStatus?.atasan?.jabatan ?? "—";
     const periodePenilaian = `02 JANUARI S.D. 31 DESEMBER TAHUN ${tahun}`;
 
     function hasilKerja(realisasi: number | null, target: number | null) {
@@ -1042,7 +1062,7 @@ export default function SKPContent() {
               <td colspan="3" style="font-weight:bold;padding:4px 6px">PEGAWAI YANG DINILAI</td></tr>
           ${infoRow("NAMA", nama)}${infoRow("NIP", nip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", jabatan)}${infoRow("UNIT KERJA", unitKerja)}
           <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">2</td>
-              <td colspan="3" style="font-weight:bold;padding:4px 6px">PEJABAT PENILAI KINERJA</td></tr>
+              <td colspan="3" style="font-weight:bold;padding:4px 6px">PEJABAT PENILAI SKP</td></tr>
           ${infoRow("NAMA", atasanNama)}${infoRow("NIP", atasanNip)}${infoRow("PANGKAT/GOL. RUANG", "—")}${infoRow("JABATAN", atasanJabatan)}${infoRow("UNIT KERJA", unitKerja)}
           <tr><td rowspan="5" style="text-align:center;width:28px;font-weight:bold;vertical-align:top;padding:4px">3</td>
               <td colspan="3" style="font-weight:bold;padding:4px 6px">ATASAN PEJABAT PENILAI KINERJA</td></tr>
@@ -1073,7 +1093,7 @@ export default function SKPContent() {
       </td>
       <td style="width:50%;text-align:center;vertical-align:top;border:none;padding:0">
         <p style="margin:0">6. Jakarta, ${tanggalCetak}</p>
-        <p style="margin:0">Pejabat Penilai Kinerja,</p>
+        <p style="margin:0">Pejabat Penilai SKP,</p>
         <div style="height:56px"></div>
         <p style="margin:0;font-weight:bold">${atasanNama}</p>
         <p style="margin:0;font-size:8.5pt">NIP ${atasanNip}</p>
@@ -1096,7 +1116,7 @@ export default function SKPContent() {
       <td style="padding:2px 4px;width:20px;font-size:8pt">NO.</td>
       <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEGAWAI YANG DINILAI</td>
       <td style="padding:2px 4px;width:20px;font-size:8pt">NO.</td>
-      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEJABAT PENILAI KINERJA</td>
+      <td colspan="2" style="padding:2px 6px;font-weight:bold;font-size:8pt">PEJABAT PENILAI SKP</td>
     </tr>
     <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${nama}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">1</td><td style="padding:2px 5px;font-size:8pt">NAMA</td><td style="padding:2px 5px;font-size:8pt">${atasanNama}</td></tr>
     <tr><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP</td><td style="padding:2px 5px;font-size:8pt">${nip}</td><td style="padding:2px 4px;text-align:center;font-size:8pt">2</td><td style="padding:2px 5px;font-size:8pt">NIP</td><td style="padding:2px 5px;font-size:8pt">${atasanNip}</td></tr>
@@ -1142,7 +1162,7 @@ export default function SKPContent() {
   </table>
   <div style="text-align:right;margin-top:20px">
     <p style="margin:0">Jakarta, ${tanggalCetak}</p>
-    <p style="margin:0">Pejabat Penilai Kinerja</p>
+    <p style="margin:0">Pejabat Penilai SKP</p>
     <div style="height:52px"></div>
     <p style="margin:0;font-weight:bold">${atasanNama}</p>
     <p style="margin:0;font-size:8.5pt">NIP ${atasanNip}</p>
@@ -1317,11 +1337,80 @@ ${kualitatifPage}
       setMyHasilStatus(result);
       setHasilSignModal(false);
       setHasilSignHasDrawn(false);
-      toast.success('Hasil SKP berhasil diajukan. Menunggu pengecekan checker.');
+      toast.success('Hasil SKP berhasil diajukan. Menunggu pengecekan .');
     } catch {
       toast.error('Gagal mengajukan Hasil SKP.');
     } finally {
       setHasilSignSaving(false);
+    }
+  }
+
+  async function openHasilCheckerModal(b: SkpCheckerUser & { hasilStatus: string }) {
+    setHasilCheckerModal({ open: true, target: b, saving: false });
+    setHasilCheckerPreviewHtml('');
+    setHasilCheckerPreviewLoading(true);
+    try {
+      const bawahan = await getSkpBawahan(user!.id, tahun);
+      const userRow = bawahan.find(r => r.userId === b.userId);
+      const realisasiRows = (userRow?.realisasi ?? []).map((r: SkpBawahanRealisasiRow, i: number) => {
+        const statusLabel = r.status === 'validated' ? '✓ Tervalidasi' : r.status === 'pending' ? 'Menunggu' : r.status;
+        const statusColor = r.status === 'validated' ? '#16a34a' : '#d97706';
+        return `<tr>
+          <td style="text-align:center;width:30px">${i + 1}</td>
+          <td style="font-family:monospace;font-size:10px;width:80px">${r.kodeIndikator ?? '—'}</td>
+          <td>${r.namaIndikator ?? '—'}</td>
+          <td style="text-align:center;width:80px">${r.realisasiAngka ?? '—'}</td>
+          <td style="text-align:center;width:100px;color:${statusColor};font-weight:600">${statusLabel}</td>
+        </tr>`;
+      }).join('');
+      const dekanNama = dekan?.nama ?? '—';
+      const dekanNip = dekan?.nip ?? '—';
+      const dekanJabatan = dekan?.jabatan ?? 'Dekan';
+      const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"/>
+<style>
+html,body{margin:0;padding:0;background:#f3f4f6;font-family:'Times New Roman',serif;font-size:12px;color:#000}
+.paper{background:#fff;max-width:740px;margin:20px auto;padding:36px 48px;box-shadow:0 2px 16px rgba(0,0,0,.12);border-radius:4px}
+table{width:100%;border-collapse:collapse}
+th{background:#f0f0f0;font-weight:bold;text-align:center;border:1px solid #000;padding:5px 6px;font-size:11px}
+td{vertical-align:top;padding:4px 6px;font-size:11px;border:1px solid #000}
+.it td{border:none;padding:2px 4px}
+</style></head>
+<body><div class="paper">
+<div style="text-align:center;font-weight:bold;font-size:15px;text-transform:uppercase;margin-bottom:4px">Evaluasi Kinerja Pegawai</div>
+<div style="text-align:center;font-size:12px;margin-bottom:20px">Tahun ${tahun} — Universitas Pembangunan Nasional "Veteran" Jakarta</div>
+<table class="it" style="margin-bottom:16px">
+  <tbody>
+    <tr><td style="width:42%;vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">PEGAWAI YANG DINILAI</div>
+      <div>Nama&nbsp;&nbsp;&nbsp;: <strong>${b.nama}</strong></div>
+      <div>NIP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${b.nip ?? '—'}</div>
+      <div>Jabatan : ${b.jabatan ?? '—'}</div>
+    </td>
+    <td style="width:16px"></td>
+    <td style="vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">PEJABAT PENILAI KINERJA</div>
+      <div>Nama&nbsp;&nbsp;&nbsp;: <strong>${dekanNama}</strong></div>
+      <div>NIP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${dekanNip}</div>
+      <div>Jabatan : ${dekanJabatan}</div>
+    </td></tr>
+  </tbody>
+</table>
+<table style="margin-top:8px">
+  <thead><tr>
+    <th style="width:30px">No</th>
+    <th style="width:80px">Kode</th>
+    <th>Nama Indikator</th>
+    <th style="width:80px">Realisasi</th>
+    <th style="width:100px">Status</th>
+  </tr></thead>
+  <tbody>${realisasiRows || '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">Belum ada data realisasi</td></tr>'}</tbody>
+</table>
+</div></body></html>`;
+      setHasilCheckerPreviewHtml(html);
+    } catch {
+      setHasilCheckerPreviewHtml('');
+    } finally {
+      setHasilCheckerPreviewLoading(false);
     }
   }
 
@@ -1356,7 +1445,9 @@ ${kualitatifPage}
   }
 
   function toggleRencanaSelectAll() {
-    const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'checked' || b.rencanaStatus === 'signed_pegawai');
+    const eligible = checkerBawahan.rencanaSKPBawahan.filter(b =>
+      b.hasChecker ? b.rencanaStatus === 'checked' : b.rencanaStatus === 'signed_pegawai'
+    );
     if (rencanaSelected.size === eligible.length) {
       setRencanaSelected(new Set());
     } else {
@@ -1857,33 +1948,13 @@ ${hasilKerjaRows}
               ))}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-             <button
-            onClick={() => {
-              const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
-              router.push(`${basePath}/skp/cetak`);
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: 8,
-              background: "#1d4ed8",
-              color: "#fff",
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            🖨️ Cetak Rencana SKP
-          </button>
           {(() => {
             const hasilApproved = myHasilStatus?.status === 'signed_penilai';
             const hasilDisabled = rows.length === 0 || !hasilApproved;
+            const cetakBasePath = roleLevel <= 1 ? "/pimpinan" : "/user";
             return (
               <button
-                onClick={hasilApproved ? generateEvaluasiKinerjaPegawai : undefined}
+                onClick={hasilApproved ? () => router.push(`${cetakBasePath}/skp/cetak-hasil?tahun=${tahun}`) : undefined}
                 disabled={hasilDisabled}
                 title={!hasilApproved ? "Tersedia setelah Hasil SKP disetujui semua pihak" : undefined}
                 style={{
@@ -1900,7 +1971,7 @@ ${hasilKerjaRows}
                   cursor: hasilDisabled ? "not-allowed" : "pointer",
                 }}
               >
-                📄 Cetak Hasil SKP
+                Cetak Hasil SKP
               </button>
             );
           })()}
@@ -1910,7 +1981,7 @@ ${hasilKerjaRows}
                   Tersedia setelah target didisposisikan
                 </span>
               )}
-              {isDosen && mySkpStatus?.status === "approved" && (
+              {canSubmitSKP && mySkpStatus?.status === "approved" && (
                 <button
                   onClick={generateSuratSKPDosen}
                   style={{
@@ -1930,23 +2001,223 @@ ${hasilKerjaRows}
                   ⬇️ Unduh Surat SKP
                 </button>
               )}
-              {isDosen && mySkpStatus?.status === "approved" && (
+              {canSubmitSKP && mySkpStatus?.status === "approved" && (
                 <span style={{ fontSize: 11, color: "#16a34a", textAlign: "right", fontWeight: 600 }}>
                   ✓ SKP Anda telah disetujui
                 </span>
               )}
-              {isDosen && mySkpStatus?.status === "rejected" && (
+              {canSubmitSKP && mySkpStatus?.status === "rejected" && (
                 <span style={{ fontSize: 11, color: "#dc2626", textAlign: "right", fontWeight: 600 }}>
                   ✗ SKP ditolak — hubungi atasan Anda
                 </span>
               )}
-              {isDosen && (mySkpStatus?.status === "pending" || mySkpStatus === null) && (
+              {canSubmitSKP && (mySkpStatus?.status === "pending" || mySkpStatus === null) && (
                 <span style={{ fontSize: 11, color: "#6b7280", textAlign: "right" }}>
                   Menunggu persetujuan atasan
                 </span>
               )}
             </div>
           </div>
+
+          {/* ── Rencana SKP + Pengajuan Hasil (untuk dosen atau pimpinan dengan secondary dosen role) ── */}
+          {canSubmitSKP && (<>
+            <div style={{ height: 1, background: "#e5e7eb", margin: "20px 0" }} />
+
+            {/* Rencana SKP */}
+            {(() => {
+              const rs = myRencanaStatus?.status ?? 'draft';
+              const stepLabels = ['Diajukan Pegawai', 'Dicek Checker', 'TTD Pihak Kedua'];
+              const stepDone = rs === 'signed_pihak_kedua' ? 3 : rs === 'checked' ? 2 : rs === 'signed_pegawai' ? 1 : 0;
+              const isFinished = rs === 'signed_pihak_kedua';
+              const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
+              return (<>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, color: "#1f2937", margin: "0 0 3px" }}>Rencana SKP</h4>
+                    <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Tandatangani dan ajukan Rencana SKP Anda untuk divalidasi atasan.</p>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    {rs === 'draft' && (
+                      <button
+                        onClick={() => router.push(`${basePath}/skp/cetak?tahun=${tahun}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", border: "none", borderRadius: 8, background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        ✍️ Ajukan Rencana SKP
+                      </button>
+                    )}
+                    {rs === 'needs_revision' && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                        <button
+                          onClick={() => router.push(`${basePath}/skp/cetak?tahun=${tahun}`)}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", border: "none", borderRadius: 8, background: "#1d4ed8", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                        >
+                          📋 Lihat &amp; Ajukan Kembali
+                        </button>
+                      </div>
+                    )}
+                    {(rs === 'signed_pegawai' || rs === 'checked') && (
+                      <button
+                        onClick={() => router.push(`${basePath}/skp/cetak?tahun=${tahun}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", border: "none", borderRadius: 8, background: "#1d4ed8", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        📋 Lihat Rencana SKP
+                      </button>
+                    )}
+                    {isFinished && (
+                      <button
+                        onClick={() => router.push(`${basePath}/skp/cetak?tahun=${tahun}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", border: "none", borderRadius: 8, background: "#059669", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Cetak Rencana SKP
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stepper */}
+                <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                  {stepLabels.map((label, i) => {
+                    const done = i < stepDone;
+                    const active = i === stepDone && !isFinished;
+                    const color = done ? "#16a34a" : active ? "#f59e0b" : "#d1d5db";
+                    return (
+                      <React.Fragment key={label}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: color, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+                            {done ? "✓" : i + 1}
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: done ? "#16a34a" : active ? "#92400e" : "#9ca3af", textAlign: "center" }}>{label}</span>
+                        </div>
+                        {i < stepLabels.length - 1 && (
+                          <div style={{ height: 2, flex: 0.5, background: i < stepDone ? "#16a34a" : "#e5e7eb", marginBottom: 20 }} />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+
+                {rs === 'signed_pegawai' && (
+                  <div className="alert-banner alert-banner--warning" style={{ marginTop: 12 }}>
+                    <span className="fw-700">Menunggu pengecekan</span>
+                  </div>
+                )}
+                {rs === 'checked' && (
+                  <div className="alert-banner alert-banner--info" style={{ marginTop: 12 }}>
+                    <span className="fw-700">Checked</span> — Menunggu TTD Pihak Kedua
+                  </div>
+                )}
+                {rs === 'needs_revision' && (
+                  <div style={{ marginTop: 12, padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#b91c1c", fontSize: 13 }}>✏️ Rencana SKP Perlu Revisi</p>
+                      <p style={{ margin: 0, fontSize: 12, color: "#7f1d1d" }}>
+                        {myRencanaRevisions[0]?.reason ? `Alasan: ${myRencanaRevisions[0].reason}` : 'Dokumen Anda telah dikembalikan oleh atasan.'}
+                        {myRencanaRevisions[0]?.note ? ` — ${myRencanaRevisions[0].note}` : ''}
+                      </p>
+                    </div>
+                    {myRencanaRevisions.length > 0 && (
+                      <button onClick={() => setRevisionNoteOpen(true)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "white", color: "#b91c1c", fontWeight: 600, fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+                        Lihat Catatan
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>);
+            })()}
+
+            <div style={{ height: 1, background: "#e5e7eb", margin: "20px 0" }} />
+
+            {/* Pengajuan Hasil SKP */}
+            {(() => {
+              const hs = myHasilStatus?.status ?? 'pending';
+              const stepLabels = ['Diajukan Pegawai', 'Dicek Checker', 'TTD Pejabat Penilai'];
+              const stepDone = hs === 'pending' || hs === 'needs_revision' ? 0 : hs === 'signed_pegawai' ? 1 : hs === 'checked' ? 2 : 3;
+              const isFinished = hs === 'signed_penilai';
+              const canSubmit = hs === 'pending' && rows.length > 0;
+              const hasilBasePath = roleLevel <= 1 ? "/pimpinan" : "/user";
+              return (<>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, color: "#1f2937", margin: "0 0 3px" }}>Pengajuan Hasil SKP</h4>
+                    <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Ajukan Hasil SKP setelah semua capaian divalidasi. Membutuhkan tanda tangan digital.</p>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    {hs === 'pending' && (
+                      <button
+                        onClick={() => canSubmit ? router.push(`${hasilBasePath}/skp/cetak-hasil?tahun=${tahun}`) : toast.warning('Pastikan ada data realisasi terlebih dahulu.')}
+                        style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: canSubmit ? "#f59e0b" : "#9ca3af", color: "white", fontWeight: 700, fontSize: 13, cursor: canSubmit ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+                      >
+                        ✍️ Ajukan Hasil SKP
+                      </button>
+                    )}
+                    {hs === 'needs_revision' && (
+                      <button
+                        onClick={() => router.push(`${hasilBasePath}/skp/cetak-hasil?tahun=${tahun}`)}
+                        style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: "#f59e0b", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        ↩ Lihat &amp; Ajukan Kembali
+                      </button>
+                    )}
+                    {(hs === 'signed_pegawai' || hs === 'checked') && (
+                      <button
+                        onClick={() => router.push(`${hasilBasePath}/skp/cetak-hasil?tahun=${tahun}`)}
+                        style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: "#3b82f6", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        📋 Lihat Hasil SKP
+                      </button>
+                    )}
+                    {isFinished && (
+                      <button
+                        onClick={() => router.push(`${hasilBasePath}/skp/cetak-hasil?tahun=${tahun}`)}
+                        style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: "#16a34a", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                         Cetak Hasil SKP
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                  {stepLabels.map((label, i) => {
+                    const done = i < stepDone;
+                    const active = i === stepDone && !isFinished;
+                    const color = done ? "#16a34a" : active ? "#f59e0b" : "#d1d5db";
+                    return (
+                      <React.Fragment key={label}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: color, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+                            {done ? "✓" : i + 1}
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: done ? "#16a34a" : active ? "#92400e" : "#9ca3af", textAlign: "center" }}>{label}</span>
+                        </div>
+                        {i < stepLabels.length - 1 && (
+                          <div style={{ height: 2, flex: 0.5, background: i < stepDone ? "#16a34a" : "#e5e7eb", marginBottom: 20 }} />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                {hs === 'signed_pegawai' && (
+                  <div className="alert-banner alert-banner--warning" style={{ marginTop: 12 }}>
+                    <span className="fw-700">Menunggu pengecekan</span> oleh checker
+                  </div>
+                )}
+                {hs === 'checked' && (
+                  <div className="alert-banner alert-banner--info" style={{ marginTop: 12 }}>
+                    <span className="fw-700">Sudah dicek.</span> Menunggu TTD Pejabat Penilai
+                  </div>
+                )}
+                {hs === 'needs_revision' && (
+                  <div className="alert-banner alert-banner--danger" style={{ marginTop: 12 }}>
+                    <span className="fw-700">Perlu Revisi.</span> Hasil SKP Anda dikembalikan. Perbaiki dan ajukan kembali.
+                    {myHasilRevisions.length > 0 && myHasilRevisions[0].note && (
+                      <span style={{ display: "block", marginTop: 4, color: "#7f1d1d" }}>Catatan: {myHasilRevisions[0].note}</span>
+                    )}
+                  </div>
+                )}
+                
+              </>);
+            })()}
+          </>)}
         </div>
 
         {/* ── Tabel SKP Sendiri ── */}
@@ -2015,126 +2286,6 @@ ${hasilKerjaRows}
           )}
         </div>
 
-        {/* ── Dosen: Tombol Lihat Rencana SKP ── */}
-        {isDosen && (
-          <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-              <div>
-                <h4 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: "0 0 4px" }}>Rencana SKP</h4>
-                <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Lihat dokumen, tandatangani, atau ajukan banding atas Rencana SKP Anda.</p>
-              </div>
-              <button
-                onClick={() => {
-                  const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
-                  router.push(`${basePath}/skp/cetak`);
-                }}
-                style={{ padding: "10px 22px", borderRadius: 8, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
-              >
-                📄 Lihat Rencana SKP
-              </button>
-            </div>
-            {myRencanaStatus?.status === 'needs_revision' && (
-              <div style={{ marginTop: 16, padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#b91c1c", fontSize: 13 }}>✏️ Rencana SKP Perlu Revisi</p>
-                  <p style={{ margin: 0, fontSize: 12, color: "#7f1d1d" }}>
-                    {myRencanaRevisions[0]?.reason ? `Alasan: ${myRencanaRevisions[0].reason}` : 'Dokumen Anda telah dikembalikan oleh atasan.'}
-                    {myRencanaRevisions[0]?.note ? ` — ${myRencanaRevisions[0].note}` : ''}
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  {myRencanaRevisions.length > 0 && (
-                    <button
-                      onClick={() => setRevisionNoteOpen(true)}
-                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "white", color: "#b91c1c", fontWeight: 600, fontSize: 12, cursor: "pointer" }}
-                    >
-                      Lihat Catatan
-                    </button>
-                  )}
-                  <button
-                    onClick={async () => {
-                      if (!token) return;
-                      try {
-                        const updated = await resubmitRencanaSKP(tahun, token);
-                        setMyRencanaStatus(updated as SkpRencanaStatusData);
-                        const logs = await getRencanaSKPRevisionLogs(user!.id, tahun, token);
-                        setMyRencanaRevisions(logs);
-                        toast.success('Rencana SKP berhasil diajukan kembali.');
-                      } catch { toast.error('Gagal mengajukan kembali.'); }
-                    }}
-                    style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#b91c1c", color: "white", fontWeight: 600, fontSize: 12, cursor: "pointer" }}
-                  >
-                    ↩ Ajukan Kembali
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Dosen: Pengajuan Hasil SKP ── */}
-        {isDosen && (() => {
-          const hs = myHasilStatus?.status ?? 'pending';
-          const canSubmit = hs === 'pending' && rows.length > 0;
-          const stepLabels = ['Diajukan Pegawai', 'Dicek Checker', 'TTD Pejabat Penilai'];
-          const stepDone = hs === 'pending' ? 0 : hs === 'signed_pegawai' ? 1 : hs === 'checked' ? 2 : 3;
-          return (
-            <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-                <div>
-                  <h4 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: "0 0 4px" }}>Pengajuan Hasil SKP</h4>
-                  <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Ajukan Hasil SKP setelah semua capaian divalidasi. Membutuhkan tanda tangan digital.</p>
-                </div>
-                {hs === 'pending' && (
-                  <button
-                    onClick={() => canSubmit ? openHasilPreview() : toast.warning('Pastikan ada data realisasi terlebih dahulu.')}
-                    style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: canSubmit ? "#f59e0b" : "#9ca3af", color: "white", fontWeight: 700, fontSize: 13, cursor: canSubmit ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
-                  >
-                    ✍️ Ajukan Hasil SKP
-                  </button>
-                )}
-                {hs === 'signed_penilai' && (
-                  <span style={{ padding: "8px 16px", borderRadius: 8, background: "#dcfce7", color: "#166534", fontWeight: 700, fontSize: 13 }}>
-                    ✅ Hasil SKP Disetujui
-                  </span>
-                )}
-              </div>
-
-              {/* Stepper */}
-              <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-                {stepLabels.map((label, i) => {
-                  const done = i < stepDone;
-                  const active = i === stepDone && hs !== 'signed_penilai';
-                  const color = done ? "#16a34a" : active ? "#f59e0b" : "#d1d5db";
-                  return (
-                    <React.Fragment key={label}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: color, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-                          {done ? "✓" : i + 1}
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 600, color: done ? "#16a34a" : active ? "#92400e" : "#9ca3af", textAlign: "center" }}>{label}</span>
-                      </div>
-                      {i < stepLabels.length - 1 && (
-                        <div style={{ height: 2, flex: 0.5, background: i < stepDone ? "#16a34a" : "#e5e7eb", marginBottom: 20 }} />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-
-              {hs === 'signed_pegawai' && (
-                <div className="alert-banner alert-banner--warning" style={{ marginTop: 12 }}>
-                  <span className="fw-700">Menunggu pengecekan Checker.</span> Harap bersabar, checker akan memvalidasi Hasil SKP Anda.
-                </div>
-              )}
-              {hs === 'checked' && (
-                <div className="alert-banner alert-banner--info" style={{ marginTop: 12 }}>
-                  <span className="fw-700">Sudah dicek oleh Checker.</span> Menunggu tanda tangan Pejabat Penilai Kinerja.
-                </div>
-              )}
-            </div>
-          );
-        })()}
 
         </>)}
         {/* end Tab 1: SKP Sendiri */}
@@ -2303,7 +2454,7 @@ ${hasilKerjaRows}
             {/* ── Bagian Checker ── */}
             {checkerBawahan.checkerBawahan.length > 0 && (() => {
               const rencanaStatusBadge = (st: string) => {
-                if (st === 'signed_pegawai') return <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>⏳ Menunggu Pengecekan</span>;
+                if (st === 'signed_pegawai') return <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>Menunggu Pengecekan</span>;
                 if (st === 'checked') return <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>✓ Sudah Dicek</span>;
                 if (st === 'signed_pihak_kedua') return <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", backgroundColor: "#dcfce7", padding: "3px 8px", borderRadius: 20, border: "1px solid #86efac" }}>✅ TTD Selesai</span>;
                 return <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", backgroundColor: "#f3f4f6", padding: "3px 8px", borderRadius: 20, border: "1px solid #e5e7eb" }}>📋 Belum Diajukan</span>;
@@ -2314,10 +2465,6 @@ ${hasilKerjaRows}
               );
               return (
                 <div style={{ marginBottom: 24 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#d97706", backgroundColor: "#fef9c3", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 20 }}>Pengecekan Checker</span>
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>Bawahan yang Anda tugaskan sebagai checker</span>
-                  </div>
                   <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
                       <thead>
@@ -2334,9 +2481,8 @@ ${hasilKerjaRows}
                               <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
                               <td style={tdStyle}>{rencanaStatusBadge(b.rencanaStatus ?? 'draft')}</td>
                               <td style={{ ...tdStyle, display: "flex", gap: 6 }}>
-                                {canValidate && <button onClick={() => generateCheckerDoc(b, 'rencana')} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #d97706", backgroundColor: "white", color: "#d97706", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Lihat</button>}
                                 {canValidate && (
-                                  <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat & Validasi</button>
+                                  <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Validasi</button>
                                 )}
                                 {!canValidate && b.rencanaStatus === 'signed_pihak_kedua' && (
                                   <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", backgroundColor: "white", color: "#16a34a", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat File</button>
@@ -2355,9 +2501,14 @@ ${hasilKerjaRows}
 
             {/* ── Bagian TTD Pihak Kedua ── */}
             {checkerBawahan.rencanaSKPBawahan.length > 0 && (() => {
-              const eligible = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'checked' || b.rencanaStatus === 'signed_pegawai');
+              const eligible = checkerBawahan.rencanaSKPBawahan.filter(b =>
+                b.hasChecker ? b.rencanaStatus === 'checked' : b.rencanaStatus === 'signed_pegawai'
+              );
               const done = checkerBawahan.rencanaSKPBawahan.filter(b => b.rencanaStatus === 'signed_pihak_kedua');
-              const waiting = checkerBawahan.rencanaSKPBawahan.filter(b => !b.rencanaStatus || b.rencanaStatus === 'draft');
+              const waiting = checkerBawahan.rencanaSKPBawahan.filter(b =>
+                !b.rencanaStatus || b.rencanaStatus === 'draft' ||
+                (b.hasChecker && b.rencanaStatus === 'signed_pegawai')
+              );
               const allSelected = eligible.length > 0 && rencanaSelected.size === eligible.length;
               // Sort: eligible first, then waiting, then done
               const sorted = [...eligible, ...waiting, ...done];
@@ -2389,8 +2540,11 @@ ${hasilKerjaRows}
                       <tbody>
                         {sorted.map((b, i) => {
                           const isDone = b.rencanaStatus === 'signed_pihak_kedua';
-                          const isEligible = b.rencanaStatus === 'checked' || b.rencanaStatus === 'signed_pegawai';
-                          const isPending = !b.rencanaStatus || b.rencanaStatus === 'draft';
+                          const isEligible = b.hasChecker
+                            ? b.rencanaStatus === 'checked'
+                            : b.rencanaStatus === 'signed_pegawai';
+                          const isPending = !b.rencanaStatus || b.rencanaStatus === 'draft' ||
+                            (b.hasChecker && b.rencanaStatus === 'signed_pegawai');
                           const checked = rencanaSelected.has(b.userId);
                           return (
                             <tr key={b.userId} style={{ backgroundColor: checked ? "#f0fdf4" : undefined, opacity: isDone ? 0.75 : 1 }}>
@@ -2403,11 +2557,10 @@ ${hasilKerjaRows}
                                 {isDone ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", backgroundColor: "#dcfce7", padding: "3px 8px", borderRadius: 20, border: "1px solid #86efac" }}>✅ TTD Selesai</span>
                                   : b.rencanaStatus === 'checked' ? <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>✓ Sudah Dicek</span>
                                   : b.rencanaStatus === 'signed_pegawai' ? <span style={{ fontSize: 11, fontWeight: 700, color: "#059669", backgroundColor: "#ecfdf5", padding: "3px 8px", borderRadius: 20, border: "1px solid #6ee7b7" }}>✓ Diajukan Pegawai</span>
-                                  : <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", backgroundColor: "#f3f4f6", padding: "3px 8px", borderRadius: 20, border: "1px solid #e5e7eb" }}>📋 Belum Diajukan</span>}
+                                  : <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", backgroundColor: "#f3f4f6", padding: "3px 8px", borderRadius: 20, border: "1px solid #e5e7eb" }}> Belum Diajukan</span>}
                               </td>
                               <td style={{ ...tdStyle, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                {isEligible && <button onClick={() => generateCheckerDoc(b, 'rencana')} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #1d4ed8", backgroundColor: "white", color: "#1d4ed8", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Cetak</button>}
-                                {isEligible && <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 10px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat & TTD</button>}
+                                {isEligible && <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 10px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Validasi</button>}
                                 {isDone && <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", backgroundColor: "white", color: "#16a34a", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat File</button>}
                                 {isPending && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
                               </td>
@@ -2434,32 +2587,41 @@ ${hasilKerjaRows}
         {/* ── Bagian Hasil SKP Checker ── */}
         {checkerBawahan.hasilCheckerBawahan.length > 0 && (
           <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#d97706", backgroundColor: "#fef9c3", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 20 }}>Pengecekan Checker — Hasil SKP</span>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>Bawahan yang mengajukan Hasil SKP untuk Anda cek</span>
-            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 12 }}>Validasi Hasil SKP Bawahan</h3>
             <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
                 <thead>
-                  <tr>{["No", "Nama", "Jabatan", "NIP", "Aksi"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{["No", "Nama", "Jabatan", "NIP", "Status", "Aksi"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {checkerBawahan.hasilCheckerBawahan.map((b, i) => (
-                    <tr key={b.userId}>
-                      <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
-                      <td style={tdStyle}><p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p><p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p></td>
-                      <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
-                      <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}&docType=hasil`)}
-                          style={{ padding: "5px 14px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
-                        >
-                          📄 Lihat & Validasi
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {checkerBawahan.hasilCheckerBawahan.map((b, i) => {
+                    const hs = b.hasilStatus ?? 'signed_pegawai';
+                    const statusBadge = hs === 'signed_pegawai'
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>Menunggu Pengecekan</span>
+                      : hs === 'checked'
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>✓ Sudah Dicek</span>
+                      : <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", backgroundColor: "#dcfce7", padding: "3px 8px", borderRadius: 20, border: "1px solid #86efac" }}>✅ Selesai</span>;
+                    return (
+                      <tr key={b.userId}>
+                        <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
+                        <td style={tdStyle}><p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p><p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p></td>
+                        <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
+                        <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
+                        <td style={tdStyle}>{statusBadge}</td>
+                        <td style={tdStyle}>
+                          {(hs === 'signed_pegawai' || hs === 'checked') && (
+                            <button
+                              onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
+                              style={{ padding: "5px 14px", borderRadius: 6, border: "none", backgroundColor: hs === 'signed_pegawai' ? "#d97706" : "#3b82f6", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
+                            >
+                              📄 Lihat Dokumen
+                            </button>
+                          )}
+                          {hs !== 'signed_pegawai' && hs !== 'checked' && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2469,10 +2631,6 @@ ${hasilKerjaRows}
         {/* ── Bagian TTD Pejabat Penilai — Hasil SKP ── */}
         {checkerBawahan.hasilPenilaiDapatTTD.length > 0 && (
           <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", padding: "3px 10px", borderRadius: 20 }}>TTD Pejabat Penilai — Hasil SKP</span>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>Bawahan yang siap ditandatangani Hasil SKP-nya</span>
-            </div>
             <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
                 <thead>
@@ -2487,10 +2645,10 @@ ${hasilKerjaRows}
                       <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
                       <td style={tdStyle}>
                         <button
-                          onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}&docType=hasil`)}
+                          onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
                           style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
                         >
-                          📄 Lihat & TTD
+                          📄 Lihat Dokumen
                         </button>
                       </td>
                     </tr>
@@ -3146,169 +3304,128 @@ ${hasilKerjaRows}
           </div>
         )}
 
-        {/* ── Modal Preview Hasil SKP sebelum TTD ── */}
-        {hasilPreviewModal && (
-          <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHasilPreviewModal(false); }}>
-            <div className="modal-content" style={{ maxWidth: 860, width: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-              <div style={{ padding: "16px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Preview Hasil SKP</h3>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>Periksa dokumen sebelum mengajukan tanda tangan</p>
-                </div>
-                <button onClick={() => setHasilPreviewModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+      </PageTransition>
+
+      {/* ── Modal Preview Hasil SKP sebelum TTD ── */}
+      {hasilPreviewModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setHasilPreviewModal(false); }}>
+          <div className="modal-content" style={{ maxWidth: 860, width: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Preview Hasil SKP</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>Periksa dokumen sebelum mengajukan tanda tangan</p>
               </div>
-              <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-                <iframe
-                  srcDoc={hasilPreviewHtml}
-                  style={{ width: "100%", height: "100%", border: "none", minHeight: 500 }}
-                  title="Preview Hasil SKP"
-                />
-              </div>
-              <div className="modal-footer">
-                <button onClick={() => setHasilPreviewModal(false)} className="btn-secondary">Tutup</button>
-                <button
-                  onClick={() => { setHasilPreviewModal(false); setHasilSignModal(true); }}
-                  className="btn-green"
-                >
+              <button onClick={() => setHasilPreviewModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+              <iframe
+                srcDoc={hasilPreviewHtml}
+                style={{ width: "100%", height: "100%", border: "none", minHeight: 500 }}
+                title="Preview Hasil SKP"
+              />
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setHasilPreviewModal(false)} className="btn-secondary">Tutup</button>
+              {(myHasilStatus?.status === 'pending' || myHasilStatus?.status === 'needs_revision') && (
+                <button onClick={() => { setHasilPreviewModal(false); setHasilSignModal(true); }} className="btn-green">
                   ✍️ Lanjut ke Tanda Tangan
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Modal Ajukan Hasil SKP (pegawai/dosen) ── */}
-        {hasilSignModal && (
-          <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setHasilSignModal(false); setHasilSignHasDrawn(false); } }}>
-            <div className="modal-content modal-content--md">
-              <div style={{ padding: "18px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Ajukan Hasil SKP</h3>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>Tanda tangan digital untuk mengajukan Hasil SKP Anda</p>
-                </div>
-                <button onClick={() => { setHasilSignModal(false); setHasilSignHasDrawn(false); }} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
-              </div>
-              <div style={{ padding: "16px 24px" }}>
-                <p style={{ fontSize: 13, color: "#374151", marginBottom: 10 }}>
-                  Tanda tangan di bawah untuk mengajukan Hasil SKP Anda. Setelah diajukan, Hasil SKP akan diteruskan ke Checker untuk diverifikasi.
-                </p>
-                <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
-                  <canvas
-                    ref={hasilSignCanvasRef}
-                    width={600} height={150}
-                    style={{ display: "block", width: "100%", touchAction: "none" }}
-                    onMouseDown={hasilSignHandlers.onMouseDown}
-                    onMouseMove={hasilSignHandlers.onMouseMove}
-                    onMouseUp={hasilSignHandlers.onMouseUp}
-                    onMouseLeave={hasilSignHandlers.onMouseUp}
-                    onTouchStart={hasilSignHandlers.onTouchStart}
-                    onTouchMove={hasilSignHandlers.onTouchMove}
-                    onTouchEnd={hasilSignHandlers.onTouchEnd}
-                  />
-                  {!hasilSignHasDrawn && (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
-                      Tanda tangan di sini
-                    </div>
-                  )}
-                </div>
-                <button onClick={hasilSignHandlers.clear} style={{ marginTop: 6, fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0 }}>✕ Hapus tanda tangan</button>
-              </div>
-              <div className="modal-footer">
-                <button onClick={() => { setHasilSignModal(false); setHasilSignHasDrawn(false); }} className="btn-secondary">Batal</button>
-                <button onClick={handleHasilSignConfirm} disabled={hasilSignSaving} className="btn-green">
-                  {hasilSignSaving ? "Mengajukan…" : "✍️ Ajukan Hasil SKP"}
+              )}
+              {myHasilStatus?.status === 'signed_penilai' && (
+                <button onClick={() => { setHasilPreviewModal(false); window.print(); }} className="btn-green">
+                  🖨️ Cetak Dokumen
                 </button>
-              </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── Modal TTD Pejabat Penilai — Hasil SKP ── */}
-        {hasilPenilaiModal.open && hasilPenilaiModal.target && (
-          <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setHasilPenilaiModal({ open: false, target: null }); setHasilPenilaiHasDrawn(false); } }}>
-            <div className="modal-content modal-content--md">
-              <div style={{ padding: "18px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>TTD Pejabat Penilai — Hasil SKP</h3>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>{hasilPenilaiModal.target.nama} • {hasilPenilaiModal.target.jabatan}</p>
-                </div>
-                <button onClick={() => { setHasilPenilaiModal({ open: false, target: null }); setHasilPenilaiHasDrawn(false); }} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+      {/* ── Modal Ajukan Hasil SKP (pegawai/dosen) ── */}
+      {hasilSignModal && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setHasilSignModal(false); setHasilSignHasDrawn(false); } }}>
+          <div className="modal-content modal-content--md">
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Ajukan Hasil SKP</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b7280" }}>Tanda tangan digital untuk mengajukan Hasil SKP Anda</p>
               </div>
-              <div style={{ padding: "16px 24px" }}>
-                <p style={{ fontSize: 13, color: "#374151", marginBottom: 10 }}>
-                  Tanda tangan di bawah sebagai Pejabat Penilai Kinerja untuk menyetujui Hasil SKP <strong>{hasilPenilaiModal.target.nama}</strong>.
-                </p>
-                <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
-                  <canvas
-                    ref={hasilPenilaiCanvasRef}
-                    width={600} height={150}
-                    style={{ display: "block", width: "100%", touchAction: "none" }}
-                    onMouseDown={hasilPenilaiHandlers.onMouseDown}
-                    onMouseMove={hasilPenilaiHandlers.onMouseMove}
-                    onMouseUp={hasilPenilaiHandlers.onMouseUp}
-                    onMouseLeave={hasilPenilaiHandlers.onMouseUp}
-                    onTouchStart={hasilPenilaiHandlers.onTouchStart}
-                    onTouchMove={hasilPenilaiHandlers.onTouchMove}
-                    onTouchEnd={hasilPenilaiHandlers.onTouchEnd}
-                  />
-                  {!hasilPenilaiHasDrawn && (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
-                      Tanda tangan di sini
-                    </div>
-                  )}
-                </div>
-                <button onClick={hasilPenilaiHandlers.clear} style={{ marginTop: 6, fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0 }}>✕ Hapus tanda tangan</button>
-              </div>
-              <div className="modal-footer">
-                <button onClick={() => { setHasilPenilaiModal({ open: false, target: null }); setHasilPenilaiHasDrawn(false); }} className="btn-secondary">Batal</button>
-                <button onClick={handleHasilPenilaiConfirm} disabled={hasilPenilaiSaving} className="btn-green">
-                  {hasilPenilaiSaving ? "Menyimpan…" : "✍️ Tandatangani & Setujui"}
-                </button>
-              </div>
+              <button onClick={() => { setHasilSignModal(false); setHasilSignHasDrawn(false); }} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
             </div>
-          </div>
-        )}
-
-        {/* ── Modal Catatan Revisi Rencana SKP (Employee) ── */}
-        {revisionNoteOpen && myRencanaRevisions.length > 0 && (
-          <div
-            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-            onClick={(e) => { if (e.target === e.currentTarget) setRevisionNoteOpen(false); }}
-          >
-            <div style={{ backgroundColor: "white", borderRadius: 16, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Catatan Revisi Rencana SKP</h3>
-                <button onClick={() => setRevisionNoteOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
-              </div>
-              <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12, maxHeight: 400, overflowY: "auto" }}>
-                {myRencanaRevisions.map((log, idx) => (
-                  <div key={log.id} style={{ padding: "12px 14px", backgroundColor: log.resubmittedAt ? "#f0fdf4" : "#fef2f2", border: `1px solid ${log.resubmittedAt ? "#bbf7d0" : "#fecaca"}`, borderRadius: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: log.resubmittedAt ? "#16a34a" : "#b91c1c" }}>
-                        {idx === 0 && !log.resubmittedAt ? '🔴 Revisi Terbaru' : log.resubmittedAt ? '✅ Sudah Diajukan Kembali' : '🔴 Revisi'}
-                      </span>
-                      <span style={{ fontSize: 11, color: "#6b7280" }}>{new Date(log.revisedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                    </div>
-                    {log.reason && <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 600, color: "#374151" }}>Alasan: {log.reason}</p>}
-                    {log.note && <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{log.note}</p>}
-                    {log.resubmittedAt && (
-                      <p style={{ margin: "6px 0 0", fontSize: 11, color: "#16a34a" }}>
-                        Diajukan kembali: {new Date(log.resubmittedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
-                      </p>
-                    )}
+            <div style={{ padding: "16px 24px" }}>
+              <p style={{ fontSize: 13, color: "#374151", marginBottom: 10 }}>
+                Tanda tangan di bawah untuk mengajukan Hasil SKP Anda. Setelah diajukan, Hasil SKP akan diteruskan ke Checker untuk diverifikasi.
+              </p>
+              <div style={{ position: "relative", border: "2px solid #e5e7eb", borderRadius: 8, overflow: "hidden", backgroundColor: "#fff", cursor: "crosshair" }}>
+                <canvas
+                  ref={hasilSignCanvasRef}
+                  width={600} height={150}
+                  style={{ display: "block", width: "100%", touchAction: "none" }}
+                  onMouseDown={hasilSignHandlers.onMouseDown}
+                  onMouseMove={hasilSignHandlers.onMouseMove}
+                  onMouseUp={hasilSignHandlers.onMouseUp}
+                  onMouseLeave={hasilSignHandlers.onMouseUp}
+                  onTouchStart={hasilSignHandlers.onTouchStart}
+                  onTouchMove={hasilSignHandlers.onTouchMove}
+                  onTouchEnd={hasilSignHandlers.onTouchEnd}
+                />
+                {!hasilSignHasDrawn && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#d1d5db", fontSize: 13, pointerEvents: "none" }}>
+                    Tanda tangan di sini
                   </div>
-                ))}
+                )}
               </div>
-              <div style={{ padding: "12px 24px 20px", display: "flex", justifyContent: "flex-end" }}>
-                <button onClick={() => setRevisionNoteOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-                  Tutup
-                </button>
-              </div>
+              <button onClick={hasilSignHandlers.clear} style={{ marginTop: 6, fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0 }}>✕ Hapus tanda tangan</button>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => { setHasilSignModal(false); setHasilSignHasDrawn(false); }} className="btn-secondary">Batal</button>
+              <button onClick={handleHasilSignConfirm} disabled={hasilSignSaving} className="btn-green">
+                {hasilSignSaving ? "Mengajukan…" : "✍️ Ajukan Hasil SKP"}
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-      </PageTransition>
+      {/* ── Modal Catatan Revisi Rencana SKP (Employee) ── */}
+      {revisionNoteOpen && myRencanaRevisions.length > 0 && (
+        <div
+          style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setRevisionNoteOpen(false); }}
+        >
+          <div style={{ backgroundColor: "white", borderRadius: 16, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Catatan Revisi Rencana SKP</h3>
+              <button onClick={() => setRevisionNoteOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+            </div>
+            <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12, maxHeight: 400, overflowY: "auto" }}>
+              {myRencanaRevisions.map((log, idx) => (
+                <div key={log.id} style={{ padding: "12px 14px", backgroundColor: log.resubmittedAt ? "#f0fdf4" : "#fef2f2", border: `1px solid ${log.resubmittedAt ? "#bbf7d0" : "#fecaca"}`, borderRadius: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: log.resubmittedAt ? "#16a34a" : "#b91c1c" }}>
+                      {idx === 0 && !log.resubmittedAt ? '🔴 Revisi Terbaru' : log.resubmittedAt ? '✅ Sudah Diajukan Kembali' : '🔴 Revisi'}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#6b7280" }}>{new Date(log.revisedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                  </div>
+                  {log.reason && <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 600, color: "#374151" }}>Alasan: {log.reason}</p>}
+                  {log.note && <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{log.note}</p>}
+                  {log.resubmittedAt && (
+                    <p style={{ margin: "6px 0 0", fontSize: 11, color: "#16a34a" }}>
+                      Diajukan kembali: {new Date(log.resubmittedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "12px 24px 20px", display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => setRevisionNoteOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

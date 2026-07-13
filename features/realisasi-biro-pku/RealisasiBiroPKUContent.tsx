@@ -207,8 +207,22 @@ export default function RealisasiBiroPKUContent() {
         return ids.reduce((s, id) => s + (freshRealisasiCounts[id] ?? 0), 0);
       }
 
+      function freshSumTarget(ids: number[]): number | null {
+        const vals: number[] = [];
+        for (const l0 of freshGrouped)
+          for (const sub of l0.subIndikators)
+            for (const child of sub.children)
+              if (selectedJenis === "IKU") { if (ids.includes(child.id) && child.nilaiTarget != null) vals.push(child.nilaiTarget); }
+              else for (const l3 of child.children) { if (ids.includes(l3.id) && l3.nilaiTarget != null) vals.push(l3.nilaiTarget); }
+        return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) : null;
+      }
+      function freshCapaian(hasil: number | null | undefined, target: number | null | undefined): string {
+        if (hasil == null || target == null || target === 0) return "";
+        return `${Math.round((hasil / target) * 100)}%`;
+      }
+
       type Row = (string | number | null)[];
-      const COLS: Row = ["No.", "Kode", "Nama Indikator", "Realisasi Diajukan", "Hasil Biro PKU", "Keterangan", "Link Folder"];
+      const COLS: Row = ["No.", "Kode", "Nama Indikator", "Target", "Realisasi Diajukan", "Hasil Biro PKU", "Capaian (%)", "Keterangan", "Link Folder"];
       const rows: Row[] = [COLS];
       let no = 0;
 
@@ -216,29 +230,32 @@ export default function RealisasiBiroPKUContent() {
         const l0Ids = leafIdsOf(l0, selectedJenis);
         const l0Hasil = freshSumHasil(l0Ids);
         const l0Realisasi = freshSumRealisasi(l0Ids);
+        const l0Target = freshSumTarget(l0Ids);
 
-        rows.push(["", l0.kode, l0.nama, l0Realisasi || "", l0Hasil ?? "", "", ""]);
+        rows.push(["", l0.kode, l0.nama, l0Target ?? "", l0Realisasi || "", l0Hasil ?? "", freshCapaian(l0Hasil, l0Target), "", ""]);
 
         for (const sub of l0.subIndikators) {
           const subIds = leafIdsOfSub(sub, selectedJenis);
           const subHasil = freshSumHasil(subIds);
           const subRealisasi = freshSumRealisasi(subIds);
-          rows.push(["", sub.kode, `  ${sub.nama}`, subRealisasi || "", subHasil ?? "", "", ""]);
+          const subTarget = freshSumTarget(subIds);
+          rows.push(["", sub.kode, `  ${sub.nama}`, subTarget ?? "", subRealisasi || "", subHasil ?? "", freshCapaian(subHasil, subTarget), "", ""]);
 
           for (const child of sub.children) {
             if (selectedJenis === "IKU") {
               no++;
               const val = freshValidasiData.find((v) => v.indikatorId === child.id);
-              rows.push([no, child.kode, `    ${child.nama}`, freshRealisasiCounts[child.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", freshFolderLinks.get(child.id) ?? ""]);
+              rows.push([no, child.kode, `    ${child.nama}`, child.nilaiTarget ?? "", freshRealisasiCounts[child.id] ?? 0, val?.jumlahValid ?? "", freshCapaian(val?.jumlahValid, child.nilaiTarget), val?.keterangan ?? "", freshFolderLinks.get(child.id) ?? ""]);
             } else {
               const childIds = child.children.map((l3) => l3.id);
               const childHasil = freshSumHasil(childIds);
               const childRealisasi = freshSumRealisasi(childIds);
-              rows.push(["", child.kode, `    ${child.nama}`, childRealisasi || "", childHasil ?? "", "", ""]);
+              const childTarget = freshSumTarget(childIds);
+              rows.push(["", child.kode, `    ${child.nama}`, childTarget ?? "", childRealisasi || "", childHasil ?? "", freshCapaian(childHasil, childTarget), "", ""]);
               for (const l3 of child.children) {
                 no++;
                 const val = freshValidasiData.find((v) => v.indikatorId === l3.id);
-                rows.push([no, l3.kode, `      ${l3.nama}`, freshRealisasiCounts[l3.id] ?? 0, val?.jumlahValid ?? "", val?.keterangan ?? "", freshFolderLinks.get(l3.id) ?? ""]);
+                rows.push([no, l3.kode, `      ${l3.nama}`, l3.nilaiTarget ?? "", freshRealisasiCounts[l3.id] ?? 0, val?.jumlahValid ?? "", freshCapaian(val?.jumlahValid, l3.nilaiTarget), val?.keterangan ?? "", freshFolderLinks.get(l3.id) ?? ""]);
               }
             }
           }
@@ -246,7 +263,7 @@ export default function RealisasiBiroPKUContent() {
       }
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 55 }, { wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 55 }];
+      ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 55 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 55 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Verifikasi Biro PKU");
       XLSX.writeFile(wb, `Verifikasi_BiroPKU_${selectedJenis}_${selectedTahun}.xlsx`);
@@ -391,6 +408,31 @@ export default function RealisasiBiroPKUContent() {
     );
   }
 
+  function getLeafNilaiTarget(leafId: number): number | null {
+    for (const l0 of grouped)
+      for (const sub of l0.subIndikators)
+        for (const child of sub.children)
+          if (selectedJenis === "IKU") { if (child.id === leafId) return child.nilaiTarget; }
+          else for (const l3 of child.children) { if (l3.id === leafId) return l3.nilaiTarget; }
+    return null;
+  }
+
+  function sumTarget(ids: number[]): number | null {
+    const vals = ids.map(id => getLeafNilaiTarget(id)).filter(v => v != null) as number[];
+    return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) : null;
+  }
+
+  function targetCell(val: number | null) {
+    if (val == null) return <span style={{ color: "#d1d5db" }}>—</span>;
+    return <span style={{ fontWeight: 600, color: "#374151" }}>{val.toLocaleString("id-ID")}</span>;
+  }
+
+  function capaianCell(hasil: number | null, target: number | null) {
+    if (hasil == null || target == null || target === 0) return <span style={{ color: "#d1d5db" }}>—</span>;
+    const pct = Math.round((hasil / target) * 100);
+    return <span style={{ fontWeight: 700, color: pct >= 100 ? "#047857" : "#c2410c" }}>{pct}%</span>;
+  }
+
   /** Cell "Hasil Biro PKU" untuk baris agregat (non-leaf) */
   function hasilCell(val: number | null) {
     if (val == null) return <span style={{ color: "#d1d5db" }}>—</span>;
@@ -406,15 +448,18 @@ export default function RealisasiBiroPKUContent() {
       const l0Hasil = sumHasil(l0Ids);
       const l0Realisasi = sumRealisasiIds(l0Ids);
 
+      const l0Target = sumTarget(l0Ids);
       // -- L0 row --
       rows.push(
         <tr key={`l0-${l0.id}`} style={{ background: "#f5f7fa", borderBottom: "1px solid #f0f0f0", borderTop: "1px solid #f0f0f0" }}>
           <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontWeight: 700, color: "#374151", fontSize: 13 }}>{l0.kode}</td>
           <td style={{ padding: "11px 16px", fontWeight: 700, color: "#374151", fontSize: 13 }}>{l0.nama}</td>
+          <td style={{ padding: "11px 16px", textAlign: "center" }}>{targetCell(l0Target)}</td>
           <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151" }}>
             {l0Realisasi > 0 ? <><span style={{ fontWeight: 700 }}>{l0Realisasi}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>total submisi</div></> : <span style={{ color: "#d1d5db" }}>—</span>}
           </td>
           <td style={{ padding: "11px 16px", textAlign: "center" }}>{hasilCell(l0Hasil)}</td>
+          <td style={{ padding: "11px 16px", textAlign: "center" }}>{capaianCell(l0Hasil, l0Target)}</td>
           <td style={{ padding: "11px 16px" }}><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
           <td style={{ padding: "11px 16px" }} />
           <td style={{ padding: "11px 16px" }} />
@@ -426,15 +471,18 @@ export default function RealisasiBiroPKUContent() {
         const subHasil = sumHasil(subIds);
         const subRealisasi = sumRealisasiIds(subIds);
 
+        const subTarget = sumTarget(subIds);
         // -- L1 row --
         rows.push(
           <tr key={`l1-${sub.id}`} style={{ background: "#fff", borderBottom: "1px solid #f8f8f8" }}>
             <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>{sub.kode}</td>
             <td style={{ padding: "11px 16px 11px 32px", color: "#374151", fontSize: 13, fontWeight: 600 }}>{sub.nama}</td>
+            <td style={{ padding: "11px 16px", textAlign: "center" }}>{targetCell(subTarget)}</td>
             <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151", fontSize: 13 }}>
               {subRealisasi > 0 ? subRealisasi : <span style={{ color: "#d1d5db" }}>—</span>}
             </td>
             <td style={{ padding: "11px 16px", textAlign: "center" }}>{hasilCell(subHasil)}</td>
+            <td style={{ padding: "11px 16px", textAlign: "center" }}>{capaianCell(subHasil, subTarget)}</td>
             <td style={{ padding: "11px 16px" }}><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
             <td /><td />
           </tr>,
@@ -444,16 +492,19 @@ export default function RealisasiBiroPKUContent() {
           if (selectedJenis === "IKU") {
             // -- L2 = leaf IKU --
             const isEditing = editingId === child.id;
+            const childVal = validasiData.find((v) => v.indikatorId === child.id);
             rows.push(
               <tr key={`l2-${child.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f8f8f8" }}>
                 <td style={{ padding: "13px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{child.kode}</td>
                 <td style={{ padding: "13px 16px 13px 48px", color: "#374151", fontSize: 13 }}>{child.nama}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center" }}>{targetCell(child.nilaiTarget)}</td>
                 <td style={{ padding: "13px 16px", textAlign: "center", color: "#374151" }}>
                   {(realisasiCounts[child.id] ?? 0) > 0
                     ? <><span style={{ fontWeight: 600 }}>{realisasiCounts[child.id]}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>submisi</div></>
                     : <span style={{ color: "#d1d5db" }}>—</span>}
                 </td>
                 <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafInputCell(child.id)}</td>
+                <td style={{ padding: "13px 16px", textAlign: "center" }}>{capaianCell(childVal?.jumlahValid ?? null, child.nilaiTarget)}</td>
                 <td style={{ padding: "13px 16px" }}>{renderLeafKeteranganCell(child.id)}</td>
                 <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderFolderLink(child.id)}</td>
                 <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafAksiCell(child.id)}</td>
@@ -464,14 +515,17 @@ export default function RealisasiBiroPKUContent() {
             const childIds = child.children.map((l3) => l3.id);
             const childHasil = sumHasil(childIds);
             const childRealisasi = sumRealisasiIds(child.children.map((l3) => l3.id));
+            const childTarget = sumTarget(childIds);
             rows.push(
               <tr key={`l2pk-${child.id}`} style={{ background: "#fff", borderBottom: "1px solid #f8f8f8" }}>
                 <td style={{ padding: "11px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{child.kode}</td>
                 <td style={{ padding: "11px 16px 11px 48px", color: "#374151", fontSize: 13, fontWeight: 500 }}>{child.nama}</td>
+                <td style={{ padding: "11px 16px", textAlign: "center" }}>{targetCell(childTarget)}</td>
                 <td style={{ padding: "11px 16px", textAlign: "center", color: "#374151", fontSize: 13 }}>
                   {childRealisasi > 0 ? childRealisasi : <span style={{ color: "#d1d5db" }}>—</span>}
                 </td>
                 <td style={{ padding: "11px 16px", textAlign: "center" }}>{hasilCell(childHasil)}</td>
+                <td style={{ padding: "11px 16px", textAlign: "center" }}>{capaianCell(childHasil, childTarget)}</td>
                 <td><span style={{ color: "#d1d5db", fontSize: 12 }}>—</span></td>
                 <td /><td />
               </tr>,
@@ -481,16 +535,19 @@ export default function RealisasiBiroPKUContent() {
               // -- L3 = leaf PK --
               const l3Realisasi = realisasiCounts[l3.id] ?? 0;
               const isEditing = editingId === l3.id;
+              const l3Val = validasiData.find((v) => v.indikatorId === l3.id);
               rows.push(
                 <tr key={`l3-${l3.id}`} style={{ background: isEditing ? "#f0f9ff" : "#fff", borderBottom: "1px solid #f8f8f8" }}>
                   <td style={{ padding: "13px 16px", textAlign: "center", fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{l3.kode}</td>
                   <td style={{ padding: "13px 16px 13px 64px", color: "#374151", fontSize: 13 }}>{l3.nama}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center" }}>{targetCell(l3.nilaiTarget)}</td>
                   <td style={{ padding: "13px 16px", textAlign: "center", color: "#374151" }}>
                     {l3Realisasi > 0
                       ? <><span style={{ fontWeight: 600 }}>{l3Realisasi}</span><div style={{ fontSize: 10, color: "#9ca3af" }}>submisi</div></>
                       : <span style={{ color: "#d1d5db" }}>—</span>}
                   </td>
                   <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafInputCell(l3.id)}</td>
+                  <td style={{ padding: "13px 16px", textAlign: "center" }}>{capaianCell(l3Val?.jumlahValid ?? null, l3.nilaiTarget)}</td>
                   <td style={{ padding: "13px 16px" }}>{renderLeafKeteranganCell(l3.id)}</td>
                   <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderFolderLink(l3.id)}</td>
                   <td style={{ padding: "13px 16px", textAlign: "center" }}>{renderLeafAksiCell(l3.id)}</td>
@@ -579,13 +636,15 @@ export default function RealisasiBiroPKUContent() {
                 <thead>
                   <tr>
                     {[
-                      { label: "Kode", w: "8%" },
+                      { label: "Kode", w: "7%" },
                       { label: "Indikator", w: "auto" },
-                      { label: "Realisasi Diajukan", w: "12%" },
-                      { label: "Hasil Biro PKU", w: "12%" },
-                      { label: "Keterangan", w: "18%" },
-                      { label: "Link Folder", w: "10%" },
-                      { label: "Aksi", w: "9%" },
+                      { label: "Target", w: "8%" },
+                      { label: "Realisasi Diajukan", w: "10%" },
+                      { label: "Hasil Biro PKU", w: "10%" },
+                      { label: "Capaian (%)", w: "8%" },
+                      { label: "Keterangan", w: "14%" },
+                      { label: "Link Folder", w: "9%" },
+                      { label: "Aksi", w: "8%" },
                     ].map((h) => (
                       <th key={h.label} style={{ width: h.w }} className={h.label === "Indikator" || h.label === "Keterangan" ? "is-left" : ""}>
                         {h.label}
@@ -640,7 +699,7 @@ export default function RealisasiBiroPKUContent() {
           .biro-pku-btn--primary { border: 0; background: linear-gradient(135deg, #2563eb, #0f766e); color: #ffffff; box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22); }
           .biro-pku-table-card { overflow: hidden; border: 1px solid #e2e8f0; border-radius: 18px; background: #ffffff; box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08); }
           .biro-pku-table-scroll { overflow-x: auto; }
-          .biro-pku-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+          .biro-pku-table { width: 100%; min-width: 1280px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
           .biro-pku-table thead tr { background: #0f2f4f; }
           .biro-pku-table th { padding: 15px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); color: #e8eef7; font-size: 12px; font-weight: 900; letter-spacing: 0.06em; text-align: center; text-transform: uppercase; }
           .biro-pku-table th.is-left { text-align: left; }

@@ -116,6 +116,23 @@ interface MergedLevelNode {
 
 const CHAIN_LEVEL_LABELS = ["Penerima Awal", "Distribusi 1", "Distribusi 2", "Penerima Akhir"];
 
+/**
+ * Recursively sum realisasiJumlah of all leaf-level descendants of a given user in the chain.
+ * Uses fromUserId relationships (more reliable than parentDisposisiId which can be null).
+ */
+function getTotalRealRecursive(userId: number, indNodes: DisposisiChainNode[]): number {
+  const children = indNodes.filter(n => n.fromUserId === userId);
+  if (children.length === 0) {
+    // Leaf: sum realisasiJumlah across all disposisi nodes where this user is the recipient
+    return indNodes
+      .filter(n => n.toUserId === userId)
+      .reduce((s, n) => s + n.realisasiJumlah, 0);
+  }
+  // Non-leaf: recursively aggregate unique child user IDs
+  const childUserIds = [...new Set(children.map(c => c.toUserId))];
+  return childUserIds.reduce((sum, cid) => sum + getTotalRealRecursive(cid, indNodes), 0);
+}
+
 function buildChainLevels(
   allChain: DisposisiChainNode[],
   indId: number,
@@ -186,19 +203,9 @@ function buildChainLevels(
       const children = indNodes.filter(n => n.fromUserId === userId);
       entry.isLeaf = children.length === 0;
       entry.childCount = new Set(children.map(c => c.toUserId)).size;
-      if (entry.isLeaf) {
-        entry.totalReal = entry.disposisiIds.reduce((s, id) => {
-          const n = indNodes.find(x => x.disposisiId === id);
-          return s + (n?.realisasiJumlah ?? 0);
-        }, 0);
-      } else {
-        // effectiveRealisasi still uses parentDisposisiId chain for leaf lookups,
-        // but as a fallback use realisasiJumlah sum from direct leaf children
-        const leafChildren = children.filter(c =>
-          !indNodes.some(x => x.fromUserId === c.toUserId),
-        );
-        entry.totalReal = leafChildren.reduce((s, c) => s + c.realisasiJumlah, 0);
-      }
+      // Recursive roll-up: accumulates realisasi from the entire sub-chain beneath this user,
+      // not just direct leaf children. Fixes Kajur showing 0 when Kaprodi→Dosen has submissions.
+      entry.totalReal = getTotalRealRecursive(userId, indNodes);
     }
   }
 
@@ -682,17 +689,22 @@ function DetailModal({
 
 // ── File View Modal ───────────────────────────────────────────────────────────
 
-function FileViewModal({ id, kode, nama, token, onClose }: { id: number; kode: string; nama: string; token: string; onClose: () => void }) {
+function FileViewModal({ id, kode, nama, token, isPimpinan, userEmail, onClose }: { id: number; kode: string; nama: string; token: string; isPimpinan: boolean; userEmail: string; onClose: () => void }) {
   const [files, setFiles] = useState<RealisasiFileItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
     getAllRealisasiFiles(id, token)
-      .then(r => setFiles(r.files))
+      .then(r => {
+        const allFiles = r.files;
+        setFiles(isPimpinan ? allFiles : allFiles.filter(f => {
+          const email = f.ownerEmail || (f as { owner?: { email?: string } }).owner?.email || "";
+          return email === userEmail;
+        }));
+      })
       .catch(() => setFiles([]))
       .finally(() => setLoading(false));
-  }, [id, token]);
+  }, [id, token, isPimpinan, userEmail]);
 
   const ownerKeys = Array.from(new Set(files.map(f => f.ownerEmail || f.ownerName || "—")));
 
@@ -1018,9 +1030,20 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
   const [fileViewModal, setFileViewModal] = useState<{ id: number; kode: string; nama: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima" | "bawahan">(
-    role === "pimpinan" || role === "admin" ? "keseluruhan" : "diterima"
-  );
+  const [activeTab, setActiveTab] = useState<"keseluruhan" | "diterima" | "bawahan">(() => {
+    // Baca role dari sessionStorage secara sinkron agar tab awal langsung benar
+    // tanpa menunggu useAuth (mencegah flicker tab yang salah)
+    if (typeof window === "undefined") return "diterima";
+    try {
+      const u = JSON.parse(sessionStorage.getItem("user") ?? "{}");
+      const rn = (u.role ?? "").toLowerCase().trim();
+      const isDek = rn === "dekan" || (rn.startsWith("dekan") && !rn.includes("wakil"));
+      const isWD2 = rn.includes("wakil") && rn.includes("dekan") &&
+        ((rn.includes("ii") && !rn.includes("iii")) || rn.includes(" 2") || rn.endsWith("2") || rn.includes("kedua"));
+      if (isDek || isWD2 || role === "admin") return "keseluruhan";
+    } catch { /* ignore */ }
+    return "diterima";
+  });
 
   const [monitoringBawahan, setMonitoringBawahan] = useState<MonitoringBawahanResult | null>(null);
   const [monitoringBawahanLoading, setMonitoringBawahanLoading] = useState(false);
@@ -1041,8 +1064,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
   const isPimpinan = role === "pimpinan" || role === "admin";
   const roleStr = (user?.role ?? "").toLowerCase();
-  const isDekan = roleStr === "dekan";
+  const isDekan = roleStr === "dekan" || (roleStr.startsWith("dekan") && !roleStr.includes("wakil"));
   const isWadek = roleStr.includes("wakil dekan");
+  const isWakilDekanII =
+    isWadek &&
+    ((roleStr.includes("ii") && !roleStr.includes("iii")) || roleStr.includes(" 2") || roleStr.endsWith("2") || roleStr.includes("kedua"));
+  // Tab Monitoring Keseluruhan hanya untuk Dekan, Wakil Dekan II, dan Admin
+  const canSeeKeseluruhan = role === "admin" || isDekan || isWakilDekanII;
   const canSeeAll = role === "admin" || isDekan;
   const canViewDetail = isDekan || isWadek;
 
@@ -1165,7 +1193,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       const JUMLAH_BG  = "FFFFC000";
       const JUMLAH_FG  = "FF1F3864";
       const BORDER     = "FF000000";
-      const TOTAL_COLS = 13;
+      const TOTAL_COLS = 14;
 
       const mkBorder = (style: "thin" | "medium" = "thin") => ({
         top:    { style, color: { argb: BORDER } },
@@ -1213,8 +1241,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet(`Validasi ${selectedJenis} ${selectedTahun}`);
 
-      // Col widths: No | Sasaran | Kode | Nama | TargetUniv | SD | TgtKual | TgtKuant | RealKual | RealKuant | Capaian | HasilBiroPKU | SumberData
-      [5, 30, 10, 40, 12, 12, 12, 12, 14, 12, 12, 14, 25].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+      // Col widths: No | Sasaran | Kode | Nama | TargetUniv | SD | TgtKual | TgtKuant | RealKual | RealKuant | Capaian | HasilBiroPKU | SumberData | CatatanVerifikasi
+      [5, 30, 10, 40, 12, 12, 12, 12, 14, 12, 12, 14, 25, 30].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
       // ── Title rows ─────────────────────────────────────────────────────────
       [
@@ -1243,6 +1271,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       h1.getCell(7).value = "FIK";
       h1.getCell(12).value = "Verifikasi\nBiro PKU\n(isi di sini)";
       h1.getCell(13).value = "Sumber Data";
+      h1.getCell(14).value = "Catatan\nVerifikasi";
 
       // H2: second-level headers
       const h2 = ws.addRow(Array(TOTAL_COLS).fill(""));
@@ -1270,8 +1299,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         }
       }
 
-      // Vertical merges: No, Sasaran, Hasil Biro PKU, Sumber Data span all 3 header rows
-      [1, 2, 12, 13].forEach(c => ws.mergeCells(h1.number, c, h3.number, c));
+      // Vertical merges: No, Sasaran, Hasil Biro PKU, Sumber Data, Catatan span all 3 header rows
+      [1, 2, 12, 13, 14].forEach(c => ws.mergeCells(h1.number, c, h3.number, c));
       // H1 horizontal group merges
       ws.mergeCells(h1.number, 3, h1.number, 4);   // IKK group
       ws.mergeCells(h1.number, 5, h1.number, 6);   // TARGET UNIVERSITAS group
@@ -1349,8 +1378,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
         const groupEndRow = ws.rowCount;
 
-        // Merge L0-level cols (No, Sasaran, TargetUniv, SD, HasilBiroPKU, SumberData) across all rows
-        [1, 2, 5, 6, 12, 13].forEach(c => {
+        // Merge L0-level cols (No, Sasaran, TargetUniv, SD, HasilBiroPKU, SumberData, Catatan) across all rows
+        [1, 2, 5, 6, 12, 13, 14].forEach(c => {
           if (groupEndRow > groupStartRow) {
             ws.mergeCells(groupStartRow, c, groupEndRow, c);
           }
@@ -1382,6 +1411,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           linkCell.font = { size: 10, name: "Calibri", color: { argb: "FF9CA3AF" } };
         }
         linkCell.alignment = { horizontal: "center", vertical: "middle" };
+
+        // Catatan Verifikasi
+        const catatanCell = ws.getCell(groupStartRow, 14);
+        catatanCell.value = val?.keterangan ?? "";
+        catatanCell.font = { size: 10, name: "Calibri", color: { argb: "FF374151" } };
+        catatanCell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+        catatanCell.border = mkBorder("thin");
 
         if (val?.jumlahValid != null) totalValid += val.jumlahValid;
       }
@@ -1681,7 +1717,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
         {(() => {
           const hasBawahan = (monitoringBawahan?.bawahanList?.length ?? 0) > 0;
           const tabs = [
-            ...(isPimpinan ? [{ key: "keseluruhan" as const, label: "Monitoring Keseluruhan" }] : []),
+            ...(canSeeKeseluruhan ? [{ key: "keseluruhan" as const, label: "Monitoring Keseluruhan" }] : []),
             { key: "diterima" as const, label: "Target Saya" },
             ...(hasBawahan ? [{ key: "bawahan" as const, label: "Distribusi Target Dosen" }] : []),
           ];
@@ -1808,11 +1844,13 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         { label: "Indikator / Sub-Indikator", w: 260 },
                         { label: "Target", w: 90 },
                         { label: "Realisasi", w: 90 },
+                        { label: "Capaian (%)", w: 90 },
                         { label: "Tenggat", w: 110 },
                         { label: "Status", w: 90 },
-                        { label: "Hasil Validasi", w: 110 },
+                        { label: "Status Verifikasi", w: 110 },
+                        { label: "Catatan Verifikasi", w: 140 },
                       ].map((h) => (
-                        <th key={h.label} style={{ minWidth: h.w, padding: "12px 16px", fontWeight: 900, color: "#e8eef7", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" ? "left" : "center", whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                        <th key={h.label} style={{ minWidth: h.w, padding: "12px 16px", fontWeight: 900, color: "#e8eef7", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h.label === "Sasaran" || h.label === "Indikator / Sub-Indikator" || h.label === "Catatan Verifikasi" ? "left" : "center", whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
                           {h.label}
                         </th>
                       ))}
@@ -1823,7 +1861,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
+                      <tr><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Memuat data kinerja...</td></tr>
                     ) : displayedChartData.length > 0 ? (() => {
                       const sortKode = (a: string, b: string) => {
                         const pa = a.split('.').map(Number);
@@ -1864,7 +1902,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         if (item.__kategoriHeader) {
                           rows.push(
                             <tr key={`kategori-${item.__kategoriHeader}`}>
-                              <td colSpan={9} style={{ padding: "8px 14px", backgroundColor: "#fafafa", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
+                              <td colSpan={11} style={{ padding: "8px 14px", backgroundColor: "#fafafa", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.__label}</span>
                               </td>
                             </tr>
@@ -1889,7 +1927,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             <tr key={`${item.id}-empty`} style={{ borderBottom: "1px solid #f8f8f8" }}>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 700, fontFamily: "monospace" }}>{globalNo}</td>
                               <td style={{ padding: "10px 14px", color: "#334155", fontWeight: 600 }}>{item.kode} — {item.nama}</td>
-                              <td colSpan={6} style={{ padding: "10px 14px", color: "#9ca3af", textAlign: "center" }}>—</td>
+                              <td colSpan={8} style={{ padding: "10px 14px", color: "#9ca3af", textAlign: "center" }}>—</td>
                               <td style={{ padding: "10px 14px", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }} />
                             </tr>
                           );
@@ -1899,6 +1937,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         if (isCollapsed) {
                           globalNo++;
                           const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
+                          const itemCapaian = item.targetUniversitas && item.targetUniversitas > 0 && item.realisasi != null
+                            ? Math.round((item.realisasi / item.targetUniversitas) * 100)
+                            : null;
                           rows.push(
                             <tr key={`${item.id}-collapsed`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fafafa" }}>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12 }}>{item.kode}</td>
@@ -1914,6 +1955,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 </div>
                               </td>
                               <td colSpan={4} style={{ padding: "10px 14px", color: "#d1d5db", textAlign: "center" }}>—</td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: itemCapaian == null ? "#9ca3af" : itemCapaian >= 100 ? "#047857" : "#c2410c" }}>
+                                {itemCapaian != null ? `${itemCapaian}%` : "—"}
+                              </td>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" }}>{item.tenggat}</td>
                               <td style={{ padding: "10px 14px", textAlign: "center" }}>
                                 <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: item.status === "Done" ? "#ecfdf5" : "#fff7ed", color: item.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${item.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
@@ -1921,7 +1965,12 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 </span>
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center" }}>
-                                {val?.jumlahValid != null ? <span style={{ fontWeight: 800, color: "#0369a1" }}>{val.jumlahValid}</span> : <span style={{ color: "#d1d5db" }}>—</span>}
+                                {val?.jumlahValid != null
+                                  ? <span style={{ fontSize: 10, fontWeight: 700, color: "#047857", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 20, padding: "2px 8px" }}>Terverifikasi ({val.jumlahValid})</span>
+                                  : <span style={{ fontSize: 10, fontWeight: 600, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 20, padding: "2px 8px" }}>Belum</span>}
+                              </td>
+                              <td style={{ padding: "10px 14px", color: "#6b7280", fontSize: 11 }}>
+                                {val?.keterangan ? <span style={{ color: "#374151" }}>{val.keterangan}</span> : <span style={{ color: "#d1d5db" }}>—</span>}
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center", position: "sticky", right: 0, background: "#fafafa", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
                                 {canViewDetail ? (
@@ -1935,6 +1984,14 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
 
                         for (const sub of subs) {
                           globalNo++;
+                          const subEffTarget = (() => {
+                            const l2 = (sub.children ?? []).filter((c: ProgressChartSubChild) => c.nilaiTarget != null);
+                            if (l2.length > 0) return l2.reduce((s: number, c: ProgressChartSubChild) => s + (c.nilaiTarget ?? 0), 0);
+                            return sub.targetFakultas > 0 ? sub.targetFakultas : null;
+                          })();
+                          const subCapaian = subEffTarget && subEffTarget > 0 && sub.realisasi != null
+                            ? Math.round((sub.realisasi / subEffTarget) * 100)
+                            : null;
                           rows.push(
                             <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fff" }}>
                               {firstRow && (
@@ -1972,6 +2029,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                 })()}
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155" }}>{sub.realisasi}</td>
+                              <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: subCapaian == null ? "#9ca3af" : subCapaian >= 100 ? "#047857" : "#c2410c" }}>
+                                {subCapaian != null ? `${subCapaian}%` : "—"}
+                              </td>
                               {firstRow && (
                                 <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, verticalAlign: "top", borderLeft: "1px solid #f0f0f0", whiteSpace: "nowrap" }}>{item.tenggat}</td>
                               )}
@@ -1982,20 +2042,16 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                               </td>
                               {firstRow && (() => {
                                 const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
-                                return (
+                                return (<>
                                   <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f0f0f0" }}>
-                                    {val?.jumlahValid != null ? (
-                                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                                        <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 15 }}>{val.jumlahValid}</span>
-                                        {val.keterangan && (
-                                          <div style={{ fontSize: 10, color: "#6b7280", maxWidth: 110, wordBreak: "break-word", lineHeight: 1.4 }}>{val.keterangan}</div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
-                                    )}
+                                    {val?.jumlahValid != null
+                                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "#047857", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>Terverifikasi ({val.jumlahValid})</span>
+                                      : <span style={{ fontSize: 10, fontWeight: 600, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 20, padding: "2px 8px" }}>Belum</span>}
                                   </td>
-                                );
+                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "middle", borderLeft: "1px solid #f0f0f0" }}>
+                                    {val?.keterangan ? <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{val.keterangan}</span> : <span style={{ color: "#d1d5db", fontSize: 11 }}>—</span>}
+                                  </td>
+                                </>);
                               })()}
                               {firstRow && (
                                 <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
@@ -2013,6 +2069,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                           for (const child of (sub.children ?? [])) {
                             const childTarget = child.nilaiTarget ?? null;
                             const childSatuan = child.satuan ?? null;
+                            const childCapaian = childTarget && childTarget > 0 && child.realisasi > 0
+                              ? Math.round((child.realisasi / childTarget) * 100)
+                              : null;
                             rows.push(
                               <tr key={`${item.id}-${sub.id}-${child.id}`} style={{ borderBottom: "1px solid #f3f4f6", backgroundColor: "#fafafa" }}>
                                 <td style={{ padding: "8px 10px 8px 30px", color: "#64748b", lineHeight: 1.4 }}>
@@ -2025,6 +2084,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                                     : <span style={{ color: "#d1d5db" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b", fontSize: 12 }}>{child.realisasi > 0 ? child.realisasi : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                                <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 600, fontSize: 12, color: childCapaian == null ? "#d1d5db" : childCapaian >= 100 ? "#047857" : "#c2410c" }}>
+                                  {childCapaian != null ? `${childCapaian}%` : "—"}
+                                </td>
                                 <td style={{ padding: "8px 10px", textAlign: "center" }}>
                                   {child.status ? (
                                     <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: child.status === "Done" ? "#ecfdf5" : "#fff7ed", color: child.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${child.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
@@ -2039,10 +2101,10 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                       }
 
                       return rows.length > 0 ? rows : (
-                        <tr key="empty"><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data indikator.</td></tr>
+                        <tr key="empty"><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data indikator.</td></tr>
                       );
                     })() : (
-                      <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
+                      <tr><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Tidak ada data target ditemukan.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2548,6 +2610,8 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
           kode={fileViewModal.kode}
           nama={fileViewModal.nama}
           token={token}
+          isPimpinan={isPimpinan}
+          userEmail={user?.email ?? ""}
           onClose={() => setFileViewModal(null)}
         />
       )}
@@ -2595,7 +2659,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
             </div>
           </div>
         </div>
-      )}
+      )} 
     </div>
   );
 }
