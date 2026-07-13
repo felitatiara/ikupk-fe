@@ -28,7 +28,7 @@ const hasPkBerbasisIku = (group: IndikatorGrouped): boolean =>
 
 type FlatRow = { id: number; kode: string; nama: string; level: number; sub: any; child: any; l3Obj: any; isSubFirst: boolean; subTotalRows: number };
 
-export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan'; pageTitle?: string; headerSlot?: React.ReactNode }) {
+export default function IKUPKContent({ role = 'user', pageTitle, headerSlot, externalJenis, externalTahun, hideFilter }: { role?: 'admin' | 'user' | 'dekan' | 'pimpinan'; pageTitle?: string; headerSlot?: React.ReactNode; externalJenis?: string; externalTahun?: string; hideFilter?: boolean }) {
   const displayRole = role?.toLowerCase() === 'pimpinan' ? 'dekan' : role?.toLowerCase();
 
   const { user: authUser, token } = useAuth();
@@ -81,9 +81,13 @@ export default function IKUPKContent({ role = 'user', pageTitle, headerSlot }: {
   const [receivedGroupedData, setReceivedGroupedData] = useState<IndikatorGrouped[]>([]);
   const [validasiBiroPKU, setValidasiBiroPKU] = useState<ValidasiBiroPKUItem[]>([]);
   const [collapsedKategori, setCollapsedKategori] = useState<Set<string>>(new Set());
-const [tahun, setTahun] = useState("2026");
+const [internalTahun, setInternalTahun] = useState("2026");
   const [availableYears, setAvailableYears] = useState<string[]>(["2025", "2026", "2027"]);
-  const [jenis, setJenis] = useState("IKU");
+  const [internalJenis, setInternalJenis] = useState("IKU");
+  const jenis = externalJenis ?? internalJenis;
+  const tahun = externalTahun ?? internalTahun;
+  const setJenis = (v: string) => setInternalJenis(v);
+  const setTahun = (v: string) => setInternalTahun(v);
   const [disposisiSubId, setDisposisiSubId] = useState<number | null>(null);
   const [fileRepoChildren, setFileRepoChildren] = useState<IndikatorGroupedChild[]>([]);
 
@@ -131,6 +135,11 @@ const [tahun, setTahun] = useState("2026");
     let cancelled = false;
     const isAdmin = displayRole === 'admin';
 
+    // Reset loading + clear stale data whenever filters change so old jenis data doesn't linger.
+    setLoading(true);
+    setGroupedData([]);
+    setReceivedGroupedData([]);
+
     // Hanya Admin dan Dekan (bukan WD) lihat semua indikator; WD hanya lihat yang didisposisi Dekan
     const effectiveJenis = jenis === 'PK_IKU' ? 'PK' : jenis;
     const applyPkIkuFilter = <T extends IndikatorGrouped>(data: T[]): T[] =>
@@ -142,17 +151,33 @@ const [tahun, setTahun] = useState("2026");
         ? getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId)
         : Promise.resolve([]);
 
-    fetchPromise
-      .then((d) => { if (!cancelled) { setGroupedData(applyPkIkuFilter(d)); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
-
-    // Dekan/WD (isTopLevel non-admin) mungkin juga menerima disposisi dari Kaprodi
+    // For WD2/pimpinan non-admin: "Target yang Anda Terima" uses receivedGroupedData.
+    // Resolve loading only after BOTH fetches complete so the user never sees stale data.
     if (isTopLevel && !isAdmin && authUser?.id) {
-      getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId)
-        .then((d) => { if (!cancelled) setReceivedGroupedData(applyPkIkuFilter(d)); })
-        .catch(() => { if (!cancelled) setReceivedGroupedData([]); });
-    } else if (!isTopLevel) {
-      setReceivedGroupedData([]);
+      Promise.all([
+        fetchPromise,
+        getIndikatorGroupedForUser(effectiveJenis, tahun, authUser.id, unitId),
+      ])
+        .then(([main, received]) => {
+          if (!cancelled) {
+            setGroupedData(applyPkIkuFilter(main));
+            setReceivedGroupedData(applyPkIkuFilter(received));
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setGroupedData([]);
+            setReceivedGroupedData([]);
+            setLoading(false);
+          }
+        });
+    } else {
+      fetchPromise
+        .then((d) => { if (!cancelled) { setGroupedData(applyPkIkuFilter(d)); setLoading(false); } })
+        .catch(() => { if (!cancelled) { setGroupedData([]); setLoading(false); } });
+
+      if (!isTopLevel) setReceivedGroupedData([]);
     }
 
     // Fetch hasil Biro PKU — hanya untuk pimpinan (Dekan/WD)
@@ -220,38 +245,35 @@ const [tahun, setTahun] = useState("2026");
       usedCascade = l1Result === 'used';
       if (l1Result === 'none' && l0Id) usedCascade = (await tryCascadeId(l0Id)) === 'used';
 
-      // 2. Cascade tidak ada next step (berhenti di user ini) → tampilkan berdasarkan level
+      // 2. Cascade tidak ada next step → prioritas UserRelation, fallback level jika belum dikonfigurasi
+      const isKajur = roleLevel === 2 || ((authUser?.roles as any[])?.some((r: any) => r.level === 2) ?? false);
       if (!usedCascade) {
         if (displayRole === 'admin') {
-          // Admin: default ke level 1
           users = await getUsersByLevel(1);
         } else if (authUser?.id) {
-          if (roleLevel <= 1) {
-            // Dekan/WD → level 1 & 2
-            const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
-            const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
-            const seen = new Set<number>();
-            users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
-          } else if (roleLevel === 3 && authUser?.unitNama) {
-            // Kaprodi → Dosen di unit (prodi) yang sama
-            const dosenUsers = await getDosenByUnit(authUser.unitNama);
-            users = dosenUsers.filter((u) => u.id !== authUser?.id);
+          // Prioritas: ambil bawahan langsung dari struktur organisasi (UserRelation WHERE parent_id = userId)
+          let bawahanLangsung: UnitUser[] = [];
+          try { bawahanLangsung = await getRelatedUsersFor(authUser.id); } catch { /* fallback below */ }
+          if (bawahanLangsung.length > 0) {
+            users = bawahanLangsung.filter((u) => u.id !== authUser.id);
+          } else {
+            // Fallback berdasarkan level jika UserRelation belum dikonfigurasi untuk user ini
+            if (roleLevel <= 1) {
+              const [lvl1Users, lvl2Users] = await Promise.all([getUsersByLevel(1), getUsersByLevel(2)]);
+              const merged = [...lvl1Users, ...lvl2Users].filter((u) => u.id !== authUser?.id);
+              const seen = new Set<number>();
+              users = merged.filter((u) => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
+            } else if (isKajur) {
+              const [allKaprodi, allDosenUsers] = await Promise.all([getUsersByLevel(3), getAllDosen()]);
+              const toMerge = [...allKaprodi, ...allDosenUsers];
+              const seen = new Set<number>();
+              users = toMerge.filter((u) => { if (seen.has(u.id) || u.id === authUser.id) return false; seen.add(u.id); return true; });
+            } else if (roleLevel === 3 && authUser?.unitNama) {
+              const dosenUsers = await getDosenByUnit(authUser.unitNama);
+              users = dosenUsers.filter((u) => u.id !== authUser?.id);
+            }
           }
         }
-      }
-
-      // Kajur (level 2): tampilkan semua Kaprodi + Dosen hanya jika tidak ada cascade
-      // Cek lewat roleLevel ATAU roles array (kasus user punya multi-role dengan Kajur bukan primary)
-      const isKajur = roleLevel === 2 || ((authUser?.roles as any[])?.some((r: any) => r.level === 2) ?? false);
-      if (isKajur && !usedCascade && displayRole !== 'admin' && authUser?.id) {
-        const [allKaprodi, allDosenUsers] = await Promise.all([getUsersByLevel(3), getAllDosen()]);
-        const toMerge = [...allKaprodi, ...allDosenUsers];
-        const seen = new Set<number>(users.map(u => u.id));
-        const toAdd: UnitUser[] = [];
-        for (const u of toMerge) {
-          if (!seen.has(u.id) && u.id !== authUser.id) { seen.add(u.id); toAdd.push(u); }
-        }
-        users = [...users, ...toAdd];
       }
 
       // Urutkan alfabetis sebelum menambah entri diri sendiri
@@ -743,9 +765,11 @@ const [tahun, setTahun] = useState("2026");
   return (
     <div>
       <PageTransition>
-        <p className="ikupk-header-text">
-          {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
-        </p>
+        {!headerSlot && (
+          <p className="ikupk-header-text">
+            {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
+          </p>
+        )}
         {headerSlot}
 
         {/* DISPOSISI MODAL */}
@@ -1336,29 +1360,31 @@ const [tahun, setTahun] = useState("2026");
           .ikupk-table-wrapper { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); margin-bottom: 20px; }
         `}</style>
 
-        {/* ── Hero Card ── */}
-        <div className="ikupk-hero">
-          <div>
-            <h3 className="ikupk-card-title">
-              {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
-            </h3>
-            <p className="ikupk-hero-sub">Target dan realisasi indikator kinerja kegiatan dan perjanjian kinerja.</p>
-          </div>
-          {isTopLevel && !loading && groupedData.length > 0 && (
-            <div className="ikupk-stats-card">
-              <div className="ikupk-stat">
-                <span className="ikupk-stat-label">Sasaran</span>
-                <span className="ikupk-stat-val">{groupedData.length}</span>
-              </div>
-              {displayRole === 'admin' && (
-                <div className="ikupk-stat">
-                  <span className="ikupk-stat-label">Terverifikasi</span>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: "#047857" }}>{validasiBiroPKU.length}</span>
-                </div>
-              )}
+        {/* ── Hero Card — hidden when headerSlot already provides a dashboard summary ── */}
+        {!headerSlot && (
+          <div className="ikupk-hero">
+            <div>
+              <h3 className="ikupk-card-title">
+                {pageTitle ?? 'Indikator Kinerja Utama & Perjanjian Kinerja'}
+              </h3>
+              <p className="ikupk-hero-sub">Target dan realisasi indikator kinerja kegiatan dan perjanjian kinerja.</p>
             </div>
-          )}
-        </div>
+            {isTopLevel && !loading && groupedData.length > 0 && (
+              <div className="ikupk-stats-card">
+                <div className="ikupk-stat">
+                  <span className="ikupk-stat-label">Sasaran</span>
+                  <span className="ikupk-stat-val">{groupedData.length}</span>
+                </div>
+                {displayRole === 'admin' && (
+                  <div className="ikupk-stat">
+                    <span className="ikupk-stat-label">Terverifikasi</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: "#047857" }}>{validasiBiroPKU.length}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div>
           {isTopLevel ? (
@@ -1632,32 +1658,34 @@ const [tahun, setTahun] = useState("2026");
             </>
           ) : (
             <>
-              <div className="filter filter--mb20">
-                <div className="filter-content">
-                  <label className="filter-content-label">Target</label>
-                  <select
-                    value={jenis}
-                    onChange={(e) => setJenis(e.target.value)}
-                    className="filter-isi"
-                  >
-                    <option value="IKU">Indikator Kinerja Utama</option>
-                    <option value="PK">Perjanjian Kinerja</option>
-                    <option value="PK_IKU">PK Berbasis IKU</option>
-                  </select>
+              {!hideFilter && (
+                <div className="filter filter--mb20">
+                  <div className="filter-content">
+                    <label className="filter-content-label">Target</label>
+                    <select
+                      value={jenis}
+                      onChange={(e) => setJenis(e.target.value)}
+                      className="filter-isi"
+                    >
+                      <option value="IKU">Indikator Kinerja Utama</option>
+                      <option value="PK">Perjanjian Kinerja</option>
+                      <option value="PK_IKU">PK Berbasis IKU</option>
+                    </select>
+                  </div>
+                  <div className="filter-content">
+                    <label className="filter-content-label">Tahun</label>
+                    <select
+                      value={tahun}
+                      onChange={(e) => setTahun(e.target.value)}
+                      className="filter-isi"
+                    >
+                      {availableYears.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="filter-content">
-                  <label className="filter-content-label">Tahun</label>
-                  <select
-                    value={tahun}
-                    onChange={(e) => setTahun(e.target.value)}
-                    className="filter-isi"
-                  >
-                    {availableYears.map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              )}
 
               {loading && <p className="text-loading">Loading...</p>}
 

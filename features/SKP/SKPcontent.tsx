@@ -22,11 +22,17 @@ import {
   checkHasilSKPChecker,
   signHasilSKPPenilai,
   getUserRoles,
+  resubmitRencanaSKP,
+  getRencanaSKPRevisionLogs,
+  resubmitHasilSKP,
+  getHasilSKPRevisionLogs,
   type SkpBawahanRow,
   type MySkpStatus,
   type SkpCheckerUser,
+  type SkpCheckerBawahan,
   type SkpRencanaStatusData,
   type SkpHasilStatusData,
+  type SkpRevisionLog,
 } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -172,7 +178,7 @@ export default function SKPContent() {
   const [bulkSigHasDrawn, setBulkSigHasDrawn] = useState(false);
 
   // Atasan checker: bawahan berdasarkan konfigurasi penilai
-  const [checkerBawahan, setCheckerBawahan] = useState<{ checkerBawahan: SkpCheckerUser[]; rencanaSKPBawahan: SkpCheckerUser[]; ekpBawahan: SkpCheckerUser[] }>({ checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [] });
+  const [checkerBawahan, setCheckerBawahan] = useState<SkpCheckerBawahan>({ checkerBawahan: [], rencanaSKPBawahan: [], ekpBawahan: [], hasilCheckerBawahan: [], hasilPenilaiDapatTTD: [] });
   const [checkerLoading, setCheckerLoading] = useState(false);
 
 
@@ -207,6 +213,11 @@ export default function SKPContent() {
   const bulkRencanaIsDrawing = useRef(false);
   const [bulkRencanaHasDrawn, setBulkRencanaHasDrawn] = useState(false);
   const [bulkRencanaSaving, setBulkRencanaSaving] = useState(false);
+
+  // Revision history for employee
+  const [revisionNoteOpen, setRevisionNoteOpen] = useState(false);
+  const [myRencanaRevisions, setMyRencanaRevisions] = useState<SkpRevisionLog[]>([]);
+  const [myHasilRevisions, setMyHasilRevisions] = useState<SkpRevisionLog[]>([]);
 
   // File view in detail modal
   const [viewingFilesForId, setViewingFilesForId] = useState<number | null>(null);
@@ -363,6 +374,9 @@ export default function SKPContent() {
     try {
       const data = await getSkpRencanaStatus(user!.id, tahun);
       setMyRencanaStatus(data);
+      if (isDosen && token) {
+        getRencanaSKPRevisionLogs(user!.id, tahun, token).then(setMyRencanaRevisions).catch(() => {});
+      }
     } catch { /* ignore */ }
   }
 
@@ -371,6 +385,9 @@ export default function SKPContent() {
     try {
       const data = await getSkpHasilStatus(user!.id, tahun);
       setMyHasilStatus(data);
+      if (isDosen && token) {
+        getHasilSKPRevisionLogs(user!.id, tahun, token).then(setMyHasilRevisions).catch(() => {});
+      }
     } catch { /* ignore */ }
   }
 
@@ -1771,8 +1788,7 @@ ${hasilKerjaRows}
         {/* ── Hero Card ── */}
         <div className="skp-hero">
           <div>
-            <div className="skp-eyebrow">SKP · Sasaran Kinerja</div>
-            <h2 className="skp-title">Sasaran Kinerja Pegawai</h2>
+            <h3 className="ikupk-card-title">Sasaran Kinerja Pegawai</h3>
             <p className="skp-sub">Kelola dan pantau capaian target kinerja dalam periode penilaian.</p>
           </div>
         </div>
@@ -2001,20 +2017,58 @@ ${hasilKerjaRows}
 
         {/* ── Dosen: Tombol Lihat Rencana SKP ── */}
         {isDosen && (
-          <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <h4 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: "0 0 4px" }}>Rencana SKP</h4>
-              <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Lihat dokumen, tandatangani, atau ajukan banding atas Rencana SKP Anda.</p>
+          <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h4 style={{ fontSize: 15, fontWeight: 700, color: "#1f2937", margin: "0 0 4px" }}>Rencana SKP</h4>
+                <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Lihat dokumen, tandatangani, atau ajukan banding atas Rencana SKP Anda.</p>
+              </div>
+              <button
+                onClick={() => {
+                  const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
+                  router.push(`${basePath}/skp/cetak`);
+                }}
+                style={{ padding: "10px 22px", borderRadius: 8, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                📄 Lihat Rencana SKP
+              </button>
             </div>
-            <button
-              onClick={() => {
-                const basePath = roleLevel <= 1 ? "/pimpinan" : "/user";
-                router.push(`${basePath}/skp/cetak`);
-              }}
-              style={{ padding: "10px 22px", borderRadius: 8, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
-            >
-              📄 Lihat Rencana SKP
-            </button>
+            {myRencanaStatus?.status === 'needs_revision' && (
+              <div style={{ marginTop: 16, padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#b91c1c", fontSize: 13 }}>✏️ Rencana SKP Perlu Revisi</p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#7f1d1d" }}>
+                    {myRencanaRevisions[0]?.reason ? `Alasan: ${myRencanaRevisions[0].reason}` : 'Dokumen Anda telah dikembalikan oleh atasan.'}
+                    {myRencanaRevisions[0]?.note ? ` — ${myRencanaRevisions[0].note}` : ''}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  {myRencanaRevisions.length > 0 && (
+                    <button
+                      onClick={() => setRevisionNoteOpen(true)}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "white", color: "#b91c1c", fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+                    >
+                      Lihat Catatan
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      if (!token) return;
+                      try {
+                        const updated = await resubmitRencanaSKP(tahun, token);
+                        setMyRencanaStatus(updated as SkpRencanaStatusData);
+                        const logs = await getRencanaSKPRevisionLogs(user!.id, tahun, token);
+                        setMyRencanaRevisions(logs);
+                        toast.success('Rencana SKP berhasil diajukan kembali.');
+                      } catch { toast.error('Gagal mengajukan kembali.'); }
+                    }}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: "none", backgroundColor: "#b91c1c", color: "white", fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+                  >
+                    ↩ Ajukan Kembali
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2244,9 +2298,7 @@ ${hasilKerjaRows}
         {activeTab === 'rencana' && !isDosen && (
           <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
             <h3 style={{ fontSize: 17, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>Rencana SKP Bawahan</h3>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 20px" }}>
-              Seluruh pegawai yang dikonfigurasi di Master SKP untuk Anda validasi atau tandatangani.
-            </p>
+            <br></br>
 
             {/* ── Bagian Checker ── */}
             {checkerBawahan.checkerBawahan.length > 0 && (() => {
@@ -2284,9 +2336,12 @@ ${hasilKerjaRows}
                               <td style={{ ...tdStyle, display: "flex", gap: 6 }}>
                                 {canValidate && <button onClick={() => generateCheckerDoc(b, 'rencana')} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #d97706", backgroundColor: "white", color: "#d97706", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Lihat</button>}
                                 {canValidate && (
-                                  <button onClick={async () => { try { await checkRencanaSKPChecker(b.userId, tahun, null); setCheckerBawahan(await getSkpCheckerBawahan(user!.id, tahun)); toast.success(`Rencana SKP ${b.nama} berhasil divalidasi.`); } catch { toast.error('Gagal memvalidasi rencana SKP.'); } }} style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>✓ Validasi</button>
+                                  <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat & Validasi</button>
                                 )}
-                                {!canValidate && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
+                                {!canValidate && b.rencanaStatus === 'signed_pihak_kedua' && (
+                                  <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", backgroundColor: "white", color: "#16a34a", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat File</button>
+                                )}
+                                {!canValidate && b.rencanaStatus !== 'signed_pihak_kedua' && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
                               </td>
                             </tr>
                           );
@@ -2309,10 +2364,7 @@ ${hasilKerjaRows}
               return (
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", padding: "3px 10px", borderRadius: 20 }}>TTD Pihak Kedua</span>
-                      <span style={{ fontSize: 12, color: "#6b7280" }}>Bawahan yang Anda tugaskan sebagai Pihak Kedua</span>
-                    </div>
+                    
                     {rencanaSelected.size > 0 && (
                       <button onClick={() => setBulkRencanaSignModal(true)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                         ✍️ TTD Terpilih ({rencanaSelected.size})
@@ -2355,8 +2407,9 @@ ${hasilKerjaRows}
                               </td>
                               <td style={{ ...tdStyle, display: "flex", gap: 6, flexWrap: "wrap" }}>
                                 {isEligible && <button onClick={() => generateCheckerDoc(b, 'rencana')} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #1d4ed8", backgroundColor: "white", color: "#1d4ed8", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>Cetak</button>}
-                                {isEligible && <button onClick={() => setPkSignModal({ open: true, target: b })} style={{ padding: "5px 10px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>✍️ TTD</button>}
-                                {(isDone || isPending) && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
+                                {isEligible && <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 10px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat & TTD</button>}
+                                {isDone && <button onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}`)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", backgroundColor: "white", color: "#16a34a", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>📄 Lihat File</button>}
+                                {isPending && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
                               </td>
                             </tr>
                           );
@@ -2399,16 +2452,10 @@ ${hasilKerjaRows}
                       <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
                       <td style={tdStyle}>
                         <button
-                          onClick={async () => {
-                            try {
-                              await checkHasilSKPChecker(b.userId, tahun);
-                              toast.success(`Hasil SKP ${b.nama} berhasil divalidasi.`);
-                              setCheckerBawahan(await getSkpCheckerBawahan(user!.id, tahun));
-                            } catch { toast.error('Gagal memvalidasi Hasil SKP.'); }
-                          }}
+                          onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}&docType=hasil`)}
                           style={{ padding: "5px 14px", borderRadius: 6, border: "none", backgroundColor: "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
                         >
-                          ✓ Validasi
+                          📄 Lihat & Validasi
                         </button>
                       </td>
                     </tr>
@@ -2440,10 +2487,10 @@ ${hasilKerjaRows}
                       <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
                       <td style={tdStyle}>
                         <button
-                          onClick={() => setHasilPenilaiModal({ open: true, target: b })}
+                          onClick={() => router.push(`/pimpinan/skp/cetak?reviewUserId=${b.userId}&tahun=${tahun}&docType=hasil`)}
                           style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
                         >
-                          ✍️ TTD
+                          📄 Lihat & TTD
                         </button>
                       </td>
                     </tr>
@@ -2457,9 +2504,7 @@ ${hasilKerjaRows}
         {/* ── EKP Bawahan (Pejabat Penilai) ── */}
         <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
             <h3 style={{ fontSize: 17, fontWeight: 700, color: "#1f2937", marginBottom: 4 }}>Hasil SKP Bawahan</h3>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>
-              Anda dikonfigurasi sebagai Pejabat Penilai. Cetak hanya tersedia jika seluruh target pegawai sudah disetujui.
-            </p>
+            <br />
             {checkerBawahan.ekpBawahan.length > 0 ? (
               <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
@@ -3218,6 +3263,45 @@ ${hasilKerjaRows}
                 <button onClick={() => { setHasilPenilaiModal({ open: false, target: null }); setHasilPenilaiHasDrawn(false); }} className="btn-secondary">Batal</button>
                 <button onClick={handleHasilPenilaiConfirm} disabled={hasilPenilaiSaving} className="btn-green">
                   {hasilPenilaiSaving ? "Menyimpan…" : "✍️ Tandatangani & Setujui"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Modal Catatan Revisi Rencana SKP (Employee) ── */}
+        {revisionNoteOpen && myRencanaRevisions.length > 0 && (
+          <div
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setRevisionNoteOpen(false); }}
+          >
+            <div style={{ backgroundColor: "white", borderRadius: 16, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,.2)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1f2937" }}>Catatan Revisi Rencana SKP</h3>
+                <button onClick={() => setRevisionNoteOpen(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>✕</button>
+              </div>
+              <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12, maxHeight: 400, overflowY: "auto" }}>
+                {myRencanaRevisions.map((log, idx) => (
+                  <div key={log.id} style={{ padding: "12px 14px", backgroundColor: log.resubmittedAt ? "#f0fdf4" : "#fef2f2", border: `1px solid ${log.resubmittedAt ? "#bbf7d0" : "#fecaca"}`, borderRadius: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: log.resubmittedAt ? "#16a34a" : "#b91c1c" }}>
+                        {idx === 0 && !log.resubmittedAt ? '🔴 Revisi Terbaru' : log.resubmittedAt ? '✅ Sudah Diajukan Kembali' : '🔴 Revisi'}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#6b7280" }}>{new Date(log.revisedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                    </div>
+                    {log.reason && <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 600, color: "#374151" }}>Alasan: {log.reason}</p>}
+                    {log.note && <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{log.note}</p>}
+                    {log.resubmittedAt && (
+                      <p style={{ margin: "6px 0 0", fontSize: 11, color: "#16a34a" }}>
+                        Diajukan kembali: {new Date(log.resubmittedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: "12px 24px 20px", display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setRevisionNoteOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                  Tutup
                 </button>
               </div>
             </div>

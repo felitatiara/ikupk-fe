@@ -541,14 +541,14 @@ export default function RealisasiBiroPKUContent() {
         <div className="biro-pku-toolbar">
           <div className="biro-pku-filter-grid">
             <label className="biro-pku-field">
-              <span>Jenis</span>
+              <span className="filter-label">Target</span>
               <select value={selectedJenis} onChange={(e) => setSelectedJenis(e.target.value)}>
                 <option value="IKU">Indikator Kinerja Utama (IKU)</option>
                 <option value="PK">Perjanjian Kinerja (PK)</option>
               </select>
             </label>
             <label className="biro-pku-field biro-pku-field--year">
-              <span>Tahun</span>
+              <span className="filter-label">Tahun</span>
               <select value={selectedTahun} onChange={(e) => setSelectedTahun(e.target.value)}>
                 {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>

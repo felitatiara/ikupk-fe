@@ -699,6 +699,52 @@ export async function upsertDisposisi(indikatorId: number, tahun: string, items:
   return response.json();
 }
 
+export interface DisposisiBawahanResult {
+  myReceived: number;
+  bawahan: { userId: number; nama: string; jabatan: string; receivedJumlah: number }[];
+}
+
+export async function getDisposisiBawahan(userId: number, indikatorId: number, tahun: string): Promise<DisposisiBawahanResult> {
+  const res = await fetch(`${API_BASE_URL}/disposisi/bawahan?userId=${userId}&indikatorId=${indikatorId}&tahun=${encodeURIComponent(tahun)}`);
+  if (!res.ok) throw new Error('Failed to fetch bawahan disposisi');
+  return res.json();
+}
+
+export interface DekanDashboardSummary {
+  totalIndikator: number;
+  belumDisposisi: number;
+  proses: number;
+  selesai: number;
+  persentaseCapaian: number;
+}
+
+export interface DekanDashboardItem {
+  id: number;
+  kode: string;
+  nama: string;
+  kategori: string | null;
+  targetUniversitas: number;
+  satuan: string | null;
+  realisasi: number;
+  progress: number;
+  status: 'belum_disposisi' | 'proses' | 'selesai';
+  penerima: { userId: number; nama: string; jumlahTarget: number }[];
+  realisasiStatus: { pending: number; approved: number; rejected: number };
+}
+
+export interface DekanDashboardResult {
+  tahun: string;
+  jenis: string;
+  summary: DekanDashboardSummary;
+  items: DekanDashboardItem[];
+}
+
+export async function getDekanDashboard(tahun: string, jenis: string): Promise<DekanDashboardResult> {
+  const res = await fetch(`${API_BASE_URL}/monitoring/dekan-dashboard?tahun=${encodeURIComponent(tahun)}&jenis=${jenis}`);
+  if (!res.ok) throw new Error('Failed to fetch dekan dashboard');
+  return res.json();
+}
+
 export interface RoleOption {
   id: number;
   name: string;
@@ -1292,7 +1338,7 @@ export async function getMyNeedsRevision(
 }
 
 export interface SubmissionPerIndikator {
-  indikator: { id: number; kode: string; nama: string; jenis: string; level: number };
+  indikator: { id: number; kode: string; nama: string; jenis: string; level: number; sumberData?: string };
   submissions: RealisasiSubmission[];
 }
 
@@ -1707,7 +1753,7 @@ export interface SkpCheckerUser {
 export interface SkpRencanaStatusData {
   userId: number;
   tahun: string;
-  status: 'draft' | 'signed_pegawai' | 'checked' | 'signed_pihak_kedua';
+  status: 'draft' | 'signed_pegawai' | 'checked' | 'signed_pihak_kedua' | 'needs_revision';
   signaturePegawai: string | null;
   signatureChecker: string | null;
   signaturePihakKedua: string | null;
@@ -1801,7 +1847,7 @@ export async function checkRencanaSKPChecker(targetUserId: number, tahun: string
 export interface SkpHasilStatusData {
   userId: number;
   tahun: string;
-  status: 'pending' | 'signed_pegawai' | 'checked' | 'signed_penilai';
+  status: 'pending' | 'signed_pegawai' | 'checked' | 'signed_penilai' | 'needs_revision';
   signaturePegawai: string | null;
   signatureChecker: string | null;
   signaturePenilai: string | null;
@@ -1853,6 +1899,99 @@ export async function signHasilSKPPenilai(targetUserId: number, tahun: string, s
     body: JSON.stringify({ targetUserId, tahun, signature }),
   });
   if (!res.ok) throw new Error('Gagal menyimpan tanda tangan Pejabat Penilai');
+  return res.json();
+}
+
+// ── SKP Revision Flow ─────────────────────────────────────────────────────────
+
+export interface SkpRevisionLog {
+  id: number;
+  userId: number;
+  tahun: string;
+  docType: string;
+  fromStatus: string;
+  reason: string | null;
+  note: string | null;
+  revisedByUserId: number;
+  revisedAt: string;
+  resubmittedAt: string | null;
+}
+
+export async function returnRencanaSKPForRevision(
+  targetUserId: number, tahun: string, reason: string | null, note: string | null, token: string
+): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/return-revision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ targetUserId, tahun, reason, note }),
+  });
+  if (!res.ok) throw new Error('Gagal mengembalikan Rencana SKP untuk revisi');
+  return res.json();
+}
+
+export async function resubmitRencanaSKP(tahun: string, token: string): Promise<SkpRencanaStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/resubmit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal mengajukan kembali Rencana SKP');
+  return res.json();
+}
+
+export async function getRencanaSKPRevisionLogs(userId: number, tahun: string, token: string): Promise<SkpRevisionLog[]> {
+  const res = await fetch(`${API_BASE_URL}/skp-rencana/revisions?userId=${userId}&tahun=${tahun}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function returnHasilSKPForRevision(
+  targetUserId: number, tahun: string, reason: string | null, note: string | null, token: string
+): Promise<SkpHasilStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/return-revision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ targetUserId, tahun, reason, note }),
+  });
+  if (!res.ok) throw new Error('Gagal mengembalikan Hasil SKP untuk revisi');
+  return res.json();
+}
+
+export async function resubmitHasilSKP(tahun: string, token: string): Promise<SkpHasilStatusData> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/resubmit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tahun }),
+  });
+  if (!res.ok) throw new Error('Gagal mengajukan kembali Hasil SKP');
+  return res.json();
+}
+
+export async function getHasilSKPRevisionLogs(userId: number, tahun: string, token: string): Promise<SkpRevisionLog[]> {
+  const res = await fetch(`${API_BASE_URL}/skp-hasil/revisions?userId=${userId}&tahun=${tahun}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export interface UserSkpInfo {
+  id: number;
+  nama: string;
+  nip: string | null;
+  jabatan?: string | null;
+  roleId?: number;
+  roles?: Array<{ id: number; name: string; level: number; isPrimary: boolean }>;
+  userRoles?: Array<{ id: number; level: number; isPrimary?: boolean; role: { id: number; name: string; level: number } }>;
+}
+
+export async function getUserSkpInfo(userId: number, token: string): Promise<UserSkpInfo> {
+  const res = await fetch(`${API_BASE_URL}/users/${userId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Gagal mengambil data user');
   return res.json();
 }
 

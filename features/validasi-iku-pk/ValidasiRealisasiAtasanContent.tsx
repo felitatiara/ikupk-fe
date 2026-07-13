@@ -29,6 +29,7 @@ type DosenSubmission = RealisasiSubmission & {
   indikatorId: number;
   indikatorKode: string;
   indikatorNama: string;
+  sumberData?: string;
 };
 
 type DosenGroup = {
@@ -61,6 +62,7 @@ type PimpinanIndikator = {
   indikatorId: number;
   kodeIndikator: string;
   namaIndikator: string;
+  sumberData?: string;
   targetBawahan: number;
   totalValidFiles: number;
   dosenCount: number;
@@ -156,10 +158,15 @@ export default function ValidasiRealisasiAtasanContent() {
     type DetailFile = { name: string; previewUrl?: string; tanggal: string; ownerName?: string; ownerEmail?: string; sumber?: 'repository' | 'repository-all' | 'ikupk' };
 
     const dosenEmailLower = detail.dosenEmail.toLowerCase();
+    const isIkupk = (detail.submission.sumberData ?? 'repository') === 'ikupk';
 
     Promise.all([
-      getAllRealisasiFiles(detail.submission.indikatorId, token).catch(() => ({ files: [] as RepoFile[] })),
-      getIkupkFilesByUser(detail.submission.dosenId, detail.submission.indikatorId, tahun).catch(() => [] as IkupkFile[]),
+      isIkupk
+        ? Promise.resolve({ files: [] as RepoFile[] })
+        : getAllRealisasiFiles(detail.submission.indikatorId, token).catch(() => ({ files: [] as RepoFile[] })),
+      isIkupk
+        ? getIkupkFilesByUser(detail.submission.dosenId, detail.submission.indikatorId, tahun).catch(() => [] as IkupkFile[])
+        : Promise.resolve([] as IkupkFile[]),
     ]).then(([repoResult, ikupkFiles]) => {
       const mapRepoFile = (f: RepoFile, isAll = false): DetailFile => ({
         name: f.name,
@@ -170,22 +177,24 @@ export default function ValidasiRealisasiAtasanContent() {
         sumber: (isAll ? 'repository-all' : 'repository') as 'repository' | 'repository-all',
       });
 
-      const ownRepoFiles = (repoResult.files as RepoFile[])
-        .filter((f) => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
-        .map((f) => mapRepoFile(f));
-
-      const ikupkMapped = (ikupkFiles as IkupkFile[]).map((f) => ({
-        name: f.fileName,
-        previewUrl: `${API_BASE_URL}${f.fileUrl}`,
-        tanggal: f.createdAt ? new Date(f.createdAt).toLocaleDateString('id-ID') : '-',
-        ownerName: detail.dosenNama,
-        ownerEmail: detail.dosenEmail,
-        sumber: 'ikupk' as const,
-      }));
-
-      let merged = [...ownRepoFiles, ...ikupkMapped];
-      if (merged.length === 0 && repoResult.files.length > 0) {
-        merged = (repoResult.files as RepoFile[]).map((f) => mapRepoFile(f, true));
+      let merged: DetailFile[];
+      if (isIkupk) {
+        merged = (ikupkFiles as IkupkFile[]).map((f) => ({
+          name: f.fileName,
+          previewUrl: `${API_BASE_URL}${f.fileUrl}`,
+          tanggal: f.createdAt ? new Date(f.createdAt).toLocaleDateString('id-ID') : '-',
+          ownerName: detail.dosenNama,
+          ownerEmail: detail.dosenEmail,
+          sumber: 'ikupk' as const,
+        }));
+      } else {
+        const ownRepoFiles = (repoResult.files as RepoFile[])
+          .filter((f) => (f.ownerEmail || f.owner?.email || '').toLowerCase() === dosenEmailLower)
+          .map((f) => mapRepoFile(f));
+        merged = ownRepoFiles;
+        if (merged.length === 0 && repoResult.files.length > 0) {
+          merged = (repoResult.files as RepoFile[]).map((f) => mapRepoFile(f, true));
+        }
       }
 
       setDetailFiles(merged);
@@ -257,6 +266,7 @@ export default function ValidasiRealisasiAtasanContent() {
           indikatorId: g.indikator.id,
           indikatorKode: g.indikator.kode,
           indikatorNama: g.indikator.nama,
+          sumberData: g.indikator.sumberData ?? 'repository',
         });
       });
     });
@@ -496,8 +506,7 @@ export default function ValidasiRealisasiAtasanContent() {
         {/* ── Hero Card ── */}
         <div className="vc-hero">
           <div>
-            <div className="vc-eyebrow">Validasi · Verifikasi Capaian</div>
-            <h2 className="vc-title">Verifikasi Capaian Dosen</h2>
+            <h3 className="ikupk-card-title">Verifikasi Capaian Dosen</h3>
             <p className="vc-sub">Validasi file realisasi dan tentukan penilaian ekspektasi kinerja dosen.</p>
           </div>
           {!loading && dosenGroups.length > 0 && (
@@ -528,7 +537,7 @@ export default function ValidasiRealisasiAtasanContent() {
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <>
                       <div>
-                        <label className="filter-label">Jenis</label>
+                        <label className="filter-label">Target</label>
                         <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value as "IKU" | "PK" | "PK_IKU")} className="filter-isi">
                           <option value="IKU">Indikator Kinerja Utama (IKU)</option>
                           <option value="PK">Perjanjian Kinerja (PK)</option>
@@ -536,7 +545,7 @@ export default function ValidasiRealisasiAtasanContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="filter-label">Tampilan</label>
+                        <label className="filter-label">Jenis</label>
                         <div style={{ display: "flex", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", background: "#f9fafb", height: 36 }}>
                           {(["dosen", "indikator"] as const).map((mode) => (
                             <button key={mode} onClick={() => setViewMode(mode)} style={{ padding: "0 16px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: viewMode === mode ? "#0f9f6e" : "transparent", color: viewMode === mode ? "#fff" : "#6b7280", transition: "all 0.15s" }}>
@@ -739,13 +748,6 @@ export default function ValidasiRealisasiAtasanContent() {
             {pimpinanGroups.length > 0 && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <div style={{ width: 4, height: 18, background: "#0f9f6e", borderRadius: 2 }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0f2f4f", letterSpacing: "0.02em" }}>
-                    VALIDASI PIMPINAN
-                  </span>
-                  <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>
-                    — capaian bawahan berdasarkan rantai disposisi
-                  </span>
                 </div>
                 <div className="vc-table-card">
                   <div className="table-wrapper" style={{ margin: 0 }}>
@@ -878,6 +880,7 @@ export default function ValidasiRealisasiAtasanContent() {
                                               dosenEmail: d.dosenEmail,
                                               fileCount: d.validFileCount ?? 0,
                                               validFileCount: d.validFileCount,
+                                              catatanRevisi: null,
                                               targetDosen: d.targetDosen,
                                               status: d.status,
                                               tahun: d.tahun ?? tahun,
@@ -885,6 +888,7 @@ export default function ValidasiRealisasiAtasanContent() {
                                               indikatorId: ind.indikatorId,
                                               indikatorKode: ind.kodeIndikator,
                                               indikatorNama: ind.namaIndikator,
+                                              sumberData: ind.sumberData ?? 'repository',
                                             },
                                           })}
                                           style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", color: "#374151" }}
@@ -1056,7 +1060,7 @@ export default function ValidasiRealisasiAtasanContent() {
                                   </td>
                                   <td className="text-center">
                                     <button
-                                      onClick={() => setDetail({ dosenNama: s.dosenNama, dosenEmail: s.dosenEmail, submission: { ...s, indikatorId: g.indikator.id, indikatorKode: g.indikator.kode, indikatorNama: g.indikator.nama } })}
+                                      onClick={() => setDetail({ dosenNama: s.dosenNama, dosenEmail: s.dosenEmail, submission: { ...s, indikatorId: g.indikator.id, indikatorKode: g.indikator.kode, indikatorNama: g.indikator.nama, sumberData: g.indikator.sumberData ?? 'repository' } })}
                                       style={{ padding: "5px 14px", fontSize: 12, fontWeight: 600, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer", color: "#374151" }}
                                     >
                                       Detail

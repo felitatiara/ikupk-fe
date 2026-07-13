@@ -355,6 +355,7 @@ export default function MasterIndikatorContent() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [filterJenis, setFilterJenis] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
+  const [filterTahun, setFilterTahun] = useState<string>(String(new Date().getFullYear()));
   const [formMode, setFormMode] = useState<FormMode>("baru");
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmDeleteSingleId, setConfirmDeleteSingleId] = useState<number | null>(null);
@@ -429,6 +430,7 @@ export default function MasterIndikatorContent() {
       setAvailableYears(merged);
       const defaultYear = merged.includes("2026") ? "2026" : (merged[merged.length - 1] ?? "2026");
       setTargetTahun(defaultYear);
+      setFilterTahun(defaultYear);
     }).catch(() => {
       setAvailableYears([String(cy - 1), String(cy), String(cy + 1)]);
       setTargetTahun("2026");
@@ -499,7 +501,7 @@ export default function MasterIndikatorContent() {
 
   const buildHierarchy = (): Level0WithChildren[] => {
     const effectiveJenis = filterJenis === "PK_IKU" ? "PK" : filterJenis;
-    const filtered = [...indikatorList.filter((i) => i.jenis === effectiveJenis)]
+    const filtered = [...indikatorList.filter((i) => i.jenis === effectiveJenis && i.tahun === filterTahun)]
       .sort((a, b) => naturalSortKode(a.kode, b.kode));
     const level0 = filtered.filter((i) => i.level === 0);
     const result = level0.map((l0) => {
@@ -1317,7 +1319,15 @@ export default function MasterIndikatorContent() {
               </button>
             ))}
           </div>
-          
+          <select
+            value={filterTahun}
+            onChange={(e) => setFilterTahun(e.target.value)}
+            style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, color: "#374151", background: "#fff", cursor: "pointer", height: 36 }}
+          >
+            {availableYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
         </div>
         <div className="mi-toolbar-right">
           {selectedIds.size > 0 && (
