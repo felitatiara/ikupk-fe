@@ -490,6 +490,23 @@ const [internalTahun, setInternalTahun] = useState("2026");
     }
   };
 
+  // Upload file untuk diri sendiri (self-disposisi / pelaksana non-dosen)
+  const handleSelfInputClick = (indikatorId: number, nama: string, target: number) => {
+    setFileRepoIsAtasan(false);
+    setFileRepoIndikatorId(indikatorId);
+    setFileRepoNama(nama);
+    setFileRepoPeriode(periodeOptions[0]);
+    setFileRepoFiles([]);
+    setFileRepoLoading(true);
+    setFileRepoSubmitting(false);
+    setFileRepoTarget(target);
+    setFileRepoError(null);
+    setFileRepoChildren([]);
+    setFileRepoModalOpen(true);
+    const selfEmail = authUser?.email?.toLowerCase();
+    fetchRepoFiles(indikatorId, false, selfEmail ? new Set([selfEmail]) : undefined);
+  };
+
   // showAtasanView=false → tampilkan file milik sendiri (seperti dosen)
   // showAtasanView=true  → tampilkan semua file bawahan (mode lihat progress)
   const handleInputFileClick = async (indikatorId: number, nama: string, target: number, children: IndikatorGroupedChild[] = [], showAtasanView = false) => {
@@ -1354,7 +1371,7 @@ const [internalTahun, setInternalTahun] = useState("2026");
           .ikupk-table-wrapper { overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 18px rgba(15,23,42,0.07); margin-bottom: 20px; }
         `}</style>
 
-        {/* ── Header Slot (e.g. MonitoringBoxes on dashboard) ── */}
+        {/* ── Dashboard header slot (MonitoringBoxes dari beranda) ── */}
         {headerSlot}
 
         {/* ── Hero Card — hidden when headerSlot already provides a dashboard summary ── */}
@@ -1769,6 +1786,15 @@ const [internalTahun, setInternalTahun] = useState("2026");
                                   );
                                 }
 
+                                const leafSumberData = (row.level === 3 ? row.l3Obj?.sumberData : row.child?.sumberData) ?? 'repository';
+                                const leafSelfDisposisi: number | null = (row.level === 3 ? row.l3Obj?.selfDisposisiJumlah : row.child?.selfDisposisiJumlah) ?? null;
+                                const leafFromLevel: number | null = (row.level === 3 ? row.l3Obj?.disposisiFromLevel : row.child?.disposisiFromLevel) ?? null;
+                                // Rule 3: self-disposisi → tampilkan aksi pelaksana (Input File)
+                                // Rule 1: dari atasan (fromLevel < roleLevel) → tampilkan Disposisi (pimpinan)
+                                // Tanpa info fromLevel (cascade fallback) → default pimpinan context
+                                const isSelfDisposisi = leafSelfDisposisi != null && leafSelfDisposisi > 0;
+                                const isFromAtasan = leafFromLevel === null || leafFromLevel < roleLevel;
+                                const showDisposisiBtn = isFromAtasan;
                                 return (
                                   <tr key={`disp-${group.id}-${rowIdx}`}>
                                     <td className="td-cell" style={{
@@ -1786,12 +1812,21 @@ const [internalTahun, setInternalTahun] = useState("2026");
                                     </td>
                                     <td className="action-cell">
                                       <div className="action-cell-inner">
-                                        <button
-                                          onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)}
-                                          className="btn-small btn-small--blue btn-small--w100"
-                                        >
-                                          Redisposisi
-                                        </button>
+                                        {showDisposisiBtn && (
+                                          <button
+                                            onClick={() => handleGroupedDisposisiClick(row.id, Number(leafDisposisi || 0), authUser?.id, group.id)}
+                                            className="btn-small btn-small--blue btn-small--w100"
+                                          >
+                                            Disposisi
+                                          </button>
+                                        )}
+                                        {isSelfDisposisi && (
+                                          needsRevisionMap.has(row.id)
+                                            ? <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>⚠ Revisi</span>
+                                            : leafSumberData === 'ikupk'
+                                              ? <button onClick={() => handleDirectInputClick(row.id, row.nama)} className="btn-small btn-small--green btn-small--w100">Input Data</button>
+                                              : <button onClick={() => handleSelfInputClick(row.id, row.nama, leafSelfDisposisi)} className="btn-small btn-small--green btn-small--w100">Input File</button>
+                                        )}
                                         <button
                                           onClick={() => handleInputFileClick(row.id, row.nama, Number(leafDisposisi || 0), [], true)}
                                           className="btn-small btn-small--outline btn-small--w100"

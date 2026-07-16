@@ -13,7 +13,6 @@ import {
   LayoutDashboard,
   LucideIcon,
   PieChart,
-  Send,
   ShieldCheck,
   Sparkles,
   Target,
@@ -77,18 +76,9 @@ export default function Sidebar({ role = 'admin', roleLevel, authRole }: Sidebar
 
   const getMenus = (): MenuItem[] => {
     if (role === 'dekan' || role?.toLowerCase() === 'pimpinan') {
-      // Monitoring Keseluruhan hanya untuk Dekan dan Wakil Dekan II
-      const rn = (sidebarState.primaryRoleName ?? "").toLowerCase().trim();
-      const isDekan = rn === "dekan" || (rn.startsWith("dekan") && !rn.includes("wakil"));
-      const isWakilDekanII =
-        rn.includes("wakil") && rn.includes("dekan") &&
-        ((rn.includes("ii") && !rn.includes("iii")) || rn.includes(" 2") || rn.endsWith("2") || rn.includes("kedua"));
-      const showKeseluruhan = isDekan || isWakilDekanII;
       return [
         { key: "beranda", label: "Beranda", href: "/pimpinan/dashboard", icon: LayoutDashboard },
-        ...(showKeseluruhan ? [{ key: "monitoring_keseluruhan", label: "Monitoring Keseluruhan", href: "/pimpinan/monitoring-keseluruhan", icon: PieChart }] : []),
         { key: "monitoring", label: "Monitoring Indikator Kinerja", href: "/pimpinan/monitoring-unit-kerja", icon: BarChart3 },
-        { key: "disposisi_manual", label: "Disposisi Manual", href: "/pimpinan/disposisi", icon: Send },
         { key: "iku_pk", label: "Indikator Kinerja Utama", href: "/pimpinan/iku-pk", icon: Target },
         { key: "verifikasi_capaian", label: "Verifikasi Capaian", href: "/pimpinan/validasi-realisasi", icon: CheckCircle2 },
         { key: "skp", label: "SKP", href: "/pimpinan/skp", icon: FileSpreadsheet },

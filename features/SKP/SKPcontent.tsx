@@ -2042,7 +2042,7 @@ ${hasilKerjaRows}
                         onClick={() => router.push(`${basePath}/skp/cetak?tahun=${tahun}`)}
                         style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", border: "none", borderRadius: 8, background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
                       >
-                        ✍️ Ajukan Rencana SKP
+                        Ajukan Rencana SKP
                       </button>
                     )}
                     {rs === 'needs_revision' && (
@@ -2147,7 +2147,7 @@ ${hasilKerjaRows}
                         onClick={() => canSubmit ? router.push(`${hasilBasePath}/skp/cetak-hasil?tahun=${tahun}`) : toast.warning('Pastikan ada data realisasi terlebih dahulu.')}
                         style={{ padding: "10px 20px", borderRadius: 8, border: "none", backgroundColor: canSubmit ? "#f59e0b" : "#9ca3af", color: "white", fontWeight: 700, fontSize: 13, cursor: canSubmit ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
                       >
-                        ✍️ Ajukan Hasil SKP
+                         Ajukan Hasil SKP
                       </button>
                     )}
                     {hs === 'needs_revision' && (
@@ -2609,15 +2609,12 @@ ${hasilKerjaRows}
                         <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
                         <td style={tdStyle}>{statusBadge}</td>
                         <td style={tdStyle}>
-                          {(hs === 'signed_pegawai' || hs === 'checked') && (
-                            <button
-                              onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
-                              style={{ padding: "5px 14px", borderRadius: 6, border: "none", backgroundColor: hs === 'signed_pegawai' ? "#d97706" : "#3b82f6", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
-                            >
-                              📄 Lihat Dokumen
-                            </button>
-                          )}
-                          {hs !== 'signed_pegawai' && hs !== 'checked' && <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>}
+                          <button
+                            onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
+                            style={{ padding: "5px 14px", borderRadius: 6, border: "none", backgroundColor: hs === 'signed_pegawai' ? "#d97706" : hs === 'checked' ? "#3b82f6" : "#6b7280", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
+                          >
+                            📄 {hs === 'signed_pegawai' ? 'Validasi' : 'Lihat Dokumen'}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -2631,28 +2628,42 @@ ${hasilKerjaRows}
         {/* ── Bagian TTD Pejabat Penilai — Hasil SKP ── */}
         {checkerBawahan.hasilPenilaiDapatTTD.length > 0 && (
           <div style={{ backgroundColor: "white", borderRadius: 12, padding: 24, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 20 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1f2937", marginBottom: 12 }}>Riwayat Hasil SKP Bawahan</h3>
             <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
                 <thead>
-                  <tr>{["No", "Nama", "Jabatan", "NIP", "Aksi"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{["No", "Nama", "Jabatan", "NIP", "Status", "Aksi"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {checkerBawahan.hasilPenilaiDapatTTD.map((b, i) => (
-                    <tr key={b.userId}>
-                      <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
-                      <td style={tdStyle}><p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p><p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p></td>
-                      <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
-                      <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
-                      <td style={tdStyle}>
-                        <button
-                          onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
-                          style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: "#059669", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
-                        >
-                          📄 Lihat Dokumen
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {checkerBawahan.hasilPenilaiDapatTTD.map((b, i) => {
+                    const hs = b.hasilStatus ?? 'pending';
+                    const isDone = hs === 'signed_penilai';
+                    const needsAction = hs === 'checked';
+                    const statusBadge = hs === 'signed_pegawai'
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", backgroundColor: "#fef9c3", padding: "3px 8px", borderRadius: 20, border: "1px solid #fde68a" }}>Menunggu Pengecekan</span>
+                      : hs === 'checked'
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", backgroundColor: "#eff6ff", padding: "3px 8px", borderRadius: 20, border: "1px solid #bfdbfe" }}>Siap TTD Penilai</span>
+                      : hs === 'needs_revision'
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", backgroundColor: "#fee2e2", padding: "3px 8px", borderRadius: 20, border: "1px solid #fecaca" }}>Perlu Revisi</span>
+                      : <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", backgroundColor: "#dcfce7", padding: "3px 8px", borderRadius: 20, border: "1px solid #86efac" }}>✅ Selesai</span>;
+                    return (
+                      <tr key={b.userId}>
+                        <td style={{ ...tdStyle, textAlign: "center", width: 36 }}>{i + 1}</td>
+                        <td style={tdStyle}><p style={{ margin: 0, fontWeight: 600, color: "#1f2937" }}>{b.nama}</p><p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.email}</p></td>
+                        <td style={{ ...tdStyle, fontSize: 12 }}>{b.jabatan}</td>
+                        <td style={{ ...tdStyle, fontSize: 12, fontFamily: "monospace" }}>{b.nip ?? "—"}</td>
+                        <td style={tdStyle}>{statusBadge}</td>
+                        <td style={tdStyle}>
+                          <button
+                            onClick={() => router.push(`${roleLevel <= 1 ? "/pimpinan" : "/user"}/skp/cetak-hasil?tahun=${tahun}&reviewUserId=${b.userId}`)}
+                            style={{ padding: "5px 12px", borderRadius: 6, border: "none", backgroundColor: needsAction ? "#059669" : isDone ? "#6b7280" : "#d97706", color: "white", fontWeight: 600, fontSize: 11, cursor: "pointer" }}
+                          >
+                            📄 {needsAction ? "TTD Dokumen" : "Lihat Dokumen"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

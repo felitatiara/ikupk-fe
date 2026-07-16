@@ -47,6 +47,8 @@ export interface IndikatorGroupedLevel3 {
   sumberData?: string;
   linkedIkuId?: number | null;
   disposisiJumlah?: number | null;
+  selfDisposisiJumlah?: number | null;
+  disposisiFromLevel?: number | null;
   realisasiJumlah?: number | null;
   validRealisasiJumlah?: number | null;
 }
@@ -63,6 +65,8 @@ export interface IndikatorGroupedChild {
   baselineJumlah: number | null;
   sumberData?: string;
   disposisiJumlah?: number | null;
+  selfDisposisiJumlah?: number | null;
+  disposisiFromLevel?: number | null;
   realisasiJumlah?: number | null;
   validRealisasiJumlah?: number | null;
   children: IndikatorGroupedLevel3[];
@@ -792,9 +796,11 @@ export async function getUsers(): Promise<UnitUser[]> {
 
 export interface UnitUser {
   id: number;
+  nip?: string | null;
   nama: string;
   email: string;
   role: string;
+  roleLevel?: number | null;
   jenis?: string;
   unitId?: number | null;
   atasanId?: number | null;
@@ -1203,6 +1209,20 @@ export async function getMyFilesByIndikator(
  * Ambil SEMUA file untuk indikator dari semua dosen (untuk atasan: kaprodi, kajur, dekan).
  * File yang dikembalikan menyertakan ownerName dan ownerEmail untuk identifikasi per dosen.
  */
+export async function getJenisFolderLink(jenis: string, token: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/integration/jenis-folder?jenis=${encodeURIComponent(jenis)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { folderLink: string | null };
+    return data.folderLink ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getAllRealisasiFiles(
   indikatorId: number,
   token: string,

@@ -14,6 +14,7 @@ import {
   getUserRoles,
   getUserSkpInfo,
   returnRencanaSKPForRevision,
+  resubmitRencanaSKP,
   getRencanaSKPRevisionLogs,
   checkRencanaSKPNewTargets,
   resetRencanaSKPForNewTargets,
@@ -544,7 +545,7 @@ export default function CetakSKP() {
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
-                Ajukan Revisi
+                Ajukan ulang
               </button>
             )}
             {isCheckerRole && rencanaStatus?.status === 'signed_pegawai' && (
@@ -625,10 +626,27 @@ export default function CetakSKP() {
               </span>
             )}
             {rencanaStatus?.status === 'needs_revision' && (
-              <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                Perlu Revisi
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 9, fontSize: 13, fontWeight: 600, background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Perlu Revisi
+                </span>
+                <button
+                  onClick={async () => {
+                    try {
+                      const updated = await resubmitRencanaSKP(tahun, token!);
+                      setRencanaStatus(updated);
+                      toast.success("Rencana SKP berhasil diajukan kembali.");
+                    } catch {
+                      toast.error("Gagal mengajukan kembali. Coba lagi.");
+                    }
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", border: "none", borderRadius: 9, background: "linear-gradient(135deg,#f59e0b 0%,#d97706 100%)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 3px 10px rgba(217,119,6,.35)" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+                  Ajukan Kembali
+                </button>
+              </div>
             )}
             {rencanaStatus?.status === 'checked' && (
               <span style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
@@ -720,14 +738,13 @@ export default function CetakSKP() {
 
             {/* ── Revision History ── */}
             {revisionLogs.length > 0 && (
-              <div style={{ background: "#fff8f8", borderTop: "1px solid #fecaca", padding: "16px 32px 20px" }}>
+              <div style={{ background: "#ffffff", borderTop: "1px solid #fecaca", padding: "16px 32px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, maxWidth: 680, margin: "0 auto 14px" }}>
-                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
                   </div>
                   <div>
-                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#991b1b" }}>Riwayat Revisi</h4>
-                    <p style={{ margin: 0, fontSize: 11, color: "#9ca3af" }}>{revisionLogs.length} kali dikembalikan</p>
+                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Riwayat Revisi</h4>
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 0, maxWidth: 680, margin: "0 auto" }}>
@@ -825,7 +842,7 @@ export default function CetakSKP() {
           Memuat data rencana SKP...
         </div>
       ) : (
-        <div className="doc-canvas">
+        <div className="doc-canvas"   >
           {/* ════════════════════════════════════════════════
               HALAMAN 1 — COVER / SURAT PERJANJIAN KINERJA
           ════════════════════════════════════════════════ */}
@@ -847,7 +864,9 @@ export default function CetakSKP() {
               <div>{displayJabatan}</div>
               <div>dengan</div>
               <div>{dekan?.jabatan ?? 'Dekan'}</div>
+              <div>Fakultas Ilmu Komputer</div>
               <div>{INSTITUSI}</div>
+              
             </div>
 
             {/* Body */}
@@ -867,7 +886,7 @@ export default function CetakSKP() {
                 <tr>
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>Jabatan</td>
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>:</td>
-                  <td style={{ fontSize: 12, verticalAlign: "top", lineHeight: 1.5 }}>{displayJabatan}<br />{INSTITUSI}</td>
+                  <td style={{ fontSize: 12, verticalAlign: "top", lineHeight: 1.5 }}>{displayJabatan} S1 Sistem Informasi<br />Fakultas Ilmu Komputer {INSTITUSI}</td>
                 </tr>
               </tbody>
             </table>
@@ -887,7 +906,7 @@ export default function CetakSKP() {
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>Jabatan</td>
                   <td style={{ fontSize: 12, verticalAlign: "top" }}>:</td>
                   <td style={{ fontSize: 12, verticalAlign: "top", lineHeight: 1.5 }}>
-                    {dekan?.jabatan ?? 'Dekan'}<br />{INSTITUSI}
+                    {dekan?.jabatan ?? 'Dekan'} <br /> Fakultas Ilmu Komputer {INSTITUSI} 
                   </td>
                 </tr>
               </tbody>

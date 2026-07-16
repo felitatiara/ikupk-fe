@@ -15,9 +15,11 @@ import {
   returnHasilSKPForRevision,
   resubmitHasilSKP,
   getHasilSKPRevisionLogs,
+  getUsersByLevel,
   type SkpHasilStatusData,
   type SkpRevisionLog,
   type UserSkpInfo,
+  type UnitUser,
 } from "@/lib/api";
 
 interface SKPRow {
@@ -101,6 +103,7 @@ export default function CetakHasilSKP() {
   const [rows, setRows] = useState<SKPRow[]>([]);
   const [hasilStatus, setHasilStatus] = useState<SkpHasilStatusData | null>(null);
   const [dekan, setDekan] = useState<{ nama: string; nip: string | null; jabatan: string } | null>(null);
+  const [dekanAtasan, setDekanAtasan] = useState<UnitUser | null>(null);
   const [targetUser, setTargetUser] = useState<UserSkpInfo | null>(null);
   const [revisionLogs, setRevisionLogs] = useState<SkpRevisionLog[]>([]);
 
@@ -180,6 +183,13 @@ export default function CetakHasilSKP() {
         if (penilai) {
           setDekan({ nama: penilai.nama, nip: penilai.nip ?? null, jabatan: penilai.jabatan ?? "Pejabat Penilai" });
         }
+
+        // Atasan Pejabat Penilai Kinerja selalu Dekan (roleLevel 1, bukan Wakil Dekan)
+        try {
+          const level1Users = await getUsersByLevel(1);
+          const dekanUser = level1Users.find(u => !(u.role?.toLowerCase() ?? '').includes('wakil')) ?? level1Users[0] ?? null;
+          setDekanAtasan(dekanUser);
+        } catch { /* tetap null jika gagal */ }
 
         const allData = [...(ikuData as any[]), ...(pkData as any[])];
         const newRows: SKPRow[] = [];
@@ -618,7 +628,13 @@ export default function CetakHasilSKP() {
                           <td rowSpan={6} style={{ textAlign: "center", width: 28, fontWeight: "bold", verticalAlign: "top", padding: 4 }}>3</td>
                           <td colSpan={3} style={{ fontWeight: "bold", padding: "4px 6px" }}>ATASAN PEJABAT PENILAI KINERJA</td>
                         </tr>
-                        {[["NAMA", "—"], ["NIP", "—"], ["PANGKAT/GOL. RUANG", "—"], ["JABATAN", "—"], ["UNIT KERJA", displayUnitKerja]].map(([l, v]) => (
+                        {[
+                          ["NAMA", dekanAtasan?.nama ?? "—"],
+                          ["NIP", dekanAtasan?.nip ?? "—"],
+                          ["PANGKAT/GOL. RUANG", "—"],
+                          ["JABATAN", dekanAtasan ? (dekanAtasan.role || "Dekan") : "—"],
+                          ["UNIT KERJA", dekanAtasan ? 'Universitas Pembangunan Nasional "Veteran" Jakarta' : displayUnitKerja],
+                        ].map(([l, v]) => (
                           <tr key={l}><td style={{ padding: "2px 6px", width: 160 }}>{l}</td><td style={{ padding: "2px 4px", width: 8 }}>:</td><td style={{ padding: "2px 6px" }}>{v}</td></tr>
                         ))}
                         <tr>

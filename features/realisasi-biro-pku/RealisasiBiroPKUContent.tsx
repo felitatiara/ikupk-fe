@@ -11,6 +11,7 @@ import {
   getAvailableYears,
   getIndikatorGrouped,
   getAllRealisasiFiles,
+  getJenisFolderLink,
   getRealisasiCounts,
   type ValidasiBiroPKUItem,
   type IndikatorGrouped,
@@ -175,6 +176,30 @@ export default function RealisasiBiroPKUContent() {
   async function handleExport() {
     setExporting(true);
     try {
+      const ExcelJS = (await import("exceljs")).default;
+
+      const HEADER_BG  = "FFBDD7EE";
+      const HEADER_FG  = "FF1F3864";
+      const JUMLAH_BG  = "FFFFC000";
+      const JUMLAH_FG  = "FF1F3864";
+      const BORDER     = "FF000000";
+      const TOTAL_COLS = 9;
+
+      const mkBorder = (style: "thin" | "medium" = "thin") => ({
+        top:    { style, color: { argb: BORDER } },
+        bottom: { style, color: { argb: BORDER } },
+        left:   { style, color: { argb: BORDER } },
+        right:  { style, color: { argb: BORDER } },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const styleCell = (cell: any, fillArgb: string, fontArgb: string, bold: boolean, halign: "center" | "left", wrap = false, vAlign: "middle" | "top" = "middle", borderStyle: "thin" | "medium" = "thin") => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillArgb } };
+        cell.font = { bold, color: { argb: fontArgb }, size: 10, name: "Calibri" };
+        cell.alignment = { horizontal: halign, vertical: vAlign, wrapText: wrap };
+        cell.border = mkBorder(borderStyle);
+      };
+
       const [freshValidasiData, freshGrouped, freshRealisasiCounts] = await Promise.all([
         getValidasiBiroPKU(selectedTahun),
         getIndikatorGrouped(selectedJenis, selectedTahun),
@@ -183,31 +208,18 @@ export default function RealisasiBiroPKUContent() {
 
       if (freshGrouped.length === 0) { toast.error("Tidak ada data untuk diekspor."); return; }
 
-      const freshLeafs: number[] = [];
-      for (const g of freshGrouped)
-        for (const sub of g.subIndikators)
-          for (const child of sub.children)
-            if (selectedJenis === "IKU") freshLeafs.push(child.id);
-            else for (const l3 of child.children) freshLeafs.push(l3.id);
+      // Link folder root jenis di repository (mis. "Indikator Kinerja Utama" / "Perjanjian Kinerja")
+      const jenisFolderLink = token ? await getJenisFolderLink(selectedJenis, token) : null;
 
-      const freshFolderLinks = new Map<number, string | null>();
-      if (freshLeafs.length > 0 && token) {
-        const results = await Promise.allSettled(
-          freshLeafs.map((id) => getAllRealisasiFiles(id, token).then((r) => ({ id, folderLink: r.folderLink }))),
-        );
-        results.forEach((r) => { if (r.status === "fulfilled") freshFolderLinks.set(r.value.id, r.value.folderLink); });
-      }
-
-      function freshSumHasil(ids: number[]): number | null {
+      function fSumHasil(ids: number[]): number | null {
         const items = freshValidasiData.filter((v) => ids.includes(v.indikatorId) && v.jumlahValid != null);
         if (items.length === 0) return null;
         return items.reduce((s, v) => s + (v.jumlahValid ?? 0), 0);
       }
-      function freshSumRealisasi(ids: number[]): number {
+      function fSumReal(ids: number[]): number {
         return ids.reduce((s, id) => s + (freshRealisasiCounts[id] ?? 0), 0);
       }
-
-      function freshSumTarget(ids: number[]): number | null {
+      function fSumTarget(ids: number[]): number | null {
         const vals: number[] = [];
         for (const l0 of freshGrouped)
           for (const sub of l0.subIndikators)
@@ -216,60 +228,160 @@ export default function RealisasiBiroPKUContent() {
               else for (const l3 of child.children) { if (ids.includes(l3.id) && l3.nilaiTarget != null) vals.push(l3.nilaiTarget); }
         return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) : null;
       }
-      function freshCapaian(hasil: number | null | undefined, target: number | null | undefined): string {
+      function fCapaian(hasil: number | null, target: number | null): string {
         if (hasil == null || target == null || target === 0) return "";
         return `${Math.round((hasil / target) * 100)}%`;
       }
+      function fLeafIds(l0: IndikatorGrouped): number[] {
+        const ids: number[] = [];
+        for (const sub of l0.subIndikators)
+          for (const child of sub.children)
+            if (selectedJenis === "IKU") ids.push(child.id);
+            else for (const l3 of child.children) ids.push(l3.id);
+        return ids;
+      }
+      function fSubLeafIds(sub: IndikatorGroupedSub): number[] {
+        const ids: number[] = [];
+        for (const child of sub.children)
+          if (selectedJenis === "IKU") ids.push(child.id);
+          else for (const l3 of child.children) ids.push(l3.id);
+        return ids;
+      }
 
-      type Row = (string | number | null)[];
-      const COLS: Row = ["No.", "Kode", "Nama Indikator", "Target", "Realisasi Diajukan", "Hasil Biro PKU", "Capaian (%)", "Keterangan", "Link Folder"];
-      const rows: Row[] = [COLS];
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet(`Verifikasi ${selectedJenis} ${selectedTahun}`);
+
+      // Col widths: No | Kode | Nama | Target | Realisasi | Hasil Biro PKU | Capaian | Keterangan | Sumber Data
+      [5, 12, 55, 12, 18, 16, 12, 30, 25].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+      // Title rows
+      [
+        `VERIFIKASI BIRO PKU`,
+        `UNIVERSITAS PEMBANGUNAN NASIONAL "VETERAN" JAKARTA`,
+        `TAHUN ANGGARAN ${selectedTahun}`,
+      ].forEach((text) => {
+        const r = ws.addRow([text, ...Array(TOTAL_COLS - 1).fill("")]);
+        r.height = 18;
+        ws.mergeCells(r.number, 1, r.number, TOTAL_COLS);
+        r.getCell(1).font = { bold: true, size: 12, name: "Calibri", color: { argb: HEADER_FG } };
+        r.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+      });
+      ws.addRow([]);
+
+      // Header row
+      const h = ws.addRow(["No.", "Kode", "Nama Indikator", "Target", "Realisasi Diajukan", "Hasil Biro PKU", "Capaian (%)", "Keterangan", "Sumber Data"]);
+      h.height = 30;
+      for (let c = 1; c <= TOTAL_COLS; c++) {
+        styleCell(h.getCell(c), HEADER_BG, HEADER_FG, true, "center", true, "middle", "medium");
+      }
+      ws.views = [{ state: "frozen", ySplit: h.number, topLeftCell: `A${h.number + 1}` }];
+
       let no = 0;
+      let totalTarget = 0;
+      let totalRealisasi = 0;
+      let totalHasil = 0;
 
       for (const l0 of freshGrouped) {
-        const l0Ids = leafIdsOf(l0, selectedJenis);
-        const l0Hasil = freshSumHasil(l0Ids);
-        const l0Realisasi = freshSumRealisasi(l0Ids);
-        const l0Target = freshSumTarget(l0Ids);
-
-        rows.push(["", l0.kode, l0.nama, l0Target ?? "", l0Realisasi || "", l0Hasil ?? "", freshCapaian(l0Hasil, l0Target), "", ""]);
+        const l0Ids = fLeafIds(l0);
+        const l0Hasil = fSumHasil(l0Ids);
+        const l0Target = fSumTarget(l0Ids);
+        const l0Real = fSumReal(l0Ids);
+        const l0Row = ws.addRow(["", l0.kode, l0.nama, l0Target ?? "", l0Real || "", l0Hasil ?? "", fCapaian(l0Hasil, l0Target), "", ""]);
+        l0Row.height = 22;
+        for (let c = 1; c <= TOTAL_COLS; c++) {
+          styleCell(l0Row.getCell(c), "FFE8F0FE", HEADER_FG, true, c === 3 ? "left" : "center", true, "middle");
+        }
 
         for (const sub of l0.subIndikators) {
-          const subIds = leafIdsOfSub(sub, selectedJenis);
-          const subHasil = freshSumHasil(subIds);
-          const subRealisasi = freshSumRealisasi(subIds);
-          const subTarget = freshSumTarget(subIds);
-          rows.push(["", sub.kode, `  ${sub.nama}`, subTarget ?? "", subRealisasi || "", subHasil ?? "", freshCapaian(subHasil, subTarget), "", ""]);
+          const subIds = fSubLeafIds(sub);
+          const subHasil = fSumHasil(subIds);
+          const subTarget = fSumTarget(subIds);
+          const subReal = fSumReal(subIds);
+          const folderLink = jenisFolderLink;
+
+          const l1Row = ws.addRow(["", sub.kode, sub.nama, subTarget ?? "", subReal || "", subHasil ?? "", fCapaian(subHasil, subTarget), "", ""]);
+          l1Row.height = 20;
+          for (let c = 1; c <= TOTAL_COLS; c++) {
+            styleCell(l1Row.getCell(c), "FFF5F8FF", "FF1F3864", true, c === 3 ? "left" : "center", true, "middle");
+          }
+          const linkCell = l1Row.getCell(9);
+          if (folderLink) {
+            linkCell.value = { text: "Lihat Folder", hyperlink: folderLink };
+            linkCell.font = { size: 10, name: "Calibri", color: { argb: "FF0563C1" }, underline: true, bold: true };
+          } else {
+            linkCell.value = "-";
+            linkCell.font = { size: 10, name: "Calibri", color: { argb: "FF9CA3AF" }, bold: false };
+          }
+          linkCell.alignment = { horizontal: "center", vertical: "middle" };
 
           for (const child of sub.children) {
             if (selectedJenis === "IKU") {
               no++;
               const val = freshValidasiData.find((v) => v.indikatorId === child.id);
-              rows.push([no, child.kode, `    ${child.nama}`, child.nilaiTarget ?? "", freshRealisasiCounts[child.id] ?? 0, val?.jumlahValid ?? "", freshCapaian(val?.jumlahValid, child.nilaiTarget), val?.keterangan ?? "", freshFolderLinks.get(child.id) ?? ""]);
+              const tgt = child.nilaiTarget ?? null;
+              const real = freshRealisasiCounts[child.id] ?? 0;
+              const hasil = val?.jumlahValid ?? null;
+              if (tgt != null) totalTarget += tgt;
+              totalRealisasi += real;
+              if (hasil != null) totalHasil += hasil;
+              const leafRow = ws.addRow([no, child.kode, child.nama, tgt ?? "", real || "", hasil ?? "", fCapaian(hasil, tgt), val?.keterangan ?? "", ""]);
+              leafRow.height = 18;
+              for (let c = 1; c <= TOTAL_COLS; c++) {
+                styleCell(leafRow.getCell(c), "FFFFFFFF", "FF000000", false, c === 3 ? "left" : "center", true, "middle");
+              }
             } else {
               const childIds = child.children.map((l3) => l3.id);
-              const childHasil = freshSumHasil(childIds);
-              const childRealisasi = freshSumRealisasi(childIds);
-              const childTarget = freshSumTarget(childIds);
-              rows.push(["", child.kode, `    ${child.nama}`, childTarget ?? "", childRealisasi || "", childHasil ?? "", freshCapaian(childHasil, childTarget), "", ""]);
+              const childHasil = fSumHasil(childIds);
+              const childTarget = fSumTarget(childIds);
+              const childReal = fSumReal(childIds);
+              const l2Row = ws.addRow(["", child.kode, child.nama, childTarget ?? "", childReal || "", childHasil ?? "", fCapaian(childHasil, childTarget), "", ""]);
+              l2Row.height = 18;
+              for (let c = 1; c <= TOTAL_COLS; c++) {
+                styleCell(l2Row.getCell(c), "FFF9F9F9", "FF374151", true, c === 3 ? "left" : "center", true, "middle");
+              }
               for (const l3 of child.children) {
                 no++;
                 const val = freshValidasiData.find((v) => v.indikatorId === l3.id);
-                rows.push([no, l3.kode, `      ${l3.nama}`, l3.nilaiTarget ?? "", freshRealisasiCounts[l3.id] ?? 0, val?.jumlahValid ?? "", freshCapaian(val?.jumlahValid, l3.nilaiTarget), val?.keterangan ?? "", freshFolderLinks.get(l3.id) ?? ""]);
+                const tgt = l3.nilaiTarget ?? null;
+                const real = freshRealisasiCounts[l3.id] ?? 0;
+                const hasil = val?.jumlahValid ?? null;
+                if (tgt != null) totalTarget += tgt;
+                totalRealisasi += real;
+                if (hasil != null) totalHasil += hasil;
+                const l3Row = ws.addRow([no, l3.kode, l3.nama, tgt ?? "", real || "", hasil ?? "", fCapaian(hasil, tgt), val?.keterangan ?? "", ""]);
+                l3Row.height = 18;
+                for (let c = 1; c <= TOTAL_COLS; c++) {
+                  styleCell(l3Row.getCell(c), "FFFFFFFF", "FF000000", false, c === 3 ? "left" : "center", true, "middle");
+                }
               }
             }
           }
         }
       }
 
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 55 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 55 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Verifikasi Biro PKU");
-      XLSX.writeFile(wb, `Verifikasi_BiroPKU_${selectedJenis}_${selectedTahun}.xlsx`);
+      // Jumlah row
+      const jRow = ws.addRow(Array(TOTAL_COLS).fill(""));
+      jRow.height = 22;
+      ws.mergeCells(jRow.number, 1, jRow.number, 3);
+      jRow.getCell(1).value = "Jumlah";
+      jRow.getCell(4).value = totalTarget || "";
+      jRow.getCell(5).value = totalRealisasi || "";
+      jRow.getCell(6).value = totalHasil || "";
+      for (let c = 1; c <= TOTAL_COLS; c++) {
+        styleCell(jRow.getCell(c), JUMLAH_BG, JUMLAH_FG, true, "center", false, "middle", "medium");
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Verifikasi_BiroPKU_${selectedJenis}_${selectedTahun}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
       toast.success("Export berhasil.");
-    } catch {
-      toast.error("Gagal mengekspor data.");
+    } catch (err) {
+      toast.error("Gagal mengekspor data: " + String(err));
     } finally {
       setExporting(false);
     }

@@ -9,8 +9,10 @@ export default function DashboardContent() {
   const { user: authUser } = useAuth();
   const roleLevel = authUser?.roleLevel ?? 4;
 
+  // Di beranda, admin tampilkan monitoring overview (bukan verification panel)
+  // Verification panel ada di menu "Verifikasi Biro PKU" yang terpisah
   const role: "admin" | "pimpinan" | "user" =
-    roleLevel === 0 ? "admin" : roleLevel === 1 ? "pimpinan" : "user";
+    roleLevel <= 1 ? "pimpinan" : "user";
 
   const [jenis, setJenis] = useState<"IKU" | "PK" | "PK_IKU">("IKU");
   const [tahun, setTahun] = useState(String(new Date().getFullYear()));

@@ -120,17 +120,23 @@ const CHAIN_LEVEL_LABELS = ["Penerima Awal", "Distribusi 1", "Distribusi 2", "Pe
  * Recursively sum realisasiJumlah of all leaf-level descendants of a given user in the chain.
  * Uses fromUserId relationships (more reliable than parentDisposisiId which can be null).
  */
-function getTotalRealRecursive(userId: number, indNodes: DisposisiChainNode[]): number {
+function getTotalRealRecursive(userId: number, indNodes: DisposisiChainNode[], visited = new Set<number>()): number {
+  if (visited.has(userId)) return 0; // siklus terdeteksi, hentikan rekursi
+  visited.add(userId);
   const children = indNodes.filter(n => n.fromUserId === userId);
   if (children.length === 0) {
     // Leaf: sum realisasiJumlah across all disposisi nodes where this user is the recipient
-    return indNodes
+    const result = indNodes
       .filter(n => n.toUserId === userId)
       .reduce((s, n) => s + n.realisasiJumlah, 0);
+    visited.delete(userId);
+    return result;
   }
   // Non-leaf: recursively aggregate unique child user IDs
   const childUserIds = [...new Set(children.map(c => c.toUserId))];
-  return childUserIds.reduce((sum, cid) => sum + getTotalRealRecursive(cid, indNodes), 0);
+  const result = childUserIds.reduce((sum, cid) => sum + getTotalRealRecursive(cid, indNodes, visited), 0);
+  visited.delete(userId);
+  return result;
 }
 
 function buildChainLevels(
@@ -145,21 +151,28 @@ function buildChainLevels(
   // fromUserId always identifies the actual distributor regardless of insert order.
   const toUserIds = new Set(indNodes.map(n => n.toUserId));
   const depthMap = new Map<number, number>();
+  const computing = new Set<number>(); // cycle detection
 
   function calcDepth(nodeId: number): number {
     if (depthMap.has(nodeId)) return depthMap.get(nodeId)!;
+    if (computing.has(nodeId)) return 0; // siklus terdeteksi, hentikan rekursi
+    computing.add(nodeId);
     const node = indNodes.find(n => n.disposisiId === nodeId);
-    if (!node) { depthMap.set(nodeId, 0); return 0; }
+    if (!node) { depthMap.set(nodeId, 0); computing.delete(nodeId); return 0; }
     const { fromUserId } = node;
     // If fromUserId is null or not a recipient in this indicator chain → depth 0
     if (fromUserId == null || !toUserIds.has(fromUserId)) {
       depthMap.set(nodeId, 0);
+      computing.delete(nodeId);
       return 0;
     }
     // Parents = nodes where toUserId === this node's fromUserId
     const parentNodes = indNodes.filter(p => p.toUserId === fromUserId);
-    const d = 1 + Math.max(...parentNodes.map(p => calcDepth(p.disposisiId)));
+    const d = parentNodes.length > 0
+      ? 1 + Math.max(...parentNodes.map(p => calcDepth(p.disposisiId)))
+      : 0;
     depthMap.set(nodeId, d);
+    computing.delete(nodeId);
     return d;
   }
   for (const n of indNodes) calcDepth(n.disposisiId);
@@ -1227,7 +1240,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
       const freshDisplayed = canSeeAll ? freshChartData : freshChartData.filter((i) => scopeIds.includes(i.id));
       const sorted = [...freshDisplayed].sort((a, b) => sortKode(a.kode, b.kode));
 
-      // Fetch folder links in parallel
+      // Folder links per L0 item
       const folderLinkMap = new Map<number, string | null>();
       await Promise.all(sorted.map(async (item) => {
         try {
@@ -1834,8 +1847,9 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                   )}
                 </div>
               </div>
-              <div style={{ overflowX: "auto", borderRadius: 16, overflow: "hidden", border: "1px solid #e2e8f0", marginTop: 0, boxShadow: "0 4px 18px rgba(15,23,42,0.07)" }}>
-                <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", fontSize: 13 }}>
+              <div style={{ overflow: "hidden", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 8px 28px rgba(15,23,42,0.08)" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", minWidth: 980, borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "#0f2f4f" }}>
                       {[
@@ -1902,8 +1916,11 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                         if (item.__kategoriHeader) {
                           rows.push(
                             <tr key={`kategori-${item.__kategoriHeader}`}>
-                              <td colSpan={11} style={{ padding: "8px 14px", backgroundColor: "#fafafa", borderBottom: "1px solid #e5e7eb", borderTop: "1px solid #e5e7eb" }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.__label}</span>
+                              <td colSpan={11} style={{ padding: "10px 18px", background: "linear-gradient(90deg,#eef3f9 0%,#f8fafc 100%)", borderBottom: "1px solid #dde6f0", borderTop: "2px solid #dde6f0" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <div style={{ width: 4, height: 16, borderRadius: 3, background: "#0f2f4f", flexShrink: 0 }} />
+                                  <span style={{ fontSize: 12, fontWeight: 800, color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.08em" }}>{item.__label}</span>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1941,40 +1958,42 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             ? Math.round((item.realisasi / item.targetUniversitas) * 100)
                             : null;
                           rows.push(
-                            <tr key={`${item.id}-collapsed`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fafafa" }}>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12 }}>{item.kode}</td>
-                              <td style={{ padding: "10px 14px" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0 }}>▶</button>
-                                  <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
+                            <tr key={`${item.id}-collapsed`} style={{ borderBottom: "8px solid #f8fafc", backgroundColor: "#fff" }}>
+                              <td style={{ padding: "14px 16px", textAlign: "center", verticalAlign: "middle" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 40, height: 28, borderRadius: 8, background: "#f1f5f9", color: "#334155", fontFamily: "monospace", fontWeight: 800, fontSize: 12 }}>{item.kode}</span>
+                              </td>
+                              <td style={{ padding: "14px 16px", borderRight: "1px solid #f1f5f9" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "#94a3b8", fontSize: 12, lineHeight: 1, flexShrink: 0 }}>▶</button>
+                                  <span style={{ fontWeight: 800, color: "#1e3a5f", fontSize: 13, lineHeight: 1.4 }}>{item.nama}</span>
                                   {isIKU && item.kategori && (
-                                    <span style={{ fontSize: 10, fontWeight: 600, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "1px 6px", borderRadius: 4 }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "2px 8px", borderRadius: 999, border: `1px solid ${item.kategori === "Wajib" ? "#bfdbfe" : item.kategori === "Pilihan" ? "#ddd6fe" : "#e5e7eb"}` }}>
                                       {item.kategori}
                                     </span>
                                   )}
                                 </div>
                               </td>
-                              <td colSpan={4} style={{ padding: "10px 14px", color: "#d1d5db", textAlign: "center" }}>—</td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: itemCapaian == null ? "#9ca3af" : itemCapaian >= 100 ? "#047857" : "#c2410c" }}>
+                              <td colSpan={4} style={{ padding: "14px 16px", color: "#d1d5db", textAlign: "center" }}>—</td>
+                              <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 800, fontSize: 14, color: itemCapaian == null ? "#cbd5e1" : itemCapaian >= 100 ? "#047857" : "#c2410c" }}>
                                 {itemCapaian != null ? `${itemCapaian}%` : "—"}
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" }}>{item.tenggat}</td>
-                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
-                                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: item.status === "Done" ? "#ecfdf5" : "#fff7ed", color: item.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${item.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
-                                  {item.status}
+                              <td style={{ padding: "14px 16px", textAlign: "center", color: "#64748b", fontSize: 12, whiteSpace: "nowrap" }}>{item.tenggat}</td>
+                              <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700, backgroundColor: item.status === "Done" ? "#dcfce7" : "#fff7ed", color: item.status === "Done" ? "#15803d" : "#c2410c", border: `1.5px solid ${item.status === "Done" ? "#86efac" : "#fed7aa"}` }}>
+                                  {item.status === "Done" ? "✓ Tercapai" : "Proses"}
                                 </span>
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                              <td style={{ padding: "14px 16px", textAlign: "center" }}>
                                 {val?.jumlahValid != null
-                                  ? <span style={{ fontSize: 10, fontWeight: 700, color: "#047857", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 20, padding: "2px 8px" }}>Terverifikasi ({val.jumlahValid})</span>
-                                  : <span style={{ fontSize: 10, fontWeight: 600, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 20, padding: "2px 8px" }}>Belum</span>}
+                                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "3px 10px" }}>✓ Verified ({val.jumlahValid})</span>
+                                  : <span style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 999, padding: "3px 10px" }}>Belum</span>}
                               </td>
-                              <td style={{ padding: "10px 14px", color: "#6b7280", fontSize: 11 }}>
-                                {val?.keterangan ? <span style={{ color: "#374151" }}>{val.keterangan}</span> : <span style={{ color: "#d1d5db" }}>—</span>}
+                              <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: 12 }}>
+                                {val?.keterangan ? <span style={{ color: "#374151" }}>{val.keterangan}</span> : <span style={{ color: "#cbd5e1" }}>—</span>}
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", position: "sticky", right: 0, background: "#fafafa", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                              <td style={{ padding: "14px 16px", textAlign: "center", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 8px rgba(15,23,42,0.07)" }}>
                                 {canViewDetail ? (
-                                  <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Detail</button>
+                                  <button onClick={() => setDetailItem(item)} style={{ padding: "6px 14px", borderRadius: 8, border: "1.5px solid #bfdbfe", background: "#eff6ff", fontSize: 12, fontWeight: 700, color: "#1d4ed8", cursor: "pointer", whiteSpace: "nowrap" }}>Detail</button>
                                 ) : <span style={{ color: "#d1d5db" }}>—</span>}
                               </td>
                             </tr>
@@ -1993,73 +2012,78 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                             ? Math.round((sub.realisasi / subEffTarget) * 100)
                             : null;
                           rows.push(
-                            <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #f8f8f8", backgroundColor: "#fff" }}>
+                            <tr key={`${item.id}-${sub.id}`} style={{ borderBottom: "1px solid #f1f5f9", backgroundColor: "#fff" }}>
                               {firstRow && (
                                 <>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#0369a1", fontWeight: 800, fontFamily: "monospace", fontSize: 12, verticalAlign: "top" }}>
-                                    {item.kode}
+                                  <td rowSpan={totalRows} style={{ padding: "16px", textAlign: "center", verticalAlign: "top", borderRight: "1px solid #f1f5f9" }}>
+                                    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 40, height: 28, borderRadius: 8, background: "#f1f5f9", color: "#334155", fontFamily: "monospace", fontWeight: 800, fontSize: 12 }}>{item.kode}</span>
                                   </td>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "top" }}>
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 6, flexWrap: "wrap" }}>
-                                      <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "1px 2px", color: "#9ca3af", fontSize: 11, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>▼</button>
-                                      <span style={{ fontWeight: 700, color: "#1e3a5f", fontSize: 12 }}>{item.nama}</span>
-                                      {isIKU && item.kategori && (
-                                        <span style={{ fontSize: 10, fontWeight: 600, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "1px 6px", borderRadius: 4, marginTop: 2 }}>
-                                          {item.kategori}
-                                        </span>
-                                      )}
+                                  <td rowSpan={totalRows} style={{ padding: "16px 18px", verticalAlign: "top", borderRight: "1px solid #f1f5f9", maxWidth: 200 }}>
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                                      <button onClick={toggleCollapse} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", color: "#94a3b8", fontSize: 12, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>▼</button>
+                                      <span style={{ fontWeight: 800, color: "#1e3a5f", fontSize: 13, lineHeight: 1.45 }}>{item.nama}</span>
                                     </div>
+                                    {isIKU && item.kategori && (
+                                      <span style={{ display: "inline-flex", marginTop: 6, fontSize: 10, fontWeight: 700, color: item.kategori === "Wajib" ? "#0369a1" : item.kategori === "Pilihan" ? "#7c3aed" : "#6b7280", background: item.kategori === "Wajib" ? "#dbeafe" : item.kategori === "Pilihan" ? "#ede9fe" : "#f3f4f6", padding: "2px 8px", borderRadius: 999, border: `1px solid ${item.kategori === "Wajib" ? "#bfdbfe" : item.kategori === "Pilihan" ? "#ddd6fe" : "#e5e7eb"}` }}>
+                                        {item.kategori}
+                                      </span>
+                                    )}
                                   </td>
                                 </>
                               )}
-                              <td style={{ padding: "10px 14px", color: "#334155", lineHeight: 1.4 }}>
-                                <span style={{ fontSize: 11, fontFamily: "monospace", color: "#6b7280", marginRight: 6 }}>{sub.kode}</span>
-                                <span style={{ fontWeight: 600 }}>{sub.nama}</span>
+                              <td style={{ padding: "13px 16px", lineHeight: 1.45 }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                                  <span style={{ color: "#cbd5e1", fontFamily: "monospace", fontSize: 12, lineHeight: 1.6, flexShrink: 0 }}>|_</span>
+                                  <div>
+                                    <span style={{ fontSize: 10, fontFamily: "monospace", color: "#94a3b8", display: "block" }}>{sub.kode}</span>
+                                    <span style={{ fontWeight: 700, color: "#334155", fontSize: 13 }}>{sub.nama}</span>
+                                  </div>
+                                </div>
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155", borderLeft: "1px solid #f0f0f0" }}>
+                              <td style={{ padding: "13px 16px", textAlign: "center", color: "#334155" }}>
                                 {(() => {
                                   const l2WithTarget = (sub.children ?? []).filter((c: ProgressChartSubChild) => c.nilaiTarget != null);
                                   if (l2WithTarget.length > 0) {
                                     const total = l2WithTarget.reduce((s: number, c: ProgressChartSubChild) => s + (c.nilaiTarget ?? 0), 0);
                                     const sat = l2WithTarget[0]?.satuan ?? null;
-                                    return <span style={{ fontWeight: 600 }}>{total}{sat ? ` ${sat}` : ""}</span>;
+                                    return <span style={{ fontWeight: 700 }}>{total}{sat ? ` ${sat}` : ""}</span>;
                                   }
-                                  if (sub.targetFakultas > 0) return <span style={{ fontWeight: 600 }}>{sub.targetFakultas}</span>;
-                                  return <span style={{ color: "#9ca3af" }}>—</span>;
+                                  if (sub.targetFakultas > 0) return <span style={{ fontWeight: 700 }}>{sub.targetFakultas}</span>;
+                                  return <span style={{ color: "#cbd5e1" }}>—</span>;
                                 })()}
                               </td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", color: "#334155" }}>{sub.realisasi}</td>
-                              <td style={{ padding: "10px 14px", textAlign: "center", fontWeight: 700, color: subCapaian == null ? "#9ca3af" : subCapaian >= 100 ? "#047857" : "#c2410c" }}>
+                              <td style={{ padding: "13px 16px", textAlign: "center", color: "#334155", fontWeight: 600 }}>{sub.realisasi ?? <span style={{ color: "#cbd5e1" }}>—</span>}</td>
+                              <td style={{ padding: "13px 16px", textAlign: "center", fontWeight: 800, fontSize: 14, color: subCapaian == null ? "#cbd5e1" : subCapaian >= 100 ? "#047857" : "#c2410c" }}>
                                 {subCapaian != null ? `${subCapaian}%` : "—"}
                               </td>
                               {firstRow && (
-                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", color: "#6b7280", fontSize: 12, verticalAlign: "top", borderLeft: "1px solid #f0f0f0", whiteSpace: "nowrap" }}>{item.tenggat}</td>
+                                <td rowSpan={totalRows} style={{ padding: "16px", textAlign: "center", color: "#64748b", fontSize: 12, verticalAlign: "top", whiteSpace: "nowrap", borderLeft: "1px solid #f1f5f9" }}>{item.tenggat}</td>
                               )}
-                              <td style={{ padding: "10px 14px", textAlign: "center" }}>
-                                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 600, backgroundColor: sub.status === "Done" ? "#ecfdf5" : "#fff7ed", color: sub.status === "Done" ? "#047857" : "#c2410c", border: `1px solid ${sub.status === "Done" ? "#bbf7d0" : "#fed7aa"}` }}>
-                                  {sub.status}
+                              <td style={{ padding: "13px 16px", textAlign: "center" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700, backgroundColor: sub.status === "Done" ? "#dcfce7" : "#fff7ed", color: sub.status === "Done" ? "#15803d" : "#c2410c", border: `1.5px solid ${sub.status === "Done" ? "#86efac" : "#fed7aa"}` }}>
+                                  {sub.status === "Done" ? "✓ Tercapai" : "Proses"}
                                 </span>
                               </td>
                               {firstRow && (() => {
                                 const val = validasiBiroPKU.find(v => v.indikatorId === item.id);
                                 return (<>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f0f0f0" }}>
+                                  <td rowSpan={totalRows} style={{ padding: "16px", textAlign: "center", verticalAlign: "middle", borderLeft: "1px solid #f1f5f9" }}>
                                     {val?.jumlahValid != null
-                                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "#047857", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>Terverifikasi ({val.jumlahValid})</span>
-                                      : <span style={{ fontSize: 10, fontWeight: 600, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 20, padding: "2px 8px" }}>Belum</span>}
+                                      ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap" }}>✓ Verified ({val.jumlahValid})</span>
+                                      : <span style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 600, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 999, padding: "3px 10px" }}>Belum</span>}
                                   </td>
-                                  <td rowSpan={totalRows} style={{ padding: "10px 14px", verticalAlign: "middle", borderLeft: "1px solid #f0f0f0" }}>
-                                    {val?.keterangan ? <span style={{ fontSize: 11, color: "#374151", lineHeight: 1.4 }}>{val.keterangan}</span> : <span style={{ color: "#d1d5db", fontSize: 11 }}>—</span>}
+                                  <td rowSpan={totalRows} style={{ padding: "16px", verticalAlign: "middle", borderLeft: "1px solid #f1f5f9" }}>
+                                    {val?.keterangan ? <span style={{ fontSize: 12, color: "#374151", lineHeight: 1.4 }}>{val.keterangan}</span> : <span style={{ color: "#cbd5e1", fontSize: 12 }}>—</span>}
                                   </td>
                                 </>);
                               })()}
                               {firstRow && (
-                                <td rowSpan={totalRows} style={{ padding: "10px 14px", textAlign: "center", verticalAlign: "top", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 6px rgba(0,0,0,0.06)" }}>
+                                <td rowSpan={totalRows} style={{ padding: "16px", textAlign: "center", verticalAlign: "top", position: "sticky", right: 0, background: "#fff", zIndex: 2, boxShadow: "-2px 0 8px rgba(15,23,42,0.07)" }}>
                                   {canViewDetail ? (
-                                    <button onClick={() => setDetailItem(item)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+                                    <button onClick={() => setDetailItem(item)} style={{ padding: "6px 14px", borderRadius: 8, border: "1.5px solid #bfdbfe", background: "#eff6ff", fontSize: 12, fontWeight: 700, color: "#1d4ed8", cursor: "pointer", whiteSpace: "nowrap" }}>
                                       Detail
                                     </button>
-                                  ) : <span style={{ color: "#d1d5db" }}>—</span>}
+                                  ) : <span style={{ color: "#cbd5e1" }}>—</span>}
                                 </td>
                               )}
                             </tr>
@@ -2108,6 +2132,7 @@ export default function MonitoringUnitKerjaContent({ role = "user" }: { role?: s
                     )}
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           </>
